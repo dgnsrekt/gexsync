@@ -5,6 +5,10 @@
   const CFG_KEY = "gexsync-cfg";
   let applyingRemote = false; // suppress re-broadcast during programmatic click
 
+  // chrome.runtime?.id is falsy once this content script is orphaned by an
+  // extension reload/update; guard writes so orphans don't throw uncaught.
+  const send = (obj) => { if (chrome.runtime?.id) chrome.storage.local.set(obj); };
+
   // Channel scope: "page" appends pathname (state/classic separate); "all" shares.
   const scopedKey = (base, scope) => (scope === "all" ? base : base + location.pathname);
   let panelScope = "page"; // config-driven, kept live via onChanged below
@@ -51,13 +55,15 @@
       if (applyingRemote) return;
       const keyword = selectedKeyword(group);
       // ponytail: t forces onChanged to fire even when keyword repeats
-      if (keyword) chrome.storage.local.set({ [KEY]: { group: groupName, keyword, t: performance.now() } });
+      if (keyword) send({ [KEY]: { group: groupName, keyword, t: performance.now() } });
     }).observe(group, { attributes: true, subtree: true, attributeFilter: ["aria-pressed", "class"] });
   }
 
   // ---- settings-panel collapse (chevron): ChevronLeft = collapsed ----
   const chevronSvg = () =>
-    document.querySelector('svg[data-testid="ChevronLeftIcon"], svg[data-testid="ChevronRightIcon"]');
+    // page nav also has chevron icons; the panel toggle is the one inside a button
+    [...document.querySelectorAll('svg[data-testid="ChevronLeftIcon"], svg[data-testid="ChevronRightIcon"]')]
+      .find((s) => s.closest("button")) || null;
 
   function panelCollapsed() {
     const svg = chevronSvg();
@@ -79,16 +85,52 @@
     new MutationObserver(() => {
       if (applyingRemote) return;
       const collapsed = panelCollapsed();
-      if (collapsed !== null) chrome.storage.local.set({ [panelKey()]: { collapsed, t: performance.now() } });
+      if (collapsed !== null) send({ [panelKey()]: { collapsed, t: performance.now() } });
     }).observe(toolbar, { childList: true, subtree: true, attributes: true, attributeFilter: ["data-testid"] });
     return true;
   }
+
+  // ---- options-profile switches (delta/gamma/vanna/charm), /state only ----
+  const OPTS_KEY = "gexsync-opts" + location.pathname; // page-scoped; only /state has them
+  const OPTS = ["delta", "gamma", "vanna", "charm"];
+
+  function getSwitches() {
+    const map = {};
+    for (const sw of document.querySelectorAll(".MuiSwitch-root")) {
+      const input = sw.querySelector('input[type=checkbox]');
+      const name = sw.closest("label")?.textContent.trim().toLowerCase();
+      if (input && OPTS.includes(name)) map[name] = input;
+    }
+    return map;
+  }
+
+  function applyOpts(state) {
+    const sw = getSwitches();
+    let clicked = false;
+    for (const k of OPTS) {
+      if (sw[k] && k in state && sw[k].checked !== state[k]) {
+        if (!clicked) applyingRemote = true; // arm guard before first click
+        sw[k].click();
+        clicked = true;
+      }
+    }
+    if (clicked) setTimeout(() => { applyingRemote = false; }, 300);
+  }
+
+  // Delegated change listener survives the re-render when latest/next flips.
+  document.addEventListener("change", (e) => {
+    if (applyingRemote || !e.target.closest?.(".MuiSwitch-root")) return;
+    const sw = getSwitches(), state = {};
+    for (const k of OPTS) if (sw[k]) state[k] = sw[k].checked;
+    send({ [OPTS_KEY]: { state, t: performance.now() } });
+  }, true);
 
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area !== "local") return;
     if (changes[CFG_KEY]?.newValue?.panelScope) panelScope = changes[CFG_KEY].newValue.panelScope;
     if (changes[KEY]?.newValue) applyProfile(changes[KEY].newValue.group, changes[KEY].newValue.keyword);
     if (changes[panelKey()]?.newValue) applyPanel(changes[panelKey()].newValue.collapsed);
+    if (changes[OPTS_KEY]?.newValue) applyOpts(changes[OPTS_KEY].newValue.state);
   });
 
   // SPA renders late; poll until controls exist, attach each once.
