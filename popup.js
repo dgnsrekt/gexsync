@@ -7,6 +7,25 @@ Promise.all([count("state"), count("classic")]).then(([state, classic]) => {
     `${line("state", state)}<br>${line("classic", classic)}`;
 });
 
+// Per-tab state list. Ask each gexbot tab's content script for its state.
+const ask = (id) =>
+  new Promise((res) => chrome.tabs.sendMessage(id, "getState", (st) => res(chrome.runtime.lastError ? null : st)));
+
+chrome.tabs.query({ url: "https://www.gexbot.com/*" }, async (tabs) => {
+  const gex = tabs.filter((t) => /\/(state|classic)/.test(t.url));
+  const rows = await Promise.all(gex.map(async (t) => {
+    const st = await ask(t.id);
+    if (!st) return `${t.title.split(" - ").slice(0, 2).join(" · ")} · (reload tab)`;
+    const parts = [st.page, st.ticker || "?", st.gex].filter(Boolean);
+    if (st.options) parts.push(`opt:${st.options}`);
+    if (st.greeks.length) parts.push(st.greeks.join("+"));
+    if (st.collapsed) parts.push("collapsed");
+    return parts.join(" · ");
+  }));
+  document.getElementById("tabs").innerHTML =
+    rows.length ? rows.map((r) => `<div>${r}</div>`).join("") : "no gexbot tabs";
+});
+
 const sel = document.getElementById("panelScope");
 chrome.storage.local.get("gexsync-cfg", (r) => { sel.value = r["gexsync-cfg"]?.panelScope || "page"; });
 sel.addEventListener("change", () => chrome.storage.local.set({ "gexsync-cfg": { panelScope: sel.value } }));

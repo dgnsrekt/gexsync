@@ -125,6 +125,23 @@
     send({ [OPTS_KEY]: { state, t: performance.now() } });
   }, true);
 
+  // Report this tab's full state to the popup on request.
+  function getState() {
+    const { gex, options } = getGroups();
+    const sw = getSwitches();
+    return {
+      page: location.pathname.replace(/^\//, ""), // "state" | "classic"
+      ticker: document.querySelector("input[role=combobox]")?.value || null,
+      gex: selectedKeyword(gex),
+      options: selectedKeyword(options),
+      greeks: OPTS.filter((k) => sw[k]?.checked),
+      collapsed: panelCollapsed(),
+    };
+  }
+  chrome.runtime.onMessage.addListener((msg, _s, reply) => {
+    if (msg === "getState") reply(getState());
+  });
+
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area !== "local") return;
     if (changes[CFG_KEY]?.newValue?.panelScope) panelScope = changes[CFG_KEY].newValue.panelScope;
