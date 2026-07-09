@@ -3,5 +3,12 @@
 <body style="font:14px system-ui,sans-serif;padding:12px 14px;min-width:150px;margin:0">
   <b>GexSync</b>
   <div id="count" style="margin-top:6px;color:#555">counting…</div>
+  <label style="display:block;margin-top:12px">
+    Panel-collapse sync:
+    <select id="panelScope" style="margin-top:4px;width:100%">
+      <option value="page">By page (state / classic separate)</option>
+      <option value="all">All tabs</option>
+    </select>
+  </label>
   <script src="popup.js"></script>
 </body>

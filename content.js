@@ -1,9 +1,15 @@
 // GexSync: mirror gex/options profile (90d/latest/next) + settings-panel
 // collapse across GEXbot tabs. Tickers untouched. Bus = chrome.storage.local.
 (function () {
-  const KEY = "gexsync" + location.pathname;        // profile channel, per page
-  const PANEL_KEY = "gexsync-panel" + location.pathname; // panel channel, per page
+  const KEY = "gexsync" + location.pathname; // profile channel, always per page
+  const CFG_KEY = "gexsync-cfg";
   let applyingRemote = false; // suppress re-broadcast during programmatic click
+
+  // Channel scope: "page" appends pathname (state/classic separate); "all" shares.
+  const scopedKey = (base, scope) => (scope === "all" ? base : base + location.pathname);
+  let panelScope = "page"; // config-driven, kept live via onChanged below
+  const panelKey = () => scopedKey("gexsync-panel", panelScope);
+  chrome.storage.local.get(CFG_KEY, (r) => { if (r[CFG_KEY]?.panelScope) panelScope = r[CFG_KEY].panelScope; });
 
   function keywordOf(btn) {
     const t = btn.textContent.toLowerCase();
@@ -73,15 +79,16 @@
     new MutationObserver(() => {
       if (applyingRemote) return;
       const collapsed = panelCollapsed();
-      if (collapsed !== null) chrome.storage.local.set({ [PANEL_KEY]: { collapsed, t: performance.now() } });
+      if (collapsed !== null) chrome.storage.local.set({ [panelKey()]: { collapsed, t: performance.now() } });
     }).observe(toolbar, { childList: true, subtree: true, attributes: true, attributeFilter: ["data-testid"] });
     return true;
   }
 
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area !== "local") return;
+    if (changes[CFG_KEY]?.newValue?.panelScope) panelScope = changes[CFG_KEY].newValue.panelScope;
     if (changes[KEY]?.newValue) applyProfile(changes[KEY].newValue.group, changes[KEY].newValue.keyword);
-    if (changes[PANEL_KEY]?.newValue) applyPanel(changes[PANEL_KEY].newValue.collapsed);
+    if (changes[panelKey()]?.newValue) applyPanel(changes[panelKey()].newValue.collapsed);
   });
 
   // SPA renders late; poll until controls exist, attach each once.
