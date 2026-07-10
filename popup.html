@@ -11,5 +11,21 @@
       <option value="all">All tabs</option>
     </select>
   </label>
+
+  <hr style="margin:12px 0;border:none;border-top:1px solid #ddd">
+  <b>Replay sync</b>
+  <div style="margin-top:4px;color:#777;font-size:12px">
+    Set each tab's ticker, date &amp; load history first, then arm.
+  </div>
+  <label style="display:block;margin-top:8px">
+    <input type="checkbox" id="replayArmed"> Arm transport sync
+  </label>
+  <label style="display:block;margin-top:8px">
+    Alignment:
+    <select id="replayMode" style="margin-top:4px;width:100%">
+      <option value="fraction">Fraction — different dates (proportional)</option>
+      <option value="index">Index — same day (exact)</option>
+    </select>
+  </label>
   <script src="popup.js"></script>
 </body>
