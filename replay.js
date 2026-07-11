@@ -124,6 +124,17 @@
     return Math.round(a.i + f * (b.i - a.i));
   }
   const mapInRange = (tod) => timeMap && tod >= timeMap[0].tod - GATE_SEC && tod <= timeMap[timeMap.length - 1].tod + GATE_SEC;
+  function indexToTod(idx) { // inverse map: current slider index → time (works even if the readout is hidden)
+    const m = timeMap;
+    if (!m || m.length < 2) return null;
+    if (idx <= m[0].i) return m[0].tod;
+    if (idx >= m[m.length - 1].i) return m[m.length - 1].tod;
+    let lo = 0, hi = m.length - 1;
+    while (hi - lo > 1) { const mid = (lo + hi) >> 1; if (m[mid].i <= idx) lo = mid; else hi = mid; }
+    const a = m[lo], b = m[hi], f = (idx - a.i) / ((b.i - a.i) || 1);
+    return Math.round(a.tod + f * (b.tod - a.tod));
+  }
+  const localTod = () => { const t = readTod(); if (t != null) return t; const s = slider(); return s ? indexToTod(+s.value) : null; };
 
   // ---- client: apply the master's messages ----
   async function applySeek(msg) {
@@ -289,7 +300,7 @@
         .bar[data-role="client"] .master-only { display:none; }
         .bar[data-role="master"] .client-only { display:none; }
         .foll { color:#9aa0aa; font-size:12px; white-space:nowrap; }
-        .ftime { font-variant-numeric:tabular-nums; font-weight:600; min-width:92px; white-space:nowrap; }
+        .ftime, .mtime { font-variant-numeric:tabular-nums; font-weight:600; min-width:96px; white-space:nowrap; text-align:center; }
         .bar[data-role="client"].nodata .foll, .bar[data-role="client"].nodata .ftime { color:#ff9d4a; }
         .take { height:30px; padding:0 12px; border-radius:9999px; border:1px solid rgba(255,255,255,.18);
           background:transparent; color:#e7e9ea; cursor:pointer; font-size:12px; white-space:nowrap; }
@@ -310,6 +321,8 @@
             <span class="sep"></span>
             <button class="b speed" data-cmd="speed" title="Speed">1x</button>
             <span class="sep"></span>
+            <b class="mtime" title="Replay time">—</b>
+            <span class="sep"></span>
             <button class="b lc" data-cmd="loadall" title="Load history on all tabs">load</button>
             <button class="b lc clear" data-cmd="clearall" title="Clear history on all tabs">clear</button>
           </div>
@@ -324,7 +337,7 @@
     const bar = root.querySelector(".bar");
     barUI = { bar, arm: root.querySelector(".arm input"), pp: root.querySelector(".pp"),
       speed: root.querySelector(".speed"), count: root.querySelector(".count"),
-      foll: root.querySelector(".foll"), ftime: root.querySelector(".ftime") };
+      foll: root.querySelector(".foll"), ftime: root.querySelector(".ftime"), mtime: root.querySelector(".mtime") };
 
     // Hover opens; leaving keeps it up briefly (or forever if pinned by click).
     const anchor = root.querySelector(".anchor");
@@ -355,7 +368,7 @@
     refreshRole();
     setInterval(async () => {
       bar.dataset.cal = calibrating ? "1" : "0";
-      if (isMaster()) { barUI.pp.innerHTML = isPlaying() ? IC.pause : IC.play; const sl = speedLabel(); if (sl) barUI.speed.textContent = sl; }
+      if (isMaster()) { barUI.pp.innerHTML = isPlaying() ? IC.pause : IC.play; const sl = speedLabel(); if (sl) barUI.speed.textContent = sl; barUI.mtime.textContent = fmtTod(localTod()); }
       else { bar.classList.toggle("nodata", clientNoData); barUI.foll.textContent = clientNoData ? "no data" : "following"; barUI.ftime.textContent = fmtTod(lastMasterTod); }
       barUI.count.textContent = (await presentIds()).size || "·";
     }, 500);
