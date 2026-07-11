@@ -22,6 +22,7 @@
   const THROTTLE = 150;     // ms between coarse seek broadcasts while dragging
   const HEARTBEAT_MS = 2000;// master re-broadcasts time this often while playing
   let seekSeq = 0, lastSeekSent = 0;
+  let timeMap = null, mapMax = -1, building = false, calibrating = false; // index↔time map
   let cfg = { armed: false, master: null, heartbeat: true };
   const ME = Math.random().toString(36).slice(2);
   let lastMasterTod = null, clientNoData = false; // client display state
@@ -73,36 +74,90 @@
     el.dispatchEvent(new Event("change", { bubbles: true }));
   }
 
+  // ---- index↔time map: sample the slider once so we can seek to any
+  // timestamp instantly + exactly, even during play (cerberus-style). ----
+  const MAP_N = 44;
+  async function buildMap(max) {
+    const el = slider();
+    if (!el) return;
+    calibrating = true;
+    const savedIdx = +el.value, wasPlaying = isPlaying();
+    if (wasPlaying) transportBtn()?.click(); // pause during calibration
+    const raw = [];
+    for (let k = 0; k <= MAP_N; k++) {
+      setSlider(Math.round((k / MAP_N) * max));
+      await wait(SETTLE);
+      const tod = readTod();
+      if (tod != null) raw.push({ i: +el.value, tod });
+    }
+    // collect-then-clean: sort by index, keep the strictly-increasing-tod
+    // subsequence (drops the odd stale read instead of aborting the whole map)
+    raw.sort((a, b) => a.i - b.i);
+    const map = [];
+    for (const p of raw) if (!map.length || p.tod > map[map.length - 1].tod) map.push(p);
+    timeMap = map.length >= 2 ? map : null;
+    setSlider(savedIdx);
+    if (wasPlaying) { await wait(SETTLE); transportBtn()?.click(); } // resume
+    calibrating = false;
+    if (barUI) barUI.bar.dataset.maplen = timeMap ? timeMap.length : 0;
+  }
+  let buildTries = 0;
+  async function maybeBuildMap() {
+    const el = slider();
+    if (!el || building || calibrating) return;
+    const max = +el.max || 0;
+    if (max === mapMax && timeMap) return;
+    if (max < 2) { timeMap = null; mapMax = max; return; }
+    mapMax = max;
+    building = true;
+    try { await buildMap(max); } finally { building = false; }
+    if (!timeMap && buildTries++ < 3) mapMax = -1; // self-heal: retry a few times
+  }
+  function todToIndex(tod) {
+    const m = timeMap;
+    if (!m || m.length < 2) return null;
+    if (tod <= m[0].tod) return m[0].i;
+    if (tod >= m[m.length - 1].tod) return m[m.length - 1].i;
+    let lo = 0, hi = m.length - 1;
+    while (hi - lo > 1) { const mid = (lo + hi) >> 1; if (m[mid].tod <= tod) lo = mid; else hi = mid; }
+    const a = m[lo], b = m[hi], f = (tod - a.tod) / ((b.tod - a.tod) || 1);
+    return Math.round(a.i + f * (b.i - a.i));
+  }
+  const mapInRange = (tod) => timeMap && tod >= timeMap[0].tod - GATE_SEC && tod <= timeMap[timeMap.length - 1].tod + GATE_SEC;
+
   // ---- client: apply the master's messages ----
   async function applySeek(msg) {
     const el = slider();
     if (!el || msg.tod == null) { if (msg.frac != null && el) setSlider(Math.round(msg.frac * (+el.max || 1))); return; }
     lastMasterTod = msg.tod;
-    const my = ++seekSeq;
     const max = +el.max || 1;
-    const startIdx = +el.value;
-    setSlider(Math.round((msg.frac ?? 0) * max)); // coarse seed
-    await wait(SETTLE); if (my !== seekSeq) return;
-    let t = readTod();
-    if (t != null && Math.abs(t - msg.tod) <= TOL_SEC) { clientNoData = false; return; }
 
-    let i0 = +el.value, t0 = t;
-    let i1 = clamp(i0 + (t0 == null || msg.tod > t0 ? 200 : -200), max);
-    setSlider(i1); await wait(SETTLE); if (my !== seekSeq) return;
-    let t1 = readTod();
-    for (let k = 0; k < 6 && t1 != null && Math.abs(t1 - msg.tod) > TOL_SEC; k++) {
-      const slope = (t1 - t0) / (i1 - i0);
-      if (!isFinite(slope) || slope === 0) break;
-      const i2 = clamp(Math.round(i1 + (msg.tod - t1) / slope), max);
-      if (i2 === i1) break;
-      i0 = i1; t0 = t1; i1 = i2;
-      setSlider(i1); await wait(SETTLE); if (my !== seekSeq) return;
-      t1 = readTod();
+    // Preferred path: the index↔time map gives an exact index in one shot —
+    // stable during play (no reading a moving clock) and time-accurate.
+    if (timeMap) {
+      if (!mapInRange(msg.tod)) { clientNoData = true; return; } // client lacks this time
+      clientNoData = false;
+      const target = clamp(todToIndex(msg.tod) ?? +el.value, max);
+      setSlider(target);
+      if (isPlaying()) return;                 // during play: map is enough, don't fight the clock
+      // paused: one quick secant polish from the map seed for sub-tick accuracy
+      const my = ++seekSeq;
+      await wait(SETTLE); if (my !== seekSeq) return;
+      let i1 = +el.value, t1 = readTod();
+      for (let k = 0; k < 3 && t1 != null && Math.abs(t1 - msg.tod) > TOL_SEC; k++) {
+        const near = timeMap.reduce((p, c) => Math.abs(c.i - i1) < Math.abs(p.i - i1) ? c : p);
+        const slope = (t1 - near.tod) / ((i1 - near.i) || 1);
+        if (!isFinite(slope) || slope === 0) break;
+        const i2 = clamp(Math.round(i1 + (msg.tod - t1) / slope), max);
+        if (i2 === i1) break;
+        i1 = i2; setSlider(i1); await wait(SETTLE); if (my !== seekSeq) return; t1 = readTod();
+      }
+      return;
     }
-    // gate: only stay if we actually reached the master's time; else don't move
-    const finalT = readTod();
-    if (finalT == null || Math.abs(finalT - msg.tod) > GATE_SEC) { setSlider(startIdx); clientNoData = true; }
-    else clientNoData = false;
+
+    // Fallback (map not built yet): coarse proportional seek, no secant during play.
+    setSlider(Math.round((msg.frac ?? 0) * max));
+    clientNoData = false;
   }
 
   function apply(msg) {
@@ -134,7 +189,7 @@
   const scheduleSettle = () => { clearTimeout(settleTimer); settleTimer = setTimeout(() => bcastSeek(true), 180); };
 
   document.addEventListener("input", (e) => {
-    if (!isMaster() || e.target !== slider()) return;
+    if (!isMaster() || calibrating || e.target !== slider()) return;
     const now = performance.now();
     if (now - lastSeekSent >= THROTTLE) { lastSeekSent = now; bcastSeek(false); }
     scheduleSettle();
@@ -169,7 +224,8 @@
     const present = await presentIds();
     if (!cfg.master || !present.has(cfg.master)) writeCfg({ master: ME }); // first-armed / vacant → claim
   }
-  beat(); setInterval(() => { beat(); elect(); }, 3000);
+  beat(); setInterval(() => { beat(); elect(); maybeBuildMap(); }, 3000);
+  setTimeout(maybeBuildMap, 1500); // build the map shortly after load
   window.addEventListener("beforeunload", () => { if (chrome.runtime?.id) chrome.storage.local.remove(PP + ME); });
 
   // ---- floating bar (shadow DOM, corner-anchored expand) ----
@@ -209,6 +265,8 @@
           background:transparent; color:#9aa0aa; cursor:pointer; display:flex; align-items:center; justify-content:center; padding:0; }
         .bar[data-armed="1"][data-role="master"] .anchor { color:#00d68f; }
         .bar[data-armed="1"][data-role="client"] .anchor { color:#4aa3ff; }
+        .bar[data-cal="1"] .anchor { animation:calpulse 1.1s ease-in-out infinite; }
+        @keyframes calpulse { 0%,100%{opacity:.35} 50%{opacity:1} }
         .rest { display:flex; align-items:center; gap:3px; max-width:0; opacity:0; overflow:hidden;
           transition:max-width .42s cubic-bezier(.4,0,.2,1), opacity .25s ease, margin-left .3s ease; }
         .bar[data-open="1"] .rest { max-width:760px; opacity:1; margin-left:4px; }
@@ -296,6 +354,7 @@
 
     refreshRole();
     setInterval(async () => {
+      bar.dataset.cal = calibrating ? "1" : "0";
       if (isMaster()) { barUI.pp.innerHTML = isPlaying() ? IC.pause : IC.play; const sl = speedLabel(); if (sl) barUI.speed.textContent = sl; }
       else { bar.classList.toggle("nodata", clientNoData); barUI.foll.textContent = clientNoData ? "no data" : "following"; barUI.ftime.textContent = fmtTod(lastMasterTod); }
       barUI.count.textContent = (await presentIds()).size || "·";
