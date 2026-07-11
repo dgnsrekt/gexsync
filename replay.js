@@ -179,6 +179,21 @@
     barUI.bar.dataset.armed = cfg.armed ? "1" : "0";
     barUI.arm.checked = cfg.armed;
   }
+  // Monochrome SVG icons (block-centered → no glyph-baseline misalignment).
+  const s = (inner, o = "") => `<svg viewBox="0 0 24 24" width="16" height="16" ${o}>${inner}</svg>`;
+  const stroke = 'fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"';
+  const IC = {
+    restart: s('<rect x="5" y="5" width="2.4" height="14" rx="1"/><path d="M20 5v14l-10-7z"/>', 'fill="currentColor"'),
+    back30: s('<path d="M18 18l-6-6 6-6"/><path d="M11 18l-6-6 6-6"/>', stroke),
+    back1: s('<path d="M15 18l-6-6 6-6"/>', stroke),
+    fwd1: s('<path d="M9 18l6-6-6-6"/>', stroke),
+    fwd30: s('<path d="M6 18l6-6-6-6"/><path d="M13 18l6-6-6-6"/>', stroke),
+    play: s('<path d="M7 5v14l12-7z"/>', 'fill="currentColor"'),
+    pause: s('<path d="M7 5h3.4v14H7zM13.6 5H17v14h-3.4z"/>', 'fill="currentColor"'),
+    lock: s('<rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/>', stroke),
+    replay: s('<path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4.5v5h5"/>', stroke),
+  };
+
   function buildBar() {
     if (document.getElementById("gexsync-replay-bar")) return;
     const host = document.createElement("div");
@@ -191,14 +206,16 @@
           border:1px solid rgba(255,255,255,.12); box-shadow:0 16px 48px rgba(0,0,0,.5);
           z-index:2147483000; font:13px system-ui,-apple-system,sans-serif; color:#e7e9ea; user-select:none; }
         .anchor { flex:0 0 auto; width:38px; height:38px; border-radius:9999px; border:none;
-          background:transparent; color:#9aa0aa; cursor:pointer; font-size:17px; display:grid; place-items:center; }
+          background:transparent; color:#9aa0aa; cursor:pointer; display:flex; align-items:center; justify-content:center; padding:0; }
         .bar[data-armed="1"][data-role="master"] .anchor { color:#00d68f; }
         .bar[data-armed="1"][data-role="client"] .anchor { color:#4aa3ff; }
         .rest { display:flex; align-items:center; gap:3px; max-width:0; opacity:0; overflow:hidden;
           transition:max-width .42s cubic-bezier(.4,0,.2,1), opacity .25s ease, margin-left .3s ease; }
         .bar[data-open="1"] .rest { max-width:760px; opacity:1; margin-left:4px; }
-        .b { flex:0 0 auto; height:34px; min-width:34px; padding:0 7px; border-radius:9999px; border:none;
-          background:transparent; color:#e7e9ea; cursor:pointer; font-size:15px; display:grid; place-items:center; }
+        .b { flex:0 0 auto; height:34px; min-width:34px; padding:0 8px; border-radius:9999px; border:none;
+          background:transparent; color:#e7e9ea; cursor:pointer; font:inherit; font-size:13px;
+          display:flex; align-items:center; justify-content:center; line-height:1; }
+        .b svg, .anchor svg { display:block; }
         .b:hover { background:rgba(255,255,255,.12); color:#fff; }
         .pp { background:rgba(255,255,255,.95); color:#0a0a12; }
         .pp:hover { background:#fff; color:#000; }
@@ -221,17 +238,17 @@
         .take:hover { background:rgba(255,255,255,.12); }
       </style>
       <div class="bar" data-open="0" data-role="client" data-armed="0">
-        <button class="anchor" title="GexSync replay">&#9199;</button>
+        <button class="anchor" title="GexSync replay">${IC.replay}</button>
         <div class="rest">
           <label class="arm"><input type="checkbox">sync<b class="count">·</b></label>
           <span class="sep"></span>
           <div class="master-only">
-            <button class="b" data-cmd="restart" title="Restart from start">&#9198;</button>
-            <button class="b" data-cmd="back30" title="30s back">&laquo;</button>
-            <button class="b" data-cmd="back1" title="1s back">&lsaquo;</button>
-            <button class="b pp" data-cmd="play" title="Play / pause">&#9654;</button>
-            <button class="b" data-cmd="fwd1" title="1s forward">&rsaquo;</button>
-            <button class="b" data-cmd="fwd30" title="30s forward">&raquo;</button>
+            <button class="b" data-cmd="restart" title="Restart from start">${IC.restart}</button>
+            <button class="b" data-cmd="back30" title="30s back">${IC.back30}</button>
+            <button class="b" data-cmd="back1" title="1s back">${IC.back1}</button>
+            <button class="b pp" data-cmd="play" title="Play / pause">${IC.play}</button>
+            <button class="b" data-cmd="fwd1" title="1s forward">${IC.fwd1}</button>
+            <button class="b" data-cmd="fwd30" title="30s forward">${IC.fwd30}</button>
             <span class="sep"></span>
             <button class="b speed" data-cmd="speed" title="Speed">1x</button>
             <span class="sep"></span>
@@ -256,7 +273,12 @@
     let closeT;
     bar.addEventListener("mouseenter", () => { clearTimeout(closeT); bar.dataset.open = "1"; });
     bar.addEventListener("mouseleave", () => { if (bar.dataset.pinned !== "1") { clearTimeout(closeT); closeT = setTimeout(() => { bar.dataset.open = "0"; }, 1500); } });
-    anchor.addEventListener("click", () => { const p = bar.dataset.pinned === "1"; bar.dataset.pinned = p ? "0" : "1"; bar.dataset.open = p ? "0" : "1"; });
+    anchor.addEventListener("click", () => {
+      const p = bar.dataset.pinned === "1";
+      bar.dataset.pinned = p ? "0" : "1";
+      bar.dataset.open = p ? "0" : "1";
+      anchor.innerHTML = p ? IC.replay : IC.lock; // replay unpinned, padlock locked open
+    });
 
     barUI.arm.addEventListener("change", () => { writeCfg({ armed: barUI.arm.checked }); });
     root.querySelector(".take").addEventListener("click", () => writeCfg({ armed: true, master: ME }));
@@ -274,7 +296,7 @@
 
     refreshRole();
     setInterval(async () => {
-      if (isMaster()) { barUI.pp.textContent = isPlaying() ? "⏸" : "▶"; const sl = speedLabel(); if (sl) barUI.speed.textContent = sl; }
+      if (isMaster()) { barUI.pp.innerHTML = isPlaying() ? IC.pause : IC.play; const sl = speedLabel(); if (sl) barUI.speed.textContent = sl; }
       else { bar.classList.toggle("nodata", clientNoData); barUI.foll.textContent = clientNoData ? "no data" : "following"; barUI.ftime.textContent = fmtTod(lastMasterTod); }
       barUI.count.textContent = (await presentIds()).size || "·";
     }, 500);
