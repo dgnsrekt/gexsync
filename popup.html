@@ -21,7 +21,14 @@
     <input type="checkbox" id="replayArmed"> Arm transport sync
   </label>
   <div style="margin-top:6px;color:#999;font-size:11px">
-    Aligns by time-of-day, so different dates line up by clock.
+    First armed tab is master; others follow. Aligns by time-of-day.
   </div>
+  <label style="display:block;margin-top:8px">
+    Play tracking:
+    <select id="replayTrack" style="margin-top:4px;width:100%">
+      <option value="heartbeat">Heartbeat — master pushes time (~2s), tight</option>
+      <option value="onpause">On pause — resync only when paused, quiet</option>
+    </select>
+  </label>
   <script src="popup.js"></script>
 </body>
