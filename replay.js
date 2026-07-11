@@ -31,7 +31,7 @@
   const wait = (ms) => new Promise((r) => setTimeout(r, ms));
   const clamp = (v, max) => Math.min(max, Math.max(0, v));
   const send = (obj) => { if (isMaster() && chrome.runtime?.id) chrome.storage.local.set({ [KEY]: { ...obj, from: ME, t: performance.now() } }); };
-  const writeCfg = (patch) => chrome.storage.local.set({ [CFG_KEY]: { ...cfg, ...patch } });
+  const writeCfg = (patch) => { if (chrome.runtime?.id) chrome.storage.local.set({ [CFG_KEY]: { ...cfg, ...patch } }); };
 
   chrome.storage.local.get(CFG_KEY, (r) => { if (r[CFG_KEY]) cfg = { ...cfg, ...r[CFG_KEY] }; if (barUI) refreshRole(); });
 
@@ -45,6 +45,7 @@
   const SPEEDS = ["1x", "5x", "25x"];
   const stepIcon = { back1: "ArrowLeftIcon", back30: "FastRewindIcon", fwd1: "ArrowRightIcon", fwd30: "FastForwardIcon" };
   const btnByIcon = (id) => [...document.querySelectorAll("button")].find((b) => iconOf(b) === id);
+  const btnByText = (t) => [...document.querySelectorAll("button")].find((b) => b.textContent.trim().toLowerCase().includes(t));
 
   // The replay time readout is the time-of-day text closest to the slider.
   function replayTimeEl() {
@@ -109,6 +110,8 @@
       case "seek": applySeek(msg); break;
       case "play": if (isPlaying() !== msg.playing) transportBtn()?.click(); break;
       case "speed": for (let i = 0; i < 4 && speedLabel() !== msg.speed; i++) speedBtn()?.click(); break;
+      case "load": btnByText("load history")?.click(); break;   // each tab loads its own selected date
+      case "clear": btnByText("clear history")?.click(); break;
     }
   }
 
@@ -193,13 +196,16 @@
         .bar[data-armed="1"][data-role="client"] .anchor { color:#4aa3ff; }
         .rest { display:flex; align-items:center; gap:3px; max-width:0; opacity:0; overflow:hidden;
           transition:max-width .42s cubic-bezier(.4,0,.2,1), opacity .25s ease, margin-left .3s ease; }
-        .bar:hover .rest, .bar[data-open="1"] .rest { max-width:660px; opacity:1; margin-left:4px; }
+        .bar[data-open="1"] .rest { max-width:760px; opacity:1; margin-left:4px; }
         .b { flex:0 0 auto; height:34px; min-width:34px; padding:0 7px; border-radius:9999px; border:none;
           background:transparent; color:#e7e9ea; cursor:pointer; font-size:15px; display:grid; place-items:center; }
         .b:hover { background:rgba(255,255,255,.12); color:#fff; }
         .pp { background:rgba(255,255,255,.95); color:#0a0a12; }
         .pp:hover { background:#fff; color:#000; }
         .speed { font-size:12px; font-weight:600; min-width:40px; }
+        .lc { font-size:12px; font-weight:600; }
+        .lc.clear { color:#ff8a8a; }
+        .lc.clear:hover { background:rgba(255,90,90,.18); color:#ffb3b3; }
         .sep { width:1px; height:20px; background:rgba(255,255,255,.14); margin:0 3px; flex:0 0 auto; }
         .arm { display:flex; align-items:center; gap:5px; padding:0 8px 0 4px; font-size:12px; cursor:pointer; white-space:nowrap; }
         .arm input { accent-color:#00d68f; cursor:pointer; margin:0; }
@@ -228,6 +234,9 @@
             <button class="b" data-cmd="fwd30" title="30s forward">&raquo;</button>
             <span class="sep"></span>
             <button class="b speed" data-cmd="speed" title="Speed">1x</button>
+            <span class="sep"></span>
+            <button class="b lc" data-cmd="loadall" title="Load history on all tabs">load</button>
+            <button class="b lc clear" data-cmd="clearall" title="Clear history on all tabs">clear</button>
           </div>
           <div class="client-only">
             <span class="foll">following</span>
@@ -242,15 +251,24 @@
       speed: root.querySelector(".speed"), count: root.querySelector(".count"),
       foll: root.querySelector(".foll"), ftime: root.querySelector(".ftime") };
 
-    root.querySelector(".anchor").addEventListener("click", () => { bar.dataset.open = bar.dataset.open === "1" ? "0" : "1"; });
+    // Hover opens; leaving keeps it up briefly (or forever if pinned by click).
+    const anchor = root.querySelector(".anchor");
+    let closeT;
+    bar.addEventListener("mouseenter", () => { clearTimeout(closeT); bar.dataset.open = "1"; });
+    bar.addEventListener("mouseleave", () => { if (bar.dataset.pinned !== "1") { clearTimeout(closeT); closeT = setTimeout(() => { bar.dataset.open = "0"; }, 1500); } });
+    anchor.addEventListener("click", () => { const p = bar.dataset.pinned === "1"; bar.dataset.pinned = p ? "0" : "1"; bar.dataset.open = p ? "0" : "1"; });
+
     barUI.arm.addEventListener("change", () => { writeCfg({ armed: barUI.arm.checked }); });
     root.querySelector(".take").addEventListener("click", () => writeCfg({ armed: true, master: ME }));
-    // master transport → drive native controls; the master's native listeners broadcast the result
+    // master controls → drive native controls; the master's native listeners
+    // broadcast the resulting time. load/clear-all fan a command to every tab.
     root.querySelectorAll(".master-only .b").forEach((b) => b.addEventListener("click", () => {
       const cmd = b.dataset.cmd;
       if (cmd === "restart") setSlider(0);                       // input listener broadcasts resulting time
       else if (cmd === "play") transportBtn()?.click();
       else if (cmd === "speed") speedBtn()?.click();
+      else if (cmd === "loadall") { btnByText("load history")?.click(); send({ action: "load" }); }
+      else if (cmd === "clearall") { btnByText("clear history")?.click(); send({ action: "clear" }); }
       else btnByIcon(stepIcon[cmd])?.click();
     }));
 
