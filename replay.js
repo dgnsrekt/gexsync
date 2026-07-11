@@ -9,9 +9,12 @@
 // secant search on its own time readout to converge on the master's time.
 // Inspired by cerberus_gamma: align by timestamp, not by index.
 //
-// Only active when "armed" from the popup. Event-driven: a manual scrub fires
-// the slider's `input` event (auto-advance during play does not), so seeks
-// broadcast without streaming playback.
+// A floating corner transport bar (shadow DOM, xpeaker-style expand) is the
+// command center: arm toggle + live synced-tab count, restart-to-start,
+// play/pause, ±1s/±30s steps, and speed — each command drives ALL armed tabs.
+// Sync is only active when armed (via the bar or the popup). Event-driven: a
+// manual scrub fires the slider's `input` event (auto-advance during play does
+// not), so seeks broadcast without streaming playback.
 (function () {
   const KEY = "replay" + location.pathname; // per page: /state vs /classic
   const CFG_KEY = "replay-cfg";             // shared: { armed }
@@ -41,6 +44,10 @@
     [...document.querySelectorAll("button")].find((b) => /^\d+x$/.test(b.textContent.trim()));
   const isPlaying = () => iconOf(transportBtn()) === "PauseIcon";
   const speedLabel = () => speedBtn()?.textContent.trim() || null;
+  const SPEEDS = ["1x", "5x", "25x"];
+  const stepIcon = { back1: "ArrowLeftIcon", back30: "FastRewindIcon", fwd1: "ArrowRightIcon", fwd30: "FastForwardIcon" };
+  const btnByIcon = (id) => [...document.querySelectorAll("button")].find((b) => iconOf(b) === id);
+  let barUI = null; // {bar, arm, count} — set by buildBar, refreshed on cfg change
 
   // The replay time readout is the time-of-day text closest to the slider
   // (the "update time" field also shows a time, but sits further up the tree).
@@ -112,12 +119,20 @@
       case "seek": applySeek(msg); break;
       case "play": if (isPlaying() !== msg.playing) { mute(); transportBtn()?.click(); } break;
       case "speed": mute(); for (let i = 0; i < 4 && speedLabel() !== msg.speed; i++) speedBtn()?.click(); break;
+      case "restart": setSlider(0); break;
+      case "step": mute(); btnByIcon(stepIcon[msg.dir])?.click(); break;
     }
   }
 
+  // Bar commands drive ALL armed tabs (broadcast) AND this tab (apply locally).
+  const barCmd = (msg) => { send(msg); apply(msg); };
+
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area !== "local") return;
-    if (changes[CFG_KEY]?.newValue) cfg = { ...cfg, ...changes[CFG_KEY].newValue };
+    if (changes[CFG_KEY]?.newValue) {
+      cfg = { ...cfg, ...changes[CFG_KEY].newValue };
+      if (barUI) { barUI.arm.checked = cfg.armed; barUI.bar.dataset.armed = cfg.armed ? "1" : "0"; }
+    }
     const msg = changes[KEY]?.newValue;
     if (cfg.armed && msg && msg.from !== ME) apply(msg);
   });
@@ -160,4 +175,84 @@
     else if (/^\d+x$/.test(txt))
       setTimeout(() => send({ action: "speed", speed: speedLabel() }), 60);
   }, true);
+
+  // ---- presence: each tab heartbeats so the bar can show a live synced count ----
+  const PP = "rp:";
+  const beat = () => { if (chrome.runtime?.id) chrome.storage.local.set({ [PP + ME]: { t: Date.now() } }); };
+  beat(); setInterval(beat, 3000);
+  window.addEventListener("beforeunload", () => { if (chrome.runtime?.id) chrome.storage.local.remove(PP + ME); });
+  async function tabCount() {
+    if (!chrome.runtime?.id) return "·";
+    const all = await chrome.storage.local.get(null);
+    const now = Date.now();
+    return Object.entries(all).filter(([k, v]) => k.startsWith(PP) && v && now - v.t < 8000).length;
+  }
+
+  // ---- floating transport bar (shadow DOM, corner-anchored expand) ----
+  function buildBar() {
+    if (document.getElementById("gexsync-replay-bar")) return;
+    const host = document.createElement("div");
+    host.id = "gexsync-replay-bar";
+    const root = host.attachShadow({ mode: "open" });
+    root.innerHTML = `
+      <style>
+        .bar { position:fixed; left:20px; bottom:20px; display:flex; align-items:center; padding:6px;
+          border-radius:9999px; background:rgba(20,18,32,.66); backdrop-filter:blur(16px);
+          border:1px solid rgba(255,255,255,.12); box-shadow:0 16px 48px rgba(0,0,0,.5);
+          z-index:2147483000; font:13px system-ui,-apple-system,sans-serif; color:#e7e9ea; user-select:none; }
+        .anchor { flex:0 0 auto; width:38px; height:38px; border-radius:9999px; border:none;
+          background:transparent; color:#9aa0aa; cursor:pointer; font-size:17px; display:grid; place-items:center; }
+        .bar[data-armed="1"] .anchor { color:#00d68f; }
+        .rest { display:flex; align-items:center; gap:3px; max-width:0; opacity:0; overflow:hidden;
+          transition:max-width .42s cubic-bezier(.4,0,.2,1), opacity .25s ease, margin-left .3s ease; }
+        .bar:hover .rest, .bar[data-open="1"] .rest { max-width:640px; opacity:1; margin-left:4px; }
+        .b { flex:0 0 auto; height:34px; min-width:34px; padding:0 7px; border-radius:9999px; border:none;
+          background:transparent; color:#e7e9ea; cursor:pointer; font-size:15px; display:grid; place-items:center; }
+        .b:hover { background:rgba(255,255,255,.12); color:#fff; }
+        .pp { background:rgba(255,255,255,.95); color:#0a0a12; }
+        .pp:hover { background:#fff; color:#000; }
+        .speed { font-size:12px; font-weight:600; min-width:40px; }
+        .sep { width:1px; height:20px; background:rgba(255,255,255,.14); margin:0 3px; flex:0 0 auto; }
+        .arm { display:flex; align-items:center; gap:5px; padding:0 8px 0 4px; font-size:12px; cursor:pointer; white-space:nowrap; }
+        .arm input { accent-color:#00d68f; cursor:pointer; margin:0; }
+        .count { color:#9aa0aa; font-weight:700; min-width:12px; text-align:center; }
+      </style>
+      <div class="bar" data-open="0" data-armed="${cfg.armed ? 1 : 0}">
+        <button class="anchor" title="GexSync replay">&#9199;</button>
+        <div class="rest">
+          <label class="arm"><input type="checkbox" ${cfg.armed ? "checked" : ""}>sync<b class="count">·</b></label>
+          <span class="sep"></span>
+          <button class="b" data-cmd="restart" title="Restart from start">&#9198;</button>
+          <button class="b" data-cmd="back30" title="30s back">&laquo;</button>
+          <button class="b" data-cmd="back1" title="1s back">&lsaquo;</button>
+          <button class="b pp" data-cmd="play" title="Play / pause">&#9654;</button>
+          <button class="b" data-cmd="fwd1" title="1s forward">&rsaquo;</button>
+          <button class="b" data-cmd="fwd30" title="30s forward">&raquo;</button>
+          <span class="sep"></span>
+          <button class="b speed" data-cmd="speed" title="Speed">1x</button>
+        </div>
+      </div>`;
+    (document.body || document.documentElement).appendChild(host);
+    const bar = root.querySelector(".bar");
+    const arm = root.querySelector(".arm input");
+    const pp = root.querySelector(".pp");
+    const speedEl = root.querySelector(".speed");
+    const count = root.querySelector(".count");
+    barUI = { bar, arm, count };
+
+    root.querySelector(".anchor").addEventListener("click", () => { bar.dataset.open = bar.dataset.open === "1" ? "0" : "1"; });
+    arm.addEventListener("change", () => chrome.storage.local.set({ [CFG_KEY]: { armed: arm.checked } }));
+    root.querySelectorAll(".b").forEach((b) => b.addEventListener("click", () => {
+      const cmd = b.dataset.cmd;
+      if (cmd === "restart") barCmd({ action: "restart" });
+      else if (cmd === "play") barCmd({ action: "play", playing: !isPlaying() });
+      else if (cmd === "speed") barCmd({ action: "speed", speed: SPEEDS[(SPEEDS.indexOf(speedLabel()) + 1) % SPEEDS.length] || "1x" });
+      else barCmd({ action: "step", dir: cmd });
+    }));
+
+    // reflect live native state onto the bar
+    setInterval(() => { pp.textContent = isPlaying() ? "⏸" : "▶"; const sl = speedLabel(); if (sl) speedEl.textContent = sl; }, 500);
+    setInterval(async () => { count.textContent = await tabCount(); }, 2000);
+  }
+  if (document.body) buildBar(); else window.addEventListener("DOMContentLoaded", buildBar);
 })();
