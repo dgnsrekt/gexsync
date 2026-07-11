@@ -30,13 +30,7 @@ const sel = document.getElementById("panelScope");
 chrome.storage.local.get("gexsync-cfg", (r) => { sel.value = r["gexsync-cfg"]?.panelScope || "page"; });
 sel.addEventListener("change", () => chrome.storage.local.set({ "gexsync-cfg": { panelScope: sel.value } }));
 
-// Replay sync config: { armed, mode }
+// Replay sync config: { armed }
 const armed = document.getElementById("replayArmed");
-const mode = document.getElementById("replayMode");
-const saveReplay = () => chrome.storage.local.set({ "replay-cfg": { armed: armed.checked, mode: mode.value } });
-chrome.storage.local.get("replay-cfg", (r) => {
-  armed.checked = !!r["replay-cfg"]?.armed;
-  mode.value = r["replay-cfg"]?.mode || "fraction";
-});
-armed.addEventListener("change", saveReplay);
-mode.addEventListener("change", saveReplay);
+chrome.storage.local.get("replay-cfg", (r) => { armed.checked = !!r["replay-cfg"]?.armed; });
+armed.addEventListener("change", () => chrome.storage.local.set({ "replay-cfg": { armed: armed.checked } }));
