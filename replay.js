@@ -23,6 +23,7 @@
   const HEARTBEAT_MS = 2000;// master re-broadcasts time this often while playing
   let seekSeq = 0, lastSeekSent = 0;
   let timeMap = null, mapMax = -1, building = false, calibrating = false; // index↔time map
+  let scrubUntil = 0; // suppress live-position updates while dragging the mini scrubber
   let cfg = { armed: false, master: null, heartbeat: true };
   const ME = Math.random().toString(36).slice(2);
   let lastMasterTod = null, clientNoData = false; // client display state
@@ -285,7 +286,11 @@
         @keyframes calpulse { 0%,100%{opacity:.35} 50%{opacity:1} }
         .rest { display:flex; align-items:center; gap:3px; max-width:0; opacity:0; overflow:hidden;
           transition:max-width .42s cubic-bezier(.4,0,.2,1), opacity .25s ease, margin-left .3s ease; }
-        .bar[data-open="1"] .rest { max-width:760px; opacity:1; margin-left:4px; }
+        .bar[data-open="1"] .rest { max-width:940px; opacity:1; margin-left:4px; }
+        .scrub { width:130px; height:4px; -webkit-appearance:none; appearance:none; margin:0 4px;
+          background:rgba(255,255,255,.22); border-radius:9999px; cursor:pointer; outline:none; flex:0 0 auto; }
+        .scrub::-webkit-slider-thumb { -webkit-appearance:none; width:13px; height:13px; border-radius:50%; background:#e7e9ea; cursor:pointer; }
+        .scrub::-moz-range-thumb { width:13px; height:13px; border:none; border-radius:50%; background:#e7e9ea; cursor:pointer; }
         .b { flex:0 0 auto; height:34px; min-width:34px; padding:0 8px; border-radius:9999px; border:none;
           background:transparent; color:#e7e9ea; cursor:pointer; font:inherit; font-size:13px;
           display:flex; align-items:center; justify-content:center; line-height:1; }
@@ -326,6 +331,7 @@
             <span class="sep"></span>
             <button class="b speed" data-cmd="speed" title="Speed">1x</button>
             <span class="sep"></span>
+            <input class="scrub" type="range" min="0" max="100" value="0" title="Scrub position">
             <b class="mtime" title="Replay time">—</b>
             <span class="sep"></span>
             <button class="b lc" data-cmd="loadall" title="Load history on all tabs">load</button>
@@ -342,7 +348,7 @@
     const bar = root.querySelector(".bar");
     barUI = { bar, arm: root.querySelector(".arm input"), pp: root.querySelector(".pp"),
       speed: root.querySelector(".speed"), count: root.querySelector(".count"),
-      foll: root.querySelector(".foll"), ftime: root.querySelector(".ftime"), mtime: root.querySelector(".mtime") };
+      foll: root.querySelector(".foll"), ftime: root.querySelector(".ftime"), mtime: root.querySelector(".mtime"), scrub: root.querySelector(".scrub") };
 
     // Hover opens; leaving keeps it up briefly (or forever if pinned by click).
     const anchor = root.querySelector(".anchor");
@@ -369,6 +375,9 @@
       else if (cmd === "clearall") { btnByText("clear history")?.click(); send({ action: "clear" }); }
       else btnByIcon(stepIcon[cmd])?.click();
     }));
+    // mini scrubber → drive the native slider (master's input listener then
+    // broadcasts the resulting time, so clients follow by time via the map).
+    barUI.scrub.addEventListener("input", () => { scrubUntil = performance.now() + 500; setSlider(+barUI.scrub.value); });
 
     refreshRole();
     setInterval(async () => {
@@ -380,8 +389,11 @@
     // Time readout: sampled fast, straight from this tab's live panel time
     // (falls back to the map's index→time if the readout is hidden/collapsed).
     setInterval(() => {
-      if (isMaster()) barUI.mtime.textContent = fmtTod(localTod());
-      else barUI.ftime.textContent = fmtTod(clientNoData ? lastMasterTod : localTod());
+      if (isMaster()) {
+        barUI.mtime.textContent = fmtTod(localTod());
+        const el = slider();
+        if (el) { if (barUI.scrub.max !== el.max) barUI.scrub.max = el.max; if (performance.now() > scrubUntil) barUI.scrub.value = el.value; } // reflect live position unless actively dragging
+      } else barUI.ftime.textContent = fmtTod(clientNoData ? lastMasterTod : localTod());
     }, 120);
   }
   if (document.body) buildBar(); else window.addEventListener("DOMContentLoaded", buildBar);
