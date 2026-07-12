@@ -63,7 +63,12 @@
     return best;
   }
   const parseTod = (txt) => { const m = txt?.match(/(\d{1,2}):(\d{2}):(\d{2})\s*([AP])/i); if (!m) return null; let h = +m[1] % 12; if (/p/i.test(m[4])) h += 12; return h * 3600 + +m[2] * 60 + +m[3]; };
-  const readTod = () => parseTod(replayTimeEl()?.textContent.trim());
+  let _tEl = null; // cache the time element so frequent reads don't re-scan the DOM
+  function timeEl() {
+    if (_tEl && _tEl.isConnected && /^\d{1,2}:\d{2}:\d{2}\s*[AP]M$/i.test(_tEl.textContent.trim())) return _tEl;
+    return (_tEl = replayTimeEl());
+  }
+  const readTod = () => parseTod(timeEl()?.textContent.trim());
   const fmtTod = (s) => { if (s == null) return "—"; let h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60), ss = s % 60, ap = h >= 12 ? "PM" : "AM"; h = h % 12 || 12; return `${h}:${String(m).padStart(2, "0")}:${String(ss).padStart(2, "0")} ${ap}`; };
 
   function setSlider(value) {
@@ -368,10 +373,16 @@
     refreshRole();
     setInterval(async () => {
       bar.dataset.cal = calibrating ? "1" : "0";
-      if (isMaster()) { barUI.pp.innerHTML = isPlaying() ? IC.pause : IC.play; const sl = speedLabel(); if (sl) barUI.speed.textContent = sl; barUI.mtime.textContent = fmtTod(localTod()); }
-      else { bar.classList.toggle("nodata", clientNoData); barUI.foll.textContent = clientNoData ? "no data" : "following"; barUI.ftime.textContent = fmtTod(lastMasterTod); }
+      if (isMaster()) { barUI.pp.innerHTML = isPlaying() ? IC.pause : IC.play; const sl = speedLabel(); if (sl) barUI.speed.textContent = sl; }
+      else { bar.classList.toggle("nodata", clientNoData); barUI.foll.textContent = clientNoData ? "no data" : "following"; }
       barUI.count.textContent = (await presentIds()).size || "·";
     }, 500);
+    // Time readout: sampled fast, straight from this tab's live panel time
+    // (falls back to the map's index→time if the readout is hidden/collapsed).
+    setInterval(() => {
+      if (isMaster()) barUI.mtime.textContent = fmtTod(localTod());
+      else barUI.ftime.textContent = fmtTod(clientNoData ? lastMasterTod : localTod());
+    }, 120);
   }
   if (document.body) buildBar(); else window.addEventListener("DOMContentLoaded", buildBar);
 })();
