@@ -24,16 +24,19 @@
   let seekSeq = 0, lastSeekSent = 0;
   let timeMap = null, mapMax = -1, building = false, calibrating = false; // index↔time map
   let scrubUntil = 0; // suppress live-position updates while dragging the mini scrubber
-  let cfg = { armed: false, master: null, heartbeat: true, debug: false };
+  const PAGE = location.pathname;           // "/state" | "/classic" — master & count are per page
+  let cfg = { armed: false, master: {}, heartbeat: true, debug: false };
   const ME = Math.random().toString(36).slice(2);
   let lastMasterTod = null, clientNoData = false; // client display state
   let barUI = null;
 
-  const isMaster = () => cfg.armed && cfg.master === ME;
+  const masterMap = () => (cfg.master && typeof cfg.master === "object" ? cfg.master : {}); // tolerate old string/null
+  const isMaster = () => cfg.armed && masterMap()[PAGE] === ME;
+  const claimMaster = () => writeCfg({ master: { ...masterMap(), [PAGE]: ME } });
   const wait = (ms) => new Promise((r) => setTimeout(r, ms));
   const clamp = (v, max) => Math.min(max, Math.max(0, v));
   const send = (obj) => { if (isMaster() && chrome.runtime?.id) chrome.storage.local.set({ [KEY]: { ...obj, from: ME, t: performance.now() } }); };
-  const writeCfg = (patch) => { if (chrome.runtime?.id) chrome.storage.local.set({ [CFG_KEY]: { ...cfg, ...patch } }); };
+  const writeCfg = (patch) => { try { if (chrome.runtime?.id) chrome.storage.local.set({ [CFG_KEY]: { ...cfg, ...patch } }); } catch (e) { /* orphaned on reload */ } };
 
   chrome.storage.local.get(CFG_KEY, (r) => { if (r[CFG_KEY]) cfg = { ...cfg, ...r[CFG_KEY] }; if (barUI) refreshRole(); });
 
@@ -228,18 +231,21 @@
   // master heartbeat: while playing (and enabled), re-broadcast time so clients track
   setInterval(() => { if (isMaster() && cfg.heartbeat && isPlaying()) bcastSeek(true); }, HEARTBEAT_MS);
 
-  // ---- presence + master election ----
-  const beat = () => { if (chrome.runtime?.id) chrome.storage.local.set({ [PP + ME]: { t: Date.now() } }); };
-  async function presentIds() {
-    if (!chrome.runtime?.id) return new Set();
+  // ---- presence + per-page master election ----
+  const beat = () => { if (chrome.runtime?.id) chrome.storage.local.set({ [PP + ME]: { t: Date.now(), page: PAGE } }); };
+  async function presentEntries() {
+    if (!chrome.runtime?.id) return [];
     const all = await chrome.storage.local.get(null);
     const now = Date.now();
-    return new Set(Object.entries(all).filter(([k, v]) => k.startsWith(PP) && v && now - v.t < 8000).map(([k]) => k.slice(PP.length)));
+    return Object.entries(all).filter(([k, v]) => k.startsWith(PP) && v && now - v.t < 8000).map(([k, v]) => ({ id: k.slice(PP.length), page: v.page }));
   }
+  const presentIds = async () => new Set((await presentEntries()).map((e) => e.id)); // liveness (any page)
+  const pageCount = async () => (await presentEntries()).filter((e) => e.page === PAGE).length; // same-page count
   async function elect() {
     if (!cfg.armed) return;
     const present = await presentIds();
-    if (!cfg.master || !present.has(cfg.master)) writeCfg({ master: ME }); // first-armed / vacant → claim
+    const cur = masterMap()[PAGE];
+    if (!cur || !present.has(cur)) claimMaster(); // this page's master is vacant/dead → claim
   }
   beat(); setInterval(() => { beat(); elect(); maybeBuildMap(); }, 3000);
   setTimeout(maybeBuildMap, 1500); // build the map shortly after load
@@ -371,7 +377,7 @@
     });
 
     barUI.arm.addEventListener("change", () => { writeCfg({ armed: barUI.arm.checked }); });
-    root.querySelector(".take").addEventListener("click", () => writeCfg({ armed: true, master: ME }));
+    root.querySelector(".take").addEventListener("click", () => writeCfg({ armed: true, master: { ...masterMap(), [PAGE]: ME } }));
     // master controls → drive native controls; the master's native listeners
     // broadcast the resulting time. load/clear-all fan a command to every tab.
     root.querySelectorAll(".master-only .b").forEach((b) => b.addEventListener("click", () => {
@@ -392,7 +398,7 @@
       bar.dataset.cal = calibrating ? "1" : "0";
       if (isMaster()) { barUI.pp.innerHTML = isPlaying() ? IC.pause : IC.play; const sl = speedLabel(); if (sl) barUI.speed.textContent = sl; }
       else { bar.classList.toggle("nodata", clientNoData); barUI.foll.textContent = clientNoData ? "no data" : "following"; }
-      barUI.count.textContent = (await presentIds()).size || "·";
+      barUI.count.textContent = (await pageCount()) || "·";
       if (cfg.debug) {
         const tk = document.querySelector('input[role=combobox]')?.value || "?";
         badge.style.display = "block";
