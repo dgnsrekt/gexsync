@@ -13,8 +13,7 @@
 // First armed tab becomes master; any client can take control. Bus =
 // chrome.storage.local, page-scoped.
 (function () {
-  const KEY = "replay" + location.pathname; // per page: /state vs /classic
-  const CFG_KEY = "replay-cfg";             // shared: { armed, master, heartbeat }
+  const CFG_KEY = "replay-cfg";             // shared: { armed, master, heartbeat, scope }
   const PP = "rp:";                         // presence heartbeat keys
   const LOCK_KEY = "replay-callock";        // only one tab calibrates at a time (avoids browser freeze)
   const TOL_SEC = 2;        // secant "aligned" tolerance
@@ -25,18 +24,23 @@
   let seekSeq = 0, lastSeekSent = 0;
   let timeMap = null, mapMax = -1, building = false, calibrating = false; // index↔time map
   let scrubUntil = 0; // suppress live-position updates while dragging the mini scrubber
-  const PAGE = location.pathname;           // "/state" | "/classic" — master & count are per page
-  let cfg = { armed: false, master: {}, heartbeat: true, debug: false };
+  const PAGE = location.pathname;           // "/state" | "/classic"
+  let cfg = { armed: false, master: {}, heartbeat: true, debug: false, scope: "page" };
   const ME = Math.random().toString(36).slice(2);
   let lastMasterTod = null, clientNoData = false; // client display state
   let barUI = null;
 
+  // Sync group: "page" keeps state & classic separate; "all" syncs them together
+  // (works because alignment is by wall-clock time). Channel, master, and count
+  // are all keyed by this group.
+  const groupKey = () => (cfg.scope === "all" ? "all" : PAGE);
+  const chan = () => "replay:" + groupKey();
   const masterMap = () => (cfg.master && typeof cfg.master === "object" ? cfg.master : {}); // tolerate old string/null
-  const isMaster = () => cfg.armed && masterMap()[PAGE] === ME;
-  const claimMaster = () => writeCfg({ master: { ...masterMap(), [PAGE]: ME } });
+  const isMaster = () => cfg.armed && masterMap()[groupKey()] === ME;
+  const claimMaster = () => writeCfg({ master: { ...masterMap(), [groupKey()]: ME } });
   const wait = (ms) => new Promise((r) => setTimeout(r, ms));
   const clamp = (v, max) => Math.min(max, Math.max(0, v));
-  const send = (obj) => { if (isMaster() && chrome.runtime?.id) chrome.storage.local.set({ [KEY]: { ...obj, from: ME, t: performance.now() } }); };
+  const send = (obj) => { if (isMaster() && chrome.runtime?.id) chrome.storage.local.set({ [chan()]: { ...obj, from: ME, t: performance.now() } }); };
   const writeCfg = (patch) => { try { if (chrome.runtime?.id) chrome.storage.local.set({ [CFG_KEY]: { ...cfg, ...patch } }); } catch (e) { /* orphaned on reload */ } };
 
   chrome.storage.local.get(CFG_KEY, (r) => { if (r[CFG_KEY]) cfg = { ...cfg, ...r[CFG_KEY] }; if (barUI) refreshRole(); });
@@ -213,7 +217,7 @@
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area !== "local") return;
     if (changes[CFG_KEY]?.newValue) { cfg = { ...cfg, ...changes[CFG_KEY].newValue }; refreshRole(); elect(); }
-    const msg = changes[KEY]?.newValue;
+    const msg = changes[chan()]?.newValue;
     if (cfg.armed && !isMaster() && msg && msg.from !== ME) apply(msg); // only clients apply
   });
 
@@ -260,11 +264,11 @@
     return Object.entries(all).filter(([k, v]) => k.startsWith(PP) && v && now - v.t < 8000).map(([k, v]) => ({ id: k.slice(PP.length), page: v.page }));
   }
   const presentIds = async () => new Set((await presentEntries()).map((e) => e.id)); // liveness (any page)
-  const pageCount = async () => (await presentEntries()).filter((e) => e.page === PAGE).length; // same-page count
+  const pageCount = async () => { const es = await presentEntries(); return cfg.scope === "all" ? es.length : es.filter((e) => e.page === PAGE).length; }; // group count
   async function elect() {
     if (!cfg.armed) return;
     const present = await presentIds();
-    const cur = masterMap()[PAGE];
+    const cur = masterMap()[groupKey()];
     if (!cur || !present.has(cur)) claimMaster(); // this page's master is vacant/dead → claim
   }
   beat(); setInterval(() => { beat(); elect(); maybeBuildMap(); }, 3000);
@@ -398,7 +402,7 @@
     });
 
     barUI.arm.addEventListener("change", () => { writeCfg({ armed: barUI.arm.checked }); });
-    root.querySelector(".take").addEventListener("click", () => writeCfg({ armed: true, master: { ...masterMap(), [PAGE]: ME } }));
+    root.querySelector(".take").addEventListener("click", () => writeCfg({ armed: true, master: { ...masterMap(), [groupKey()]: ME } }));
     // master controls → drive native controls; the master's native listeners
     // broadcast the resulting time. load/clear-all fan a command to every tab.
     root.querySelectorAll(".master-only .b").forEach((b) => b.addEventListener("click", () => {

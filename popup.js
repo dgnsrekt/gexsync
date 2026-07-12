@@ -34,14 +34,17 @@ sel.addEventListener("change", () => chrome.storage.local.set({ "gexsync-cfg": {
 const armed = document.getElementById("replayArmed");
 const track = document.getElementById("replayTrack");
 const dbg = document.getElementById("replayDebug");
+const scope = document.getElementById("replayScope");
 chrome.storage.local.get("replay-cfg", (r) => {
   const c = r["replay-cfg"] || {};
   armed.checked = !!c.armed;
   track.value = c.heartbeat === false ? "onpause" : "heartbeat";
   dbg.checked = !!c.debug;
+  scope.value = c.scope === "all" ? "all" : "page";
 });
 const saveReplay = () => chrome.storage.local.get("replay-cfg", (r) =>
-  chrome.storage.local.set({ "replay-cfg": { ...(r["replay-cfg"] || {}), armed: armed.checked, heartbeat: track.value === "heartbeat", debug: dbg.checked } }));
+  chrome.storage.local.set({ "replay-cfg": { ...(r["replay-cfg"] || {}), armed: armed.checked, heartbeat: track.value === "heartbeat", debug: dbg.checked, scope: scope.value } }));
 armed.addEventListener("change", saveReplay);
 track.addEventListener("change", saveReplay);
 dbg.addEventListener("change", saveReplay);
+scope.addEventListener("change", saveReplay);
