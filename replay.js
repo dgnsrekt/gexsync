@@ -106,7 +106,8 @@
     raw.sort((a, b) => a.i - b.i);
     const map = [];
     for (const p of raw) if (!map.length || p.tod > map[map.length - 1].tod) map.push(p);
-    timeMap = map.length >= 2 ? map : null;
+    const span = map.length ? map[map.length - 1].tod - map[0].tod : 0;
+    timeMap = map.length >= 2 && span > 300 ? map : null; // reject degenerate maps (stale/hidden build reads one time)
     setSlider(savedIdx);
     if (wasPlaying) { await wait(SETTLE); transportBtn()?.click(); } // resume
     calibrating = false;
@@ -131,6 +132,7 @@
   async function maybeBuildMap() {
     const el = slider();
     if (!el || building || calibrating) return;
+    if (document.hidden) return; // hidden tabs don't repaint the chart → stale reads → garbage map
     const max = +el.max || 0;
     if (max === mapMax && timeMap) return;
     if (max < 2) { timeMap = null; mapMax = max; return; }
@@ -267,6 +269,7 @@
   }
   beat(); setInterval(() => { beat(); elect(); maybeBuildMap(); }, 3000);
   setTimeout(maybeBuildMap, 1500); // build the map shortly after load
+  document.addEventListener("visibilitychange", () => { if (!document.hidden) maybeBuildMap(); }); // build/rebuild once the tab is actually visible
   window.addEventListener("beforeunload", () => { if (chrome.runtime?.id) chrome.storage.local.remove(PP + ME); });
 
   // ---- floating bar (shadow DOM, corner-anchored expand) ----
