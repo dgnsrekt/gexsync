@@ -33,12 +33,15 @@ sel.addEventListener("change", () => chrome.storage.local.set({ "gexsync-cfg": {
 // Replay sync config: { armed, master, heartbeat } — merge on write to keep master.
 const armed = document.getElementById("replayArmed");
 const track = document.getElementById("replayTrack");
+const dbg = document.getElementById("replayDebug");
 chrome.storage.local.get("replay-cfg", (r) => {
   const c = r["replay-cfg"] || {};
   armed.checked = !!c.armed;
   track.value = c.heartbeat === false ? "onpause" : "heartbeat";
+  dbg.checked = !!c.debug;
 });
 const saveReplay = () => chrome.storage.local.get("replay-cfg", (r) =>
-  chrome.storage.local.set({ "replay-cfg": { ...(r["replay-cfg"] || {}), armed: armed.checked, heartbeat: track.value === "heartbeat" } }));
+  chrome.storage.local.set({ "replay-cfg": { ...(r["replay-cfg"] || {}), armed: armed.checked, heartbeat: track.value === "heartbeat", debug: dbg.checked } }));
 armed.addEventListener("change", saveReplay);
 track.addEventListener("change", saveReplay);
+dbg.addEventListener("change", saveReplay);

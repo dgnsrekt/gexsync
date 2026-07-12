@@ -24,7 +24,7 @@
   let seekSeq = 0, lastSeekSent = 0;
   let timeMap = null, mapMax = -1, building = false, calibrating = false; // index↔time map
   let scrubUntil = 0; // suppress live-position updates while dragging the mini scrubber
-  let cfg = { armed: false, master: null, heartbeat: true };
+  let cfg = { armed: false, master: null, heartbeat: true, debug: false };
   const ME = Math.random().toString(36).slice(2);
   let lastMasterTod = null, clientNoData = false; // client display state
   let barUI = null;
@@ -345,6 +345,14 @@
         </div>
       </div>`;
     (document.body || document.documentElement).appendChild(host);
+
+    // debug badge: a big readable per-tab id (+ page/ticker/role) so tabs are
+    // easy to identify across monitors. Toggled by the popup "Debug badge".
+    const badge = document.createElement("div");
+    badge.id = "gexsync-debug-badge";
+    badge.style.cssText = "position:fixed;top:8px;left:8px;z-index:2147483001;padding:5px 11px;border-radius:7px;background:rgba(0,0,0,.82);color:#4ade80;font:bold 15px ui-monospace,SFMono-Regular,monospace;letter-spacing:.5px;pointer-events:none;display:none;box-shadow:0 4px 16px rgba(0,0,0,.5);";
+    document.documentElement.appendChild(badge);
+
     const bar = root.querySelector(".bar");
     barUI = { bar, arm: root.querySelector(".arm input"), pp: root.querySelector(".pp"),
       speed: root.querySelector(".speed"), count: root.querySelector(".count"),
@@ -385,6 +393,11 @@
       if (isMaster()) { barUI.pp.innerHTML = isPlaying() ? IC.pause : IC.play; const sl = speedLabel(); if (sl) barUI.speed.textContent = sl; }
       else { bar.classList.toggle("nodata", clientNoData); barUI.foll.textContent = clientNoData ? "no data" : "following"; }
       barUI.count.textContent = (await presentIds()).size || "·";
+      if (cfg.debug) {
+        const tk = document.querySelector('input[role=combobox]')?.value || "?";
+        badge.style.display = "block";
+        badge.textContent = `#${ME.slice(0, 4).toUpperCase()} · ${location.pathname.slice(1)} · ${tk} · ${isMaster() ? "MASTER" : cfg.armed ? "client" : "off"}`;
+      } else badge.style.display = "none";
     }, 500);
     // Time readout: sampled fast, straight from this tab's live panel time
     // (falls back to the map's index→time if the readout is hidden/collapsed).
