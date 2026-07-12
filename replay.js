@@ -16,6 +16,7 @@
   const KEY = "replay" + location.pathname; // per page: /state vs /classic
   const CFG_KEY = "replay-cfg";             // shared: { armed, master, heartbeat }
   const PP = "rp:";                         // presence heartbeat keys
+  const LOCK_KEY = "replay-callock";        // only one tab calibrates at a time (avoids browser freeze)
   const TOL_SEC = 2;        // secant "aligned" tolerance
   const GATE_SEC = 60;      // client must have data within this of the target
   const SETTLE = 120;       // ms for the time readout to update after a set
@@ -98,6 +99,7 @@
       await wait(SETTLE);
       const tod = readTod();
       if (tod != null) raw.push({ i: +el.value, tod });
+      if (k % 10 === 0 && chrome.runtime?.id) chrome.storage.local.set({ [LOCK_KEY]: { holder: ME, t: Date.now() } }); // keep the lock alive (slow bg tabs)
     }
     // collect-then-clean: sort by index, keep the strictly-increasing-tod
     // subsequence (drops the odd stale read instead of aborting the whole map)
@@ -110,6 +112,21 @@
     calibrating = false;
     if (barUI) barUI.bar.dataset.maplen = timeMap ? timeMap.length : 0;
   }
+  // Serialize calibration across tabs: only one holds the lock at a time, so we
+  // never redraw N charts at once (that froze the whole browser). Dead holders
+  // expire after 15s; the holder heartbeats during its long/throttled build.
+  async function acquireCalLock() {
+    if (!chrome.runtime?.id) return false;
+    const lock = (await chrome.storage.local.get(LOCK_KEY))[LOCK_KEY];
+    if (lock && lock.holder !== ME && Date.now() - lock.t < 15000) return false; // someone else calibrating
+    await chrome.storage.local.set({ [LOCK_KEY]: { holder: ME, t: Date.now() } });
+    await wait(250); // let a simultaneous claim settle, then confirm we won
+    return !!chrome.runtime?.id && (await chrome.storage.local.get(LOCK_KEY))[LOCK_KEY]?.holder === ME;
+  }
+  async function releaseCalLock() {
+    if (!chrome.runtime?.id) return;
+    if ((await chrome.storage.local.get(LOCK_KEY))[LOCK_KEY]?.holder === ME) await chrome.storage.local.remove(LOCK_KEY);
+  }
   let buildTries = 0;
   async function maybeBuildMap() {
     const el = slider();
@@ -117,9 +134,10 @@
     const max = +el.max || 0;
     if (max === mapMax && timeMap) return;
     if (max < 2) { timeMap = null; mapMax = max; return; }
+    if (!(await acquireCalLock())) return; // another tab is calibrating; retry next tick
     mapMax = max;
     building = true;
-    try { await buildMap(max); } finally { building = false; }
+    try { await buildMap(max); } finally { building = false; await releaseCalLock(); }
     if (!timeMap && buildTries++ < 3) mapMax = -1; // self-heal: retry a few times
   }
   function todToIndex(tod) {
