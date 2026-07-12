@@ -25,7 +25,8 @@
   let timeMap = null, mapMax = -1, building = false, calibrating = false; // index↔time map
   let scrubUntil = 0; // suppress live-position updates while dragging the mini scrubber
   const PAGE = location.pathname;           // "/state" | "/classic"
-  let cfg = { armed: false, master: {}, heartbeat: true, debug: false, scope: "page" };
+  let cfg = { armed: false, master: {}, heartbeat: true, debug: false, scope: "page", autorestart: false };
+  let allReadyDone = false; // fired the auto-restart for this calibration cycle
   const ME = Math.random().toString(36).slice(2);
   let lastMasterTod = null, clientNoData = false; // client display state
   let barUI = null;
@@ -256,15 +257,20 @@
   setInterval(() => { if (isMaster() && cfg.heartbeat && isPlaying()) bcastSeek(true); }, HEARTBEAT_MS);
 
   // ---- presence + per-page master election ----
-  const beat = () => { if (chrome.runtime?.id) chrome.storage.local.set({ [PP + ME]: { t: Date.now(), page: PAGE } }); };
+  // "ready" = this tab has a usable map, or nothing to calibrate, or is hidden
+  // (hidden tabs calibrate when shown, so they don't block the group).
+  const selfReady = () => timeMap != null || (+(slider()?.max) || 0) < 2 || document.hidden;
+  const beat = () => { if (chrome.runtime?.id) chrome.storage.local.set({ [PP + ME]: { t: Date.now(), page: PAGE, ready: selfReady() } }); };
   async function presentEntries() {
     if (!chrome.runtime?.id) return [];
     const all = await chrome.storage.local.get(null);
     const now = Date.now();
-    return Object.entries(all).filter(([k, v]) => k.startsWith(PP) && v && now - v.t < 8000).map(([k, v]) => ({ id: k.slice(PP.length), page: v.page }));
+    return Object.entries(all).filter(([k, v]) => k.startsWith(PP) && v && now - v.t < 8000).map(([k, v]) => ({ id: k.slice(PP.length), page: v.page, ready: v.ready }));
   }
   const presentIds = async () => new Set((await presentEntries()).map((e) => e.id)); // liveness (any page)
-  const pageCount = async () => { const es = await presentEntries(); return cfg.scope === "all" ? es.length : es.filter((e) => e.page === PAGE).length; }; // group count
+  const inGroup = (e) => cfg.scope === "all" || e.page === PAGE;
+  const pageCount = async () => (await presentEntries()).filter(inGroup).length; // group count
+  async function groupReady() { const es = (await presentEntries()).filter(inGroup); return { n: es.filter((e) => e.ready).length, m: es.length }; }
   async function elect() {
     if (!cfg.armed) return;
     const present = await presentIds();
@@ -384,6 +390,16 @@
     badge.style.cssText = "position:fixed;top:8px;left:8px;z-index:2147483001;padding:5px 11px;border-radius:7px;background:rgba(0,0,0,.82);color:#4ade80;font:bold 15px ui-monospace,SFMono-Regular,monospace;letter-spacing:.5px;pointer-events:none;display:none;box-shadow:0 4px 16px rgba(0,0,0,.5);";
     document.documentElement.appendChild(badge);
 
+    // calibration overlay: blocks interaction + shows group progress ("2 / 4")
+    const overlay = document.createElement("div");
+    overlay.id = "gexsync-cal-overlay";
+    overlay.style.cssText = "position:fixed;inset:0;z-index:2147483002;display:none;align-items:center;justify-content:center;background:rgba(8,8,14,.55);backdrop-filter:blur(2px);font-family:system-ui,-apple-system,sans-serif;color:#e7e9ea;";
+    overlay.innerHTML = `<div style="padding:22px 30px;border-radius:14px;background:rgba(20,18,32,.94);border:1px solid rgba(255,255,255,.14);box-shadow:0 24px 70px rgba(0,0,0,.6);text-align:center">
+      <div style="font:600 15px system-ui">Calibrating replay…</div>
+      <div class="calprog" style="margin-top:10px;color:#4ade80;font:700 26px ui-monospace,monospace">0 / 0</div>
+      <div style="margin-top:8px;color:#9aa0aa;font-size:12px">building time maps — please don't start playback yet</div></div>`;
+    document.documentElement.appendChild(overlay);
+
     const bar = root.querySelector(".bar");
     barUI = { bar, arm: root.querySelector(".arm input"), pp: root.querySelector(".pp"),
       speed: root.querySelector(".speed"), count: root.querySelector(".count"),
@@ -424,6 +440,15 @@
       if (isMaster()) { barUI.pp.innerHTML = isPlaying() ? IC.pause : IC.play; const sl = speedLabel(); if (sl) barUI.speed.textContent = sl; }
       else { bar.classList.toggle("nodata", clientNoData); barUI.foll.textContent = clientNoData ? "no data" : "following"; }
       barUI.count.textContent = (await pageCount()) || "·";
+      // calibration overlay + auto-restart when the whole group finishes
+      const { n, m } = await groupReady();
+      const waiting = cfg.armed && !document.hidden && m > 0 && n < m;
+      overlay.style.display = waiting ? "flex" : "none";
+      if (waiting) overlay.querySelector(".calprog").textContent = `${n} / ${m}`;
+      if (m > 0 && n >= m) {
+        if (cfg.autorestart && !allReadyDone && isMaster() && !document.hidden) setSlider(0); // master restarts; clients follow
+        allReadyDone = true;
+      } else allReadyDone = false;
       if (cfg.debug) {
         const tk = document.querySelector('input[role=combobox]')?.value || "?";
         badge.style.display = "block";
