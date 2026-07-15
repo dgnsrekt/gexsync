@@ -454,7 +454,7 @@
       if (cfg.debug) {
         const tk = document.querySelector('input[role=combobox]')?.value || "?";
         badge.style.display = "block";
-        badge.textContent = `#${ME.slice(0, 4).toUpperCase()} · ${location.pathname.slice(1)} · ${tk} · ${!active() ? "live" : isMaster() ? "MASTER" : "client"}`;
+        badge.textContent = `#${ME.slice(0, 4).toUpperCase()} · ${location.pathname.slice(1)} · ${tk} · ${active() ? (isMaster() ? "MASTER" : "client") : mode === "live" ? "profiles" : mode}`;
       } else badge.style.display = "none";
     }, 500);
     // Time readout: sampled fast, straight from this tab's live panel time
