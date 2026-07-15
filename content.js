@@ -15,6 +15,13 @@
   const panelKey = () => scopedKey("gexsync-panel", panelScope);
   chrome.storage.local.get(CFG_KEY, (r) => { if (r[CFG_KEY]?.panelScope) panelScope = r[CFG_KEY].panelScope; });
 
+  // Mode gates what syncs: "live" syncs gex + options profiles; "replay" leaves
+  // them independent per tab (only panel-collapse syncs here, always). Shared key.
+  const MODE_KEY = "gexsync-mode";
+  let mode = "live";
+  chrome.storage.local.get(MODE_KEY, (r) => { if (r[MODE_KEY]) mode = r[MODE_KEY]; });
+  const liveSync = () => mode !== "replay";
+
   function keywordOf(btn) {
     const t = btn.textContent.toLowerCase();
     if (t.includes("90d")) return "90d";
@@ -52,7 +59,7 @@
   function watch(group, groupName) {
     if (!group) return;
     new MutationObserver(() => {
-      if (applyingRemote) return;
+      if (applyingRemote || !liveSync()) return; // gex/options only sync in Live mode
       const keyword = selectedKeyword(group);
       // ponytail: t forces onChanged to fire even when keyword repeats
       if (keyword) send({ [KEY]: { group: groupName, keyword, t: performance.now() } });
@@ -119,7 +126,7 @@
 
   // Delegated change listener survives the re-render when latest/next flips.
   document.addEventListener("change", (e) => {
-    if (applyingRemote || !e.target.closest?.(".MuiSwitch-root")) return;
+    if (applyingRemote || !liveSync() || !e.target.closest?.(".MuiSwitch-root")) return;
     const sw = getSwitches(), state = {};
     for (const k of OPTS) if (sw[k]) state[k] = sw[k].checked;
     send({ [OPTS_KEY]: { state, t: performance.now() } });
@@ -145,9 +152,10 @@
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area !== "local") return;
     if (changes[CFG_KEY]?.newValue?.panelScope) panelScope = changes[CFG_KEY].newValue.panelScope;
-    if (changes[KEY]?.newValue) applyProfile(changes[KEY].newValue.group, changes[KEY].newValue.keyword);
-    if (changes[panelKey()]?.newValue) applyPanel(changes[panelKey()].newValue.collapsed);
-    if (changes[OPTS_KEY]?.newValue) applyOpts(changes[OPTS_KEY].newValue.state);
+    if (changes[MODE_KEY]?.newValue) mode = changes[MODE_KEY].newValue;
+    if (liveSync() && changes[KEY]?.newValue) applyProfile(changes[KEY].newValue.group, changes[KEY].newValue.keyword);
+    if (changes[panelKey()]?.newValue) applyPanel(changes[panelKey()].newValue.collapsed); // panel always
+    if (liveSync() && changes[OPTS_KEY]?.newValue) applyOpts(changes[OPTS_KEY].newValue.state);
   });
 
   // SPA renders late; poll until controls exist, attach each once.

@@ -4,8 +4,17 @@
   <b>GexSync</b>
   <div id="count" style="margin-top:6px;color:#555">counting…</div>
   <div id="tabs" style="margin-top:8px;font:12px ui-monospace,monospace"></div>
+
   <label style="display:block;margin-top:12px">
-    Panel-collapse sync:
+    <b>Mode</b>
+    <select id="modeSel" style="margin-top:4px;width:100%">
+      <option value="live">Live — sync gex + options profiles</option>
+      <option value="replay">Replay — sync transport, profiles independent</option>
+    </select>
+  </label>
+
+  <label style="display:block;margin-top:12px">
+    Panel-collapse sync (both modes):
     <select id="panelScope" style="margin-top:4px;width:100%">
       <option value="page">By page (state / classic separate)</option>
       <option value="all">All tabs</option>
@@ -13,15 +22,9 @@
   </label>
 
   <hr style="margin:12px 0;border:none;border-top:1px solid #ddd">
-  <b>Replay sync</b>
+  <b>Replay settings</b>
   <div style="margin-top:4px;color:#777;font-size:12px">
-    Set each tab's ticker, date &amp; load history first, then arm.
-  </div>
-  <label style="display:block;margin-top:8px">
-    <input type="checkbox" id="replayArmed"> Arm transport sync
-  </label>
-  <div style="margin-top:6px;color:#999;font-size:11px">
-    First armed tab is master; others follow. Aligns by time-of-day.
+    Active in Replay mode. Set each tab's ticker + date + load history; first tab is master, others follow (aligned by time-of-day).
   </div>
   <label style="display:block;margin-top:8px">
     Sync scope:

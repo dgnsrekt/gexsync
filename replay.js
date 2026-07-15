@@ -25,7 +25,10 @@
   let timeMap = null, mapMax = -1, building = false, calibrating = false; // index↔time map
   let scrubUntil = 0; // suppress live-position updates while dragging the mini scrubber
   const PAGE = location.pathname;           // "/state" | "/classic"
-  let cfg = { armed: false, master: {}, heartbeat: true, debug: false, scope: "page", autorestart: false };
+  const MODE_KEY = "gexsync-mode";          // shared: "live" | "replay"; replay is active only in Replay mode
+  let mode = "live";
+  const active = () => mode === "replay";
+  let cfg = { master: {}, heartbeat: true, debug: false, scope: "page", autorestart: false };
   let allReadyDone = false; // fired the auto-restart for this calibration cycle
   const ME = Math.random().toString(36).slice(2);
   let lastMasterTod = null, clientNoData = false; // client display state
@@ -37,14 +40,14 @@
   const groupKey = () => (cfg.scope === "all" ? "all" : PAGE);
   const chan = () => "replay:" + groupKey();
   const masterMap = () => (cfg.master && typeof cfg.master === "object" ? cfg.master : {}); // tolerate old string/null
-  const isMaster = () => cfg.armed && masterMap()[groupKey()] === ME;
+  const isMaster = () => active() && masterMap()[groupKey()] === ME;
   const claimMaster = () => writeCfg({ master: { ...masterMap(), [groupKey()]: ME } });
   const wait = (ms) => new Promise((r) => setTimeout(r, ms));
   const clamp = (v, max) => Math.min(max, Math.max(0, v));
   const send = (obj) => { if (isMaster() && chrome.runtime?.id) chrome.storage.local.set({ [chan()]: { ...obj, from: ME, t: performance.now() } }); };
   const writeCfg = (patch) => { try { if (chrome.runtime?.id) chrome.storage.local.set({ [CFG_KEY]: { ...cfg, ...patch } }); } catch (e) { /* orphaned on reload */ } };
 
-  chrome.storage.local.get(CFG_KEY, (r) => { if (r[CFG_KEY]) cfg = { ...cfg, ...r[CFG_KEY] }; if (barUI) refreshRole(); });
+  chrome.storage.local.get([CFG_KEY, MODE_KEY], (r) => { if (r[CFG_KEY]) cfg = { ...cfg, ...r[CFG_KEY] }; if (r[MODE_KEY]) mode = r[MODE_KEY]; if (barUI) refreshRole(); });
 
   // ---- element lookups ----
   const slider = () => document.querySelector('input[type=range]');
@@ -136,7 +139,7 @@
   let buildTries = 0;
   async function maybeBuildMap() {
     const el = slider();
-    if (!el || building || calibrating) return;
+    if (!el || building || calibrating || !active()) return; // only calibrate in Replay mode
     if (document.hidden) return; // hidden tabs don't repaint the chart → stale reads → garbage map
     const max = +el.max || 0;
     if (max === mapMax && timeMap) return;
@@ -218,8 +221,9 @@
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area !== "local") return;
     if (changes[CFG_KEY]?.newValue) { cfg = { ...cfg, ...changes[CFG_KEY].newValue }; refreshRole(); elect(); }
+    if (changes[MODE_KEY]?.newValue) { mode = changes[MODE_KEY].newValue; refreshRole(); elect(); if (active()) maybeBuildMap(); }
     const msg = changes[chan()]?.newValue;
-    if (cfg.armed && !isMaster() && msg && msg.from !== ME) apply(msg); // only clients apply
+    if (active() && !isMaster() && msg && msg.from !== ME) apply(msg); // only clients apply
   });
 
   // ---- master: broadcast local changes ----
@@ -259,7 +263,7 @@
   // ---- presence + per-page master election ----
   // "ready" = this tab has a usable map, or nothing to calibrate, or is hidden
   // (hidden tabs calibrate when shown, so they don't block the group).
-  const selfReady = () => timeMap != null || (+(slider()?.max) || 0) < 2 || document.hidden;
+  const selfReady = () => !active() || timeMap != null || (+(slider()?.max) || 0) < 2 || document.hidden;
   const beat = () => { if (chrome.runtime?.id) chrome.storage.local.set({ [PP + ME]: { t: Date.now(), page: PAGE, ready: selfReady() } }); };
   async function presentEntries() {
     if (!chrome.runtime?.id) return [];
@@ -272,7 +276,7 @@
   const pageCount = async () => (await presentEntries()).filter(inGroup).length; // group count
   async function groupReady() { const es = (await presentEntries()).filter(inGroup); return { n: es.filter((e) => e.ready).length, m: es.length }; }
   async function elect() {
-    if (!cfg.armed) return;
+    if (!active()) return;
     const present = await presentIds();
     const cur = masterMap()[groupKey()];
     if (!cur || !present.has(cur)) claimMaster(); // this page's master is vacant/dead → claim
@@ -285,9 +289,9 @@
   // ---- floating bar (shadow DOM, corner-anchored expand) ----
   function refreshRole() {
     if (!barUI) return;
+    barUI.host.style.display = active() ? "" : "none"; // bar (and overlay) only in Replay mode
     barUI.bar.dataset.role = isMaster() ? "master" : "client";
-    barUI.bar.dataset.armed = cfg.armed ? "1" : "0";
-    barUI.arm.checked = cfg.armed;
+    barUI.bar.dataset.armed = active() ? "1" : "0";
   }
   // Monochrome SVG icons (block-centered → no glyph-baseline misalignment).
   const s = (inner, o = "") => `<svg viewBox="0 0 24 24" width="16" height="16" ${o}>${inner}</svg>`;
@@ -341,7 +345,6 @@
         .lc.clear:hover { background:rgba(255,90,90,.18); color:#ffb3b3; }
         .sep { width:1px; height:20px; background:rgba(255,255,255,.14); margin:0 3px; flex:0 0 auto; }
         .arm { display:flex; align-items:center; gap:5px; padding:0 8px 0 4px; font-size:12px; cursor:pointer; white-space:nowrap; }
-        .arm input { accent-color:#00d68f; cursor:pointer; margin:0; }
         .count { color:#9aa0aa; font-weight:700; min-width:12px; text-align:center; }
         .master-only, .client-only { display:flex; align-items:center; gap:3px; }
         .bar[data-role="client"] .master-only { display:none; }
@@ -356,7 +359,7 @@
       <div class="bar" data-open="0" data-role="client" data-armed="0">
         <button class="anchor" title="GexSync replay">${IC.replay}</button>
         <div class="rest">
-          <label class="arm"><input type="checkbox">sync<b class="count">·</b></label>
+          <span class="arm">synced<b class="count">·</b></span>
           <span class="sep"></span>
           <div class="master-only">
             <button class="b" data-cmd="restart" title="Restart from start">${IC.restart}</button>
@@ -401,7 +404,7 @@
     document.documentElement.appendChild(overlay);
 
     const bar = root.querySelector(".bar");
-    barUI = { bar, arm: root.querySelector(".arm input"), pp: root.querySelector(".pp"),
+    barUI = { host, overlay, bar, pp: root.querySelector(".pp"),
       speed: root.querySelector(".speed"), count: root.querySelector(".count"),
       foll: root.querySelector(".foll"), ftime: root.querySelector(".ftime"), mtime: root.querySelector(".mtime"), scrub: root.querySelector(".scrub") };
 
@@ -417,8 +420,7 @@
       anchor.innerHTML = p ? IC.replay : IC.lock; // replay unpinned, padlock locked open
     });
 
-    barUI.arm.addEventListener("change", () => { writeCfg({ armed: barUI.arm.checked }); });
-    root.querySelector(".take").addEventListener("click", () => writeCfg({ armed: true, master: { ...masterMap(), [groupKey()]: ME } }));
+    root.querySelector(".take").addEventListener("click", () => writeCfg({ master: { ...masterMap(), [groupKey()]: ME } }));
     // master controls → drive native controls; the master's native listeners
     // broadcast the resulting time. load/clear-all fan a command to every tab.
     root.querySelectorAll(".master-only .b").forEach((b) => b.addEventListener("click", () => {
@@ -442,7 +444,7 @@
       barUI.count.textContent = (await pageCount()) || "·";
       // calibration overlay + auto-restart when the whole group finishes
       const { n, m } = await groupReady();
-      const waiting = cfg.armed && !document.hidden && m > 0 && n < m;
+      const waiting = active() && !document.hidden && m > 0 && n < m;
       overlay.style.display = waiting ? "flex" : "none";
       if (waiting) overlay.querySelector(".calprog").textContent = `${n} / ${m}`;
       if (m > 0 && n >= m) {
@@ -452,7 +454,7 @@
       if (cfg.debug) {
         const tk = document.querySelector('input[role=combobox]')?.value || "?";
         badge.style.display = "block";
-        badge.textContent = `#${ME.slice(0, 4).toUpperCase()} · ${location.pathname.slice(1)} · ${tk} · ${isMaster() ? "MASTER" : cfg.armed ? "client" : "off"}`;
+        badge.textContent = `#${ME.slice(0, 4).toUpperCase()} · ${location.pathname.slice(1)} · ${tk} · ${!active() ? "live" : isMaster() ? "MASTER" : "client"}`;
       } else badge.style.display = "none";
     }, 500);
     // Time readout: sampled fast, straight from this tab's live panel time

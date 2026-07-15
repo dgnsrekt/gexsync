@@ -26,24 +26,27 @@ chrome.tabs.query({ url: "https://www.gexbot.com/*" }, async (tabs) => {
     rows.length ? rows.map((r) => `<div>${r}</div>`).join("") : "no gexbot tabs";
 });
 
+// Mode: live | replay (shared key read by content.js + replay.js)
+const modeSel = document.getElementById("modeSel");
+chrome.storage.local.get("gexsync-mode", (r) => { modeSel.value = r["gexsync-mode"] === "replay" ? "replay" : "live"; });
+modeSel.addEventListener("change", () => chrome.storage.local.set({ "gexsync-mode": modeSel.value }));
+
 const sel = document.getElementById("panelScope");
 chrome.storage.local.get("gexsync-cfg", (r) => { sel.value = r["gexsync-cfg"]?.panelScope || "page"; });
-sel.addEventListener("change", () => chrome.storage.local.set({ "gexsync-cfg": { panelScope: sel.value } }));
+sel.addEventListener("change", () => chrome.storage.local.get("gexsync-cfg", (r) => chrome.storage.local.set({ "gexsync-cfg": { ...(r["gexsync-cfg"] || {}), panelScope: sel.value } })));
 
-// Replay sync config: { armed, master, heartbeat } — merge on write to keep master.
-const armed = document.getElementById("replayArmed");
+// Replay settings — merge on write to keep master.
 const track = document.getElementById("replayTrack");
 const dbg = document.getElementById("replayDebug");
 const scope = document.getElementById("replayScope");
 const auto = document.getElementById("replayAutoRestart");
 chrome.storage.local.get("replay-cfg", (r) => {
   const c = r["replay-cfg"] || {};
-  armed.checked = !!c.armed;
   track.value = c.heartbeat === false ? "onpause" : "heartbeat";
   dbg.checked = !!c.debug;
   scope.value = c.scope === "all" ? "all" : "page";
   auto.checked = !!c.autorestart;
 });
 const saveReplay = () => chrome.storage.local.get("replay-cfg", (r) =>
-  chrome.storage.local.set({ "replay-cfg": { ...(r["replay-cfg"] || {}), armed: armed.checked, heartbeat: track.value === "heartbeat", debug: dbg.checked, scope: scope.value, autorestart: auto.checked } }));
-[armed, track, dbg, scope, auto].forEach((el) => el.addEventListener("change", saveReplay));
+  chrome.storage.local.set({ "replay-cfg": { ...(r["replay-cfg"] || {}), heartbeat: track.value === "heartbeat", debug: dbg.checked, scope: scope.value, autorestart: auto.checked } }));
+[track, dbg, scope, auto].forEach((el) => el.addEventListener("change", saveReplay));
