@@ -6,8 +6,10 @@
   let applyingRemote = false; // suppress re-broadcast during programmatic click
 
   // chrome.runtime?.id is falsy once this content script is orphaned by an
-  // extension reload/update; guard writes so orphans don't throw uncaught.
-  const send = (obj) => { if (chrome.runtime?.id) chrome.storage.local.set(obj); };
+  // extension reload/update; guard reads/writes so orphans don't throw uncaught.
+  const alive = () => !!chrome.runtime?.id;
+  const send = (obj) => { if (alive()) chrome.storage.local.set(obj); };
+  const get = (keys, cb) => { if (alive()) chrome.storage.local.get(keys, cb); };
 
   // Channel scope: "page" appends pathname (state/classic separate); "all" shares.
   const scopedKey = (base, scope) => (scope === "all" ? base : base + location.pathname);
@@ -230,10 +232,10 @@
     if (!ticker || tickerValue() === ticker) return; // already on this ticker
     applyingRemote = true; // hold off the poll while we queue the reload
     pendingReload = true; // this tab is now part of the in-flight sync (keeps busy fresh)
-    const tryReload = () => chrome.storage.local.get(LOCK_KEY, (r) => {
+    const tryReload = () => get(LOCK_KEY, (r) => {
       if (!lockFree(r[LOCK_KEY])) return void setTimeout(tryReload, 500); // another tab is reloading
       send({ [LOCK_KEY]: { holder: TAB, exp: Date.now() + LOCK_MS } });
-      setTimeout(() => chrome.storage.local.get(LOCK_KEY, (r2) => { // did we win the lock?
+      setTimeout(() => get(LOCK_KEY, (r2) => { // did we win the lock?
         if (r2[LOCK_KEY]?.holder === TAB) reloadClean(ticker);
         else setTimeout(tryReload, 300 + Math.random() * 400); // lost the race — back off, retry
       }), 150);
@@ -253,7 +255,7 @@
       if (!ready && performance.now() - t0 < 10000) return;
       clearInterval(wait);
       sessionStorage.removeItem("gexsyncReloading");
-      chrome.storage.local.get(LOCK_KEY, (r) => { // hand off to the next queued tab
+      get(LOCK_KEY, (r) => { // hand off to the next queued tab
         if (r[LOCK_KEY]?.holder === TAB) send({ [LOCK_KEY]: { holder: null, exp: 0 } });
       });
     }, 300);
@@ -278,26 +280,29 @@
   // or mid bare-reload (gexsyncReloading); busy tabs keep the flag fresh and
   // everyone shows the overlay while it hasn't expired. It lapses on its own if
   // a tab dies mid-sync, so the overlay can't get stuck.
-  let overlayEl = null;
-  function setOverlay(on) {
+  let overlayEl = null, overlayMsg = null;
+  function setOverlay(on, ticker) {
     if (!on) { if (overlayEl) overlayEl.style.display = "none"; return; }
     if (!overlayEl) {
       overlayEl = document.createElement("div");
       overlayEl.id = "gexsync-ticker-overlay";
       overlayEl.style.cssText = "position:fixed;inset:0;z-index:2147483000;display:flex;align-items:center;justify-content:center;background:rgba(8,8,14,.6);backdrop-filter:blur(2px);font-family:system-ui,-apple-system,sans-serif;color:#e7e9ea;";
       overlayEl.innerHTML = `<div style="padding:20px 30px;border-radius:14px;background:rgba(20,18,32,.94);border:1px solid rgba(255,255,255,.14);box-shadow:0 24px 70px rgba(0,0,0,.6);text-align:center">
-        <div style="font:600 15px system-ui">Syncing ticker…</div>
+        <div class="msg" style="font:600 15px system-ui"></div>
         <div style="margin-top:8px;color:#9aa0aa;font-size:12px">tabs are updating — please wait</div></div>`;
       (document.body || document.documentElement).appendChild(overlayEl);
+      overlayMsg = overlayEl.querySelector(".msg");
     }
+    const g = GROUPS.find((x) => x.name === groupName()) || GROUPS[0];
+    overlayMsg.innerHTML = `syncing <span style="color:${g.color}">${g.name}</span> to ${ticker || "…"}`;
     overlayEl.style.display = "flex";
   }
   setInterval(() => {
-    if (!tickerSync()) { setOverlay(false); return; }
+    if (!alive() || !tickerSync()) { setOverlay(false); return; } // orphaned/off-ticker: drop the overlay
     if (pendingReload || sessionStorage.gexsyncReloading === "1") send({ [busyKey()]: { exp: Date.now() + 2500 } });
-    chrome.storage.local.get(busyKey(), (r) => {
+    get([busyKey(), tickerChan()], (r) => {
       const b = r[busyKey()];
-      setOverlay(!!b && Date.now() < b.exp);
+      setOverlay(!!b && Date.now() < b.exp, r[tickerChan()]?.ticker);
     });
   }, 400);
 
@@ -317,7 +322,7 @@
     const modeSeg = document.createElement("span");
     modeSeg.style.cssText = "display:flex;align-items:center;gap:7px;padding:6px 13px;cursor:pointer;";
     modeSeg.title = "GexSync mode — click to cycle (Profiles / Ticker / Replay)";
-    modeSeg.addEventListener("click", () => chrome.storage.local.set({ [MODE_KEY]: MODES[(MODES.indexOf(mode) + 1) % MODES.length] }));
+    modeSeg.addEventListener("click", () => send({ [MODE_KEY]: MODES[(MODES.indexOf(mode) + 1) % MODES.length] }));
 
     const grpSeg = document.createElement("span");
     grpSeg.style.cssText = "display:flex;align-items:center;gap:6px;padding:6px 13px;cursor:pointer;border-left:1px solid rgba(255,255,255,.14);";
@@ -365,9 +370,10 @@
     // ponytail: reads all storage every 1.5s — fine at this scale.
     const TP = "gexsync-tp:" + TAB;
     setInterval(() => {
-      if (mode !== "ticker") { if (chrome.runtime?.id) chrome.storage.local.remove(TP); return; } // drop presence off-ticker
+      if (!alive()) return; // orphaned content script: stay quiet
+      if (mode !== "ticker") { chrome.storage.local.remove(TP); return; } // drop presence off-ticker
       send({ [TP]: { group: groupName(), exp: Date.now() + 5000 } });
-      chrome.storage.local.get(null, (all) => {
+      get(null, (all) => {
         const now = Date.now(), mine = groupName(), stale = [];
         let n = 0;
         for (const k in all) {
@@ -376,7 +382,7 @@
           if (!e || e.exp <= now) stale.push(k);
           else if (e.group === mine) n++;
         }
-        if (stale.length && chrome.runtime?.id) chrome.storage.local.remove(stale);
+        if (stale.length && alive()) chrome.storage.local.remove(stale);
         groupCount = n || 1;
         paintGroup();
       });
