@@ -147,7 +147,23 @@
     });
     for (const el of switches) swObs.observe(el, { attributes: true, subtree: true, attributeFilter: ["class", "aria-checked"] });
   }
-  setInterval(watchSwitches, 600); // re-observe as the panel/floating-panel swaps the switch elements
+  // Reconcile GEXbot's mutual exclusivity: a gex profile (90d/latest/next) and
+  // a greek can't both be active. GEXbot's floating panel has a bug where
+  // clicking a gex profile leaves the greek switch on — a stale/invalid state
+  // that then diverges across tabs. If it persists (~1s, so we skip normal
+  // transitions), clear the stale greeks to match the selected gex profile.
+  let badSince = 0;
+  function reconcileExclusivity() {
+    const { gex } = getGroups();
+    const gexSelected = gex && gex.querySelector('button[aria-pressed="true"]');
+    const sw = getSwitches();
+    if (!(gexSelected && OPTS.some((k) => sw[k]?.checked))) { badSince = 0; return; } // valid state
+    if (!badSince) { badSince = Date.now(); return; }
+    if (Date.now() - badSince < 1000) return; // require persistence — don't fight a normal transition
+    badSince = 0;
+    for (const k of OPTS) if (sw[k]?.checked) sw[k].click(); // gex profile wins → clear stale greeks
+  }
+  setInterval(() => { watchSwitches(); reconcileExclusivity(); }, 600); // re-observe swapped switches + self-heal invalid state
 
   // Report this tab's full state to the popup on request.
   function getState() {
