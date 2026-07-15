@@ -386,13 +386,6 @@
       </div>`;
     (document.body || document.documentElement).appendChild(host);
 
-    // debug badge: a big readable per-tab id (+ page/ticker/role) so tabs are
-    // easy to identify across monitors. Toggled by the popup "Debug badge".
-    const badge = document.createElement("div");
-    badge.id = "gexsync-debug-badge";
-    badge.style.cssText = "position:fixed;top:8px;left:8px;z-index:2147483001;padding:5px 11px;border-radius:7px;background:rgba(0,0,0,.82);color:#4ade80;font:bold 15px ui-monospace,SFMono-Regular,monospace;letter-spacing:.5px;pointer-events:none;display:none;box-shadow:0 4px 16px rgba(0,0,0,.5);";
-    document.documentElement.appendChild(badge);
-
     // calibration overlay: blocks interaction + shows group progress ("2 / 4")
     const overlay = document.createElement("div");
     overlay.id = "gexsync-cal-overlay";
@@ -451,11 +444,10 @@
         if (cfg.autorestart && !allReadyDone && isMaster() && !document.hidden) setSlider(0); // master restarts; clients follow
         allReadyDone = true;
       } else allReadyDone = false;
-      if (cfg.debug) {
-        const tk = document.querySelector('input[role=combobox]')?.value || "?";
-        badge.style.display = "block";
-        badge.textContent = `#${ME.slice(0, 4).toUpperCase()} · ${location.pathname.slice(1)} · ${tk} · ${active() ? (isMaster() ? "MASTER" : "client") : mode === "live" ? "profiles" : mode}`;
-      } else badge.style.display = "none";
+      // feed the replay role into content.js's pill (it shows it in Replay mode);
+      // "Debug badge" now gates just this role readout, the pill info is always on.
+      const chip = document.getElementById("gexsync-mode-chip");
+      if (chip) chip.dataset.replayRole = cfg.debug && active() ? (isMaster() ? "MASTER" : "client") : "";
     }, 500);
     // Time readout: sampled fast, straight from this tab's live panel time
     // (falls back to the map's index→time if the readout is hidden/collapsed).

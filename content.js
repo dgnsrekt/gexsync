@@ -158,6 +158,29 @@
   // encodes THIS tab's own profile alongside the new ticker; then strip the hash
   // and reload the bare url so the price line renders (see reloadClean below).
   const tickerValue = () => document.querySelector("input[role=combobox]")?.value || null;
+  // Ticker groups: scope ticker sync to same-color tabs, so e.g. a green group on
+  // TSLA and a red group on NVDA don't touch each other. Every tab starts green;
+  // change some to red (etc.) to split them off. The group lives in sessionStorage
+  // (per-tab, survives the reload — localStorage is shared across same-origin
+  // tabs, so it can't hold a per-tab value).
+  const GROUPS = [
+    { name: "green", color: "#00d68f" },
+    { name: "red", color: "#ff4d4f" },
+    { name: "blue", color: "#4aa3ff" },
+    { name: "yellow", color: "#ffb454" },
+  ];
+  // Validate against GROUPS so a stale value (e.g. "none" from an older build)
+  // can't leave a tab displaying green while broadcasting on a dead channel.
+  const groupName = () => { const g = sessionStorage.gexsyncGroup; return GROUPS.some((x) => x.name === g) ? g : "green"; };
+  const tickerChan = () => `${TICKER_KEY}:${groupName()}`;
+  // Compact profile for the pill: "90d" | "latest" | "next" | "latest·delta".
+  const profileLabel = () => {
+    const { gex, options } = getGroups();
+    const g = selectedKeyword(gex);
+    if (g) return g;
+    const o = selectedKeyword(options), sw = getSwitches(), gk = OPTS.find((k) => sw[k]?.checked);
+    return gk ? `${o || "opt"}·${gk}` : o || "?";
+  };
   function profileSegment() {
     const { gex, options } = getGroups();
     const g = selectedKeyword(gex);
@@ -192,7 +215,14 @@
   // ponytail: 15s expiry frees the lock if a holder never finishes (e.g. a
   // hidden tab that won't repaint) — fine for the all-monitors-visible use case.
   const LOCK_KEY = "gexsync-ticker-lock", LOCK_MS = 15000;
-  const TAB = sessionStorage.gexsyncTab || (sessionStorage.gexsyncTab = Math.random().toString(36).slice(2));
+  // Per-tab id. Keep it only across OUR ticker-reload (gexsyncReloading set, so
+  // the lock holder still matches after the reload); otherwise mint a fresh one.
+  // Duplicating a tab copies sessionStorage, so without this two tabs would share
+  // an id and both think they hold the lock — regenerating on any non-reload load
+  // gives duplicates distinct ids again.
+  const TAB = sessionStorage.gexsyncReloading === "1"
+    ? sessionStorage.gexsyncTab
+    : (sessionStorage.gexsyncTab = Math.random().toString(36).slice(2));
   const lockFree = (l) => !l || !l.holder || l.holder === TAB || Date.now() > l.exp;
   function applyTicker(ticker) {
     if (!ticker || tickerValue() === ticker) return; // already on this ticker
@@ -231,23 +261,60 @@
     const t = tickerValue();
     if (lastTicker === null) { lastTicker = t; return; }       // baseline — don't broadcast the initial value
     if (applyingRemote || !tickerSync()) { lastTicker = t; return; }
-    if (t && t !== lastTicker) { lastTicker = t; send({ [TICKER_KEY]: { ticker: t, t: performance.now() } }); }
+    if (t && t !== lastTicker) { lastTicker = t; send({ [tickerChan()]: { ticker: t, t: performance.now() } }); }
   }, 400);
 
-  // ---- persistent mode chip: shows the current sync mode, click to cycle ----
+  // ---- persistent chip: mode segment (click cycles mode) + group segment
+  // (Ticker mode only, click cycles this tab's color group) ----
   let renderChip = () => {};
   function buildModeChip() {
     if (document.getElementById("gexsync-mode-chip")) return;
     const chip = document.createElement("div");
     chip.id = "gexsync-mode-chip";
-    chip.style.cssText = "position:fixed;right:16px;bottom:16px;z-index:2147482000;display:flex;align-items:center;gap:7px;padding:6px 13px;border-radius:9999px;background:rgba(20,18,32,.82);backdrop-filter:blur(10px);border:1px solid rgba(255,255,255,.14);color:#e7e9ea;font:600 12px system-ui,-apple-system,sans-serif;cursor:pointer;box-shadow:0 8px 24px rgba(0,0,0,.45);user-select:none;";
-    chip.title = "GexSync mode — click to cycle (Profiles / Ticker / Replay)";
+    // bottom-LEFT, raised above the replay transport bar (left:20 bottom:20) so
+    // they don't overlap in Replay mode; the split-view divider covered the right.
+    chip.style.cssText = "position:fixed;left:16px;bottom:72px;z-index:2147482000;display:flex;align-items:center;border-radius:9999px;background:rgba(20,18,32,.82);backdrop-filter:blur(10px);border:1px solid rgba(255,255,255,.14);color:#e7e9ea;font:600 13px system-ui,-apple-system,sans-serif;box-shadow:0 8px 24px rgba(0,0,0,.45);user-select:none;";
     const MODES = ["profiles", "ticker", "replay"];
     const LABEL = { profiles: "Profiles", ticker: "Ticker", replay: "Replay" };
-    const COLOR = { profiles: "#4aa3ff", ticker: "#00d68f", replay: "#ffb454" };
-    renderChip = () => { const m = MODES.includes(mode) ? mode : "profiles"; chip.innerHTML = `<span style="width:8px;height:8px;border-radius:50%;background:${COLOR[m]}"></span>sync: ${LABEL[m]}`; };
-    chip.addEventListener("click", () => chrome.storage.local.set({ [MODE_KEY]: MODES[(MODES.indexOf(mode) + 1) % MODES.length] }));
+
+    const modeSeg = document.createElement("span");
+    modeSeg.style.cssText = "display:flex;align-items:center;gap:7px;padding:6px 13px;cursor:pointer;";
+    modeSeg.title = "GexSync mode — click to cycle (Profiles / Ticker / Replay)";
+    modeSeg.addEventListener("click", () => chrome.storage.local.set({ [MODE_KEY]: MODES[(MODES.indexOf(mode) + 1) % MODES.length] }));
+
+    const grpSeg = document.createElement("span");
+    grpSeg.style.cssText = "display:flex;align-items:center;gap:6px;padding:6px 13px;cursor:pointer;border-left:1px solid rgba(255,255,255,.14);";
+    grpSeg.title = "Ticker group — click to cycle color; only same-color tabs sync";
+    grpSeg.addEventListener("click", () => {
+      const i = GROUPS.findIndex((g) => g.name === groupName());
+      sessionStorage.gexsyncGroup = GROUPS[(i + 1) % GROUPS.length].name;
+      renderChip();
+    });
+
+    // info segment: this tab's id · page · ticker · profile — visible with the
+    // side panel closed, replaces the top-left debug badge that blocked the nav
+    // links. replay.js appends MASTER/client via chip.dataset.replayRole.
+    const infoSeg = document.createElement("span");
+    infoSeg.style.cssText = "display:flex;align-items:center;padding:6px 13px;border-left:1px solid rgba(255,255,255,.14);font:600 12px ui-monospace,SFMono-Regular,monospace;letter-spacing:.3px;white-space:nowrap;";
+
+    chip.append(modeSeg, grpSeg, infoSeg);
+    const shortId = TAB.slice(0, 3).toUpperCase();
+    const paintInfo = () => {
+      const role = mode === "replay" && chip.dataset.replayRole ? ` · ${chip.dataset.replayRole}` : "";
+      // order: ticker · classic/state · profile [· role] · tab-id (titled)
+      infoSeg.innerHTML = `${tickerValue() || "?"} · ${location.pathname.replace(/^\//, "")} · ${profileLabel()}${role} · <span title="tab id" style="cursor:help">#${shortId}</span>`;
+    };
+    renderChip = () => {
+      const m = MODES.includes(mode) ? mode : "profiles";
+      modeSeg.textContent = `sync: ${LABEL[m]}`;
+      const g = GROUPS.find((x) => x.name === groupName()) || GROUPS[0];
+      chip.style.color = g.color; // whole pill tinted the group color
+      grpSeg.style.display = m === "ticker" ? "flex" : "none";
+      grpSeg.innerHTML = `<span style="width:11px;height:11px;border-radius:2px;background:${g.color};box-shadow:0 0 0 1px rgba(255,255,255,.35)"></span>`;
+      paintInfo();
+    };
     (document.body || document.documentElement).appendChild(chip);
+    setInterval(paintInfo, 700); // ticker/profile change on their own (esp. post-reload)
     renderChip();
   }
   if (document.body) buildModeChip(); else window.addEventListener("DOMContentLoaded", buildModeChip);
@@ -276,7 +343,7 @@
     if (profileSync() && changes[KEY]?.newValue) applyProfile(changes[KEY].newValue.group, changes[KEY].newValue.keyword);
     if (changes[panelKey()]?.newValue) applyPanel(changes[panelKey()].newValue.collapsed); // panel always
     if (profileSync() && changes[OPTS_KEY]?.newValue) applyOpts(changes[OPTS_KEY].newValue.state);
-    if (tickerSync() && changes[TICKER_KEY]?.newValue) applyTicker(changes[TICKER_KEY].newValue.ticker);
+    if (tickerSync() && changes[tickerChan()]?.newValue) applyTicker(changes[tickerChan()].newValue.ticker);
   });
 
   // SPA renders late; poll until controls exist, attach each once.
