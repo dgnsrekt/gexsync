@@ -173,6 +173,8 @@
   // can't leave a tab displaying green while broadcasting on a dead channel.
   const groupName = () => { const g = sessionStorage.gexsyncGroup; return GROUPS.some((x) => x.name === g) ? g : "green"; };
   const tickerChan = () => `${TICKER_KEY}:${groupName()}`;
+  const busyKey = () => `${tickerChan()}:busy`; // group-scoped "a sync is in flight" flag
+  let pendingReload = false; // this tab is queued/reloading for a ticker change
   // Compact profile for the pill: "90d" | "latest" | "next" | "latest·delta".
   const profileLabel = () => {
     const { gex, options } = getGroups();
@@ -227,6 +229,7 @@
   function applyTicker(ticker) {
     if (!ticker || tickerValue() === ticker) return; // already on this ticker
     applyingRemote = true; // hold off the poll while we queue the reload
+    pendingReload = true; // this tab is now part of the in-flight sync (keeps busy fresh)
     const tryReload = () => chrome.storage.local.get(LOCK_KEY, (r) => {
       if (!lockFree(r[LOCK_KEY])) return void setTimeout(tryReload, 500); // another tab is reloading
       send({ [LOCK_KEY]: { holder: TAB, exp: Date.now() + LOCK_MS } });
@@ -261,7 +264,41 @@
     const t = tickerValue();
     if (lastTicker === null) { lastTicker = t; return; }       // baseline — don't broadcast the initial value
     if (applyingRemote || !tickerSync()) { lastTicker = t; return; }
-    if (t && t !== lastTicker) { lastTicker = t; send({ [tickerChan()]: { ticker: t, t: performance.now() } }); }
+    if (t && t !== lastTicker) {
+      lastTicker = t;
+      send({ [tickerChan()]: { ticker: t, t: performance.now() } });
+      send({ [busyKey()]: { exp: Date.now() + 3000 } }); // seed the busy flag; followers extend it as they reload
+    }
+  }, 400);
+
+  // ---- loading overlay during a group ticker sync ----
+  // Followers reload one at a time (~seconds each), so block interaction on ALL
+  // tabs in the group until it settles — scoped by busyKey so the OTHER color
+  // group isn't blocked. A tab is "busy" while queued/reloading (pendingReload)
+  // or mid bare-reload (gexsyncReloading); busy tabs keep the flag fresh and
+  // everyone shows the overlay while it hasn't expired. It lapses on its own if
+  // a tab dies mid-sync, so the overlay can't get stuck.
+  let overlayEl = null;
+  function setOverlay(on) {
+    if (!on) { if (overlayEl) overlayEl.style.display = "none"; return; }
+    if (!overlayEl) {
+      overlayEl = document.createElement("div");
+      overlayEl.id = "gexsync-ticker-overlay";
+      overlayEl.style.cssText = "position:fixed;inset:0;z-index:2147483000;display:flex;align-items:center;justify-content:center;background:rgba(8,8,14,.6);backdrop-filter:blur(2px);font-family:system-ui,-apple-system,sans-serif;color:#e7e9ea;";
+      overlayEl.innerHTML = `<div style="padding:20px 30px;border-radius:14px;background:rgba(20,18,32,.94);border:1px solid rgba(255,255,255,.14);box-shadow:0 24px 70px rgba(0,0,0,.6);text-align:center">
+        <div style="font:600 15px system-ui">Syncing ticker…</div>
+        <div style="margin-top:8px;color:#9aa0aa;font-size:12px">tabs are updating — please wait</div></div>`;
+      (document.body || document.documentElement).appendChild(overlayEl);
+    }
+    overlayEl.style.display = "flex";
+  }
+  setInterval(() => {
+    if (!tickerSync()) { setOverlay(false); return; }
+    if (pendingReload || sessionStorage.gexsyncReloading === "1") send({ [busyKey()]: { exp: Date.now() + 2500 } });
+    chrome.storage.local.get(busyKey(), (r) => {
+      const b = r[busyKey()];
+      setOverlay(!!b && Date.now() < b.exp);
+    });
   }, 400);
 
   // ---- persistent chip: mode segment (click cycles mode) + group segment
