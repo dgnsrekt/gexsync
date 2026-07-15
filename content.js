@@ -306,7 +306,7 @@
     };
     renderChip = () => {
       const m = MODES.includes(mode) ? mode : "profiles";
-      modeSeg.textContent = `sync: ${LABEL[m]}`;
+      modeSeg.textContent = `mode: ${LABEL[m]}`;
       const g = GROUPS.find((x) => x.name === groupName()) || GROUPS[0];
       chip.style.color = g.color; // whole pill tinted the group color
       grpSeg.style.display = m === "ticker" ? "flex" : "none";
