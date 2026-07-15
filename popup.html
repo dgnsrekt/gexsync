@@ -1,21 +1,12 @@
 <!doctype html>
 <meta charset="utf-8">
-<body style="font:14px system-ui,sans-serif;padding:12px 14px;min-width:230px;margin:0">
+<body style="font:14px system-ui,sans-serif;padding:12px 14px;min-width:360px;margin:0">
   <b>GexSync</b>
   <div id="count" style="margin-top:6px;color:#555">counting…</div>
-  <div id="tabs" style="margin-top:8px;font:12px ui-monospace,monospace"></div>
 
-  <label style="display:block;margin-top:12px">
-    <b>Mode</b>
-    <select id="modeSel" style="margin-top:4px;width:100%">
-      <option value="profiles">Profiles — sync gex + options (tickers independent)</option>
-      <option value="ticker">Ticker — sync ticker (profiles independent)</option>
-      <option value="replay">Replay — sync transport</option>
-    </select>
-  </label>
-
-  <label style="display:block;margin-top:12px">
-    Panel-collapse sync (both modes):
+  <b style="display:block;margin-top:12px">Global settings</b>
+  <label style="display:block;margin-top:8px">
+    Panel-collapse sync (all modes):
     <select id="panelScope" style="margin-top:4px;width:100%">
       <option value="page">By page (state / classic separate)</option>
       <option value="all">All tabs</option>
@@ -27,29 +18,56 @@
   </label>
 
   <hr style="margin:12px 0;border:none;border-top:1px solid #ddd">
-  <b>Replay settings</b>
-  <div style="margin-top:4px;color:#777;font-size:12px">
-    Active in Replay mode. Set each tab's ticker + date + load history; first tab is master, others follow (aligned by time-of-day).
+  <label style="display:block">
+    <b>Mode</b>
+    <select id="modeSel" style="margin-top:4px;width:100%">
+      <option value="profiles">Profiles — sync gex + options (tickers independent)</option>
+      <option value="ticker">Ticker — sync ticker (profiles independent)</option>
+      <option value="replay">Replay — sync transport</option>
+    </select>
+  </label>
+
+  <hr style="margin:12px 0;border:none;border-top:1px solid #ddd">
+  <div data-mode="profiles">
+    <b>Profiles mode settings</b>
+    <div style="margin-top:4px;color:#777;font-size:12px">
+      GEX and options profiles sync by page. Tickers stay independent.
+    </div>
   </div>
-  <label style="display:block;margin-top:8px">
-    Sync scope:
-    <select id="replayScope" style="margin-top:4px;width:100%">
-      <option value="page">By page (state / classic separate)</option>
-      <option value="all">All tabs (state + classic together)</option>
-    </select>
-  </label>
-  <label style="display:block;margin-top:8px">
-    <input type="checkbox" id="replayAutoRestart"> Auto-restart to start when calibration finishes
-  </label>
-  <label style="display:block;margin-top:8px">
-    <input type="checkbox" id="replayDebug"> Debug (show master/client role in pill)
-  </label>
-  <label style="display:block;margin-top:8px">
-    Play tracking:
-    <select id="replayTrack" style="margin-top:4px;width:100%">
-      <option value="heartbeat">Heartbeat — master pushes time (~2s), tight</option>
-      <option value="onpause">On pause — resync only when paused, quiet</option>
-    </select>
-  </label>
+
+  <div data-mode="ticker" hidden>
+    <b>Ticker mode settings</b>
+    <div style="margin-top:4px;color:#777;font-size:12px">
+      Tickers sync across state and classic tabs in the same color group. Profiles stay independent.
+    </div>
+  </div>
+
+  <div data-mode="replay" hidden>
+    <b>Replay mode settings</b>
+    <div style="margin-top:4px;color:#777;font-size:12px">
+      Set each tab's ticker + date + load history; first tab is master, others follow (aligned by time-of-day).
+    </div>
+    <label style="display:block;margin-top:8px">
+      Sync scope:
+      <select id="replayScope" style="margin-top:4px;width:100%">
+        <option value="page">By page (state / classic separate)</option>
+        <option value="all">All tabs (state + classic together)</option>
+      </select>
+    </label>
+    <label style="display:block;margin-top:8px">
+      <input type="checkbox" id="replayAutoRestart"> Auto-restart to start when calibration finishes
+    </label>
+    <label style="display:block;margin-top:8px">
+      <input type="checkbox" id="replayDebug"> Debug (show master/client role in pill)
+    </label>
+    <label style="display:block;margin-top:8px">
+      Play tracking:
+      <select id="replayTrack" style="margin-top:4px;width:100%">
+        <option value="heartbeat">Heartbeat — master pushes time (~2s), tight</option>
+        <option value="onpause">On pause — resync only when paused, quiet</option>
+      </select>
+    </label>
+  </div>
+  <div id="tabs" style="margin-top:12px;font:12px ui-monospace,monospace"></div>
   <script src="popup.js"></script>
 </body>

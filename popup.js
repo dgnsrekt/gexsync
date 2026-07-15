@@ -28,8 +28,9 @@ chrome.tabs.query({ url: "https://www.gexbot.com/*" }, async (tabs) => {
 
 // Mode: live | replay (shared key read by content.js + replay.js)
 const modeSel = document.getElementById("modeSel");
-chrome.storage.local.get("gexsync-mode", (r) => { const m = r["gexsync-mode"]; modeSel.value = m === "replay" ? "replay" : m === "ticker" ? "ticker" : "profiles"; });
-modeSel.addEventListener("change", () => chrome.storage.local.set({ "gexsync-mode": modeSel.value }));
+const showMode = () => document.querySelectorAll("[data-mode]").forEach((el) => { el.hidden = el.dataset.mode !== modeSel.value; });
+chrome.storage.local.get("gexsync-mode", (r) => { const m = r["gexsync-mode"]; modeSel.value = m === "replay" ? "replay" : m === "ticker" ? "ticker" : "profiles"; showMode(); });
+modeSel.addEventListener("change", () => { showMode(); chrome.storage.local.set({ "gexsync-mode": modeSel.value }); });
 
 const sel = document.getElementById("panelScope");
 const wm = document.getElementById("watermark");
