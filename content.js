@@ -366,7 +366,8 @@
       const m = MODES.includes(mode) ? mode : "profiles";
       modeSeg.textContent = `mode: ${LABEL[m]}`;
       const g = GROUPS.find((x) => x.name === groupName()) || GROUPS[0];
-      chip.style.color = g.color; // whole pill tinted the group color
+      // tint the pill by group only in Ticker mode (groups are inert otherwise)
+      chip.style.color = m === "ticker" ? g.color : "#e7e9ea";
       grpSeg.style.display = m === "ticker" ? "flex" : "none";
       paintGroup();
       paintInfo();
@@ -413,6 +414,8 @@
     // off → strip back to just the ticker; on → ticker + profile
     const want = watermark ? `${tk} ${profileLabel().replace("90d", "90 days").toUpperCase()}` : tk;
     if (wm.textContent.trim() !== want) wm.textContent = want;
+    // tint the watermark the group color in Ticker mode; GEXbot default otherwise
+    wm.style.color = watermark && mode === "ticker" ? (GROUPS.find((g) => g.name === groupName()) || GROUPS[0]).color : "";
   }
   setInterval(paintWatermark, 700);
 
