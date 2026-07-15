@@ -170,6 +170,10 @@
     { name: "red", color: "#ff4d4f" },
     { name: "blue", color: "#4aa3ff" },
     { name: "yellow", color: "#ffb454" },
+    { name: "purple", color: "#b57aff" },
+    { name: "cyan", color: "#22d3ee" },
+    { name: "orange", color: "#ff8c42" },
+    { name: "pink", color: "#ff5cc8" },
   ];
   // Validate against GROUPS so a stale value (e.g. "none" from an older build)
   // can't leave a tab displaying green while broadcasting on a dead channel.
@@ -350,7 +354,7 @@
     let groupCount = 1;
     const paintGroup = () => {
       const g = GROUPS.find((x) => x.name === groupName()) || GROUPS[0];
-      grpSeg.innerHTML = `<span style="width:11px;height:11px;border-radius:2px;background:${g.color};box-shadow:0 0 0 1px rgba(255,255,255,.35)"></span><span style="min-width:15px;text-align:center">${groupCount}</span>`;
+      grpSeg.innerHTML = `<span style="width:11px;height:11px;border-radius:2px;background:${g.color};box-shadow:0 0 0 1px rgba(255,255,255,.35)"></span><span>${g.name}</span><span style="min-width:15px;text-align:center">${groupCount}</span>`;
     };
     renderChip = () => {
       const m = MODES.includes(mode) ? mode : "profiles";
