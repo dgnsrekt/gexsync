@@ -32,8 +32,11 @@ chrome.storage.local.get("gexsync-mode", (r) => { const m = r["gexsync-mode"]; m
 modeSel.addEventListener("change", () => chrome.storage.local.set({ "gexsync-mode": modeSel.value }));
 
 const sel = document.getElementById("panelScope");
-chrome.storage.local.get("gexsync-cfg", (r) => { sel.value = r["gexsync-cfg"]?.panelScope || "page"; });
-sel.addEventListener("change", () => chrome.storage.local.get("gexsync-cfg", (r) => chrome.storage.local.set({ "gexsync-cfg": { ...(r["gexsync-cfg"] || {}), panelScope: sel.value } })));
+const wm = document.getElementById("watermark");
+chrome.storage.local.get("gexsync-cfg", (r) => { sel.value = r["gexsync-cfg"]?.panelScope || "page"; wm.checked = r["gexsync-cfg"]?.watermark !== false; });
+const saveCfg = () => chrome.storage.local.get("gexsync-cfg", (r) => chrome.storage.local.set({ "gexsync-cfg": { ...(r["gexsync-cfg"] || {}), panelScope: sel.value, watermark: wm.checked } }));
+sel.addEventListener("change", saveCfg);
+wm.addEventListener("change", saveCfg);
 
 // Replay settings — merge on write to keep master.
 const track = document.getElementById("replayTrack");

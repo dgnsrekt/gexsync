@@ -14,8 +14,12 @@
   // Channel scope: "page" appends pathname (state/classic separate); "all" shares.
   const scopedKey = (base, scope) => (scope === "all" ? base : base + location.pathname);
   let panelScope = "page"; // config-driven, kept live via onChanged below
+  let watermark = true; // append this tab's profile to the chart's ticker watermark
   const panelKey = () => scopedKey("gexsync-panel", panelScope);
-  chrome.storage.local.get(CFG_KEY, (r) => { if (r[CFG_KEY]?.panelScope) panelScope = r[CFG_KEY].panelScope; });
+  chrome.storage.local.get(CFG_KEY, (r) => {
+    if (r[CFG_KEY]?.panelScope) panelScope = r[CFG_KEY].panelScope;
+    watermark = r[CFG_KEY]?.watermark !== false; // default on
+  });
 
   // Mode gates what syncs (one axis at a time; panel-collapse always syncs):
   //   profiles — gex + options profiles sync; ticker independent
@@ -347,8 +351,10 @@
     const shortId = TAB.slice(0, 3).toUpperCase();
     const paintInfo = () => {
       const role = mode === "replay" && chip.dataset.replayRole ? ` · ${chip.dataset.replayRole}` : "";
-      // order: ticker · classic/state · profile [· role] · tab-id (titled)
-      infoSeg.innerHTML = `${tickerValue() || "?"} · ${location.pathname.replace(/^\//, "")} · ${profileLabel()}${role} · <span title="tab id" style="cursor:help">#${shortId}</span>`;
+      const page = location.pathname.replace(/^\//, "").toUpperCase();
+      const prof = profileLabel().replace("90d", "90 days").toUpperCase();
+      // order: ticker · CLASSIC/STATE · profile [· role] · tab-id (titled)
+      infoSeg.innerHTML = `${tickerValue() || "?"} · ${page} · ${prof}${role} · <span title="tab id" style="cursor:help">#${shortId}</span>`;
     };
     // swatch + how many tabs share this group (min-width holds 2 digits steady)
     let groupCount = 1;
@@ -395,6 +401,21 @@
   }
   if (document.body) buildModeChip(); else window.addEventListener("DOMContentLoaded", buildModeChip);
 
+  // Append this tab's profile to GEXbot's big ticker watermark (the <h6> over
+  // the chart), e.g. "META" -> "META LATEST". React only rewrites it on ticker
+  // change, so a light interval re-appends and keeps it synced to the profile.
+  function paintWatermark() {
+    const tk = tickerValue();
+    if (!tk) return;
+    const wm = [...document.querySelectorAll("h6.MuiTypography-h6")]
+      .find((e) => { const t = e.textContent.trim(); return t === tk || t.startsWith(tk + " "); });
+    if (!wm) return;
+    // off → strip back to just the ticker; on → ticker + profile
+    const want = watermark ? `${tk} ${profileLabel().replace("90d", "90 days").toUpperCase()}` : tk;
+    if (wm.textContent.trim() !== want) wm.textContent = want;
+  }
+  setInterval(paintWatermark, 700);
+
   // Report this tab's full state to the popup on request.
   function getState() {
     const { gex, options } = getGroups();
@@ -414,7 +435,7 @@
 
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area !== "local") return;
-    if (changes[CFG_KEY]?.newValue?.panelScope) panelScope = changes[CFG_KEY].newValue.panelScope;
+    if (changes[CFG_KEY]?.newValue) { const c = changes[CFG_KEY].newValue; if (c.panelScope) panelScope = c.panelScope; watermark = c.watermark !== false; }
     if (changes[MODE_KEY]?.newValue) { mode = changes[MODE_KEY].newValue === "live" ? "profiles" : changes[MODE_KEY].newValue; renderChip(); }
     if (profileSync() && changes[KEY]?.newValue) applyProfile(changes[KEY].newValue.group, changes[KEY].newValue.keyword);
     if (changes[panelKey()]?.newValue) applyPanel(changes[panelKey()].newValue.collapsed); // panel always
