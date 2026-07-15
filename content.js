@@ -421,6 +421,7 @@
     const { gex, options } = getGroups();
     const sw = getSwitches();
     return {
+      id: TAB.slice(0, 3).toUpperCase(), // same short id shown in the pill
       page: location.pathname.replace(/^\//, ""), // "state" | "classic"
       ticker: document.querySelector("input[role=combobox]")?.value || null,
       gex: selectedKeyword(gex),

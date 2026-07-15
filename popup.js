@@ -15,8 +15,9 @@ chrome.tabs.query({ url: "https://www.gexbot.com/*" }, async (tabs) => {
   const gex = tabs.filter((t) => /\/(state|classic)/.test(t.url));
   const rows = await Promise.all(gex.map(async (t) => {
     const st = await ask(t.id);
-    if (!st) return `${t.title.split(" - ").slice(0, 2).join(" · ")} · (reload tab)`;
-    const parts = [st.page, st.ticker || "?", st.gex].filter(Boolean);
+    // title is "TICKER - page - profile"; id unknown until the script responds
+    if (!st) { const [ticker, page] = t.title.split(" - "); return `#? · ${ticker || "?"} · ${page || "?"} · (reload tab)`; }
+    const parts = [`#${st.id || "?"}`, st.ticker || "?", st.page, st.gex].filter(Boolean);
     if (st.options) parts.push(`opt:${st.options}`);
     if (st.greeks.length) parts.push(st.greeks.join("+"));
     if (st.collapsed) parts.push("collapsed");
