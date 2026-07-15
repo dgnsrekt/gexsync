@@ -341,17 +341,46 @@
       // order: ticker · classic/state · profile [· role] · tab-id (titled)
       infoSeg.innerHTML = `${tickerValue() || "?"} · ${location.pathname.replace(/^\//, "")} · ${profileLabel()}${role} · <span title="tab id" style="cursor:help">#${shortId}</span>`;
     };
+    // swatch + how many tabs share this group (min-width holds 2 digits steady)
+    let groupCount = 1;
+    const paintGroup = () => {
+      const g = GROUPS.find((x) => x.name === groupName()) || GROUPS[0];
+      grpSeg.innerHTML = `<span style="width:11px;height:11px;border-radius:2px;background:${g.color};box-shadow:0 0 0 1px rgba(255,255,255,.35)"></span><span style="min-width:15px;text-align:center">${groupCount}</span>`;
+    };
     renderChip = () => {
       const m = MODES.includes(mode) ? mode : "profiles";
       modeSeg.textContent = `mode: ${LABEL[m]}`;
       const g = GROUPS.find((x) => x.name === groupName()) || GROUPS[0];
       chip.style.color = g.color; // whole pill tinted the group color
       grpSeg.style.display = m === "ticker" ? "flex" : "none";
-      grpSeg.innerHTML = `<span style="width:11px;height:11px;border-radius:2px;background:${g.color};box-shadow:0 0 0 1px rgba(255,255,255,.35)"></span>`;
+      paintGroup();
       paintInfo();
     };
     (document.body || document.documentElement).appendChild(chip);
     setInterval(paintInfo, 700); // ticker/profile change on their own (esp. post-reload)
+
+    // Group-count presence: each ticker-mode tab heartbeats its group under its
+    // own key (no shared map → no read-modify-write race); the count is how many
+    // fresh entries share this tab's color. Stale entries are pruned as found.
+    // ponytail: reads all storage every 1.5s — fine at this scale.
+    const TP = "gexsync-tp:" + TAB;
+    setInterval(() => {
+      if (mode !== "ticker") { if (chrome.runtime?.id) chrome.storage.local.remove(TP); return; } // drop presence off-ticker
+      send({ [TP]: { group: groupName(), exp: Date.now() + 5000 } });
+      chrome.storage.local.get(null, (all) => {
+        const now = Date.now(), mine = groupName(), stale = [];
+        let n = 0;
+        for (const k in all) {
+          if (!k.startsWith("gexsync-tp:")) continue;
+          const e = all[k];
+          if (!e || e.exp <= now) stale.push(k);
+          else if (e.group === mine) n++;
+        }
+        if (stale.length && chrome.runtime?.id) chrome.storage.local.remove(stale);
+        groupCount = n || 1;
+        paintGroup();
+      });
+    }, 1500);
     renderChip();
   }
   if (document.body) buildModeChip(); else window.addEventListener("DOMContentLoaded", buildModeChip);
