@@ -124,13 +124,30 @@
     if (clicked) setTimeout(() => { applyingRemote = false; }, 300);
   }
 
-  // Delegated change listener survives the re-render when latest/next flips.
-  document.addEventListener("change", (e) => {
-    if (applyingRemote || !liveSync() || !e.target.closest?.(".MuiSwitch-root")) return;
-    const sw = getSwitches(), state = {};
-    for (const k of OPTS) if (sw[k]) state[k] = sw[k].checked;
-    send({ [OPTS_KEY]: { state, t: performance.now() } });
-  }, true);
+  // Watch the switch STATE (Mui-checked class), not a change event: GEXbot's
+  // collapsed floating quick-panel swaps in its OWN greek switches (different
+  // DOM elements), and its controls don't fire `change` on the main panel's
+  // switches. Observing state catches toggles from either panel — but the
+  // element set swaps on collapse, so re-attach whenever the first switch
+  // changes identity. (Same reason the gex group's aria-pressed observer works.)
+  let lastOptsState = "", swFirst = null, swCount = 0, swObs = null;
+  function watchSwitches() {
+    const switches = [...document.querySelectorAll(".MuiSwitch-root")];
+    if (!switches.length || (switches[0] === swFirst && switches.length === swCount)) return; // same set already observed
+    swFirst = switches[0]; swCount = switches.length;
+    if (swObs) swObs.disconnect();
+    swObs = new MutationObserver(() => {
+      if (applyingRemote || !liveSync()) return;
+      const sw = getSwitches(), state = {};
+      for (const k of OPTS) if (sw[k]) state[k] = sw[k].checked;
+      const s = JSON.stringify(state);
+      if (s === lastOptsState) return; // ignore ripple/class noise; only real toggles
+      lastOptsState = s;
+      send({ [OPTS_KEY]: { state, t: performance.now() } });
+    });
+    for (const el of switches) swObs.observe(el, { attributes: true, subtree: true, attributeFilter: ["class", "aria-checked"] });
+  }
+  setInterval(watchSwitches, 600); // re-observe as the panel/floating-panel swaps the switch elements
 
   // Report this tab's full state to the popup on request.
   function getState() {
