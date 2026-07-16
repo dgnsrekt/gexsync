@@ -355,7 +355,7 @@
     if (!toastEl) {
       toastEl = document.createElement("div");
       toastEl.id = "gexsync-toast";
-      toastEl.style.cssText = "position:fixed;left:50%;top:18px;transform:translateX(-50%);z-index:2147483600;max-width:440px;padding:12px 18px;border-radius:12px;background:rgba(60,14,14,.96);border:1px solid #ff4d4f;color:#ffdede;font:600 13px system-ui,-apple-system,sans-serif;box-shadow:0 12px 40px rgba(0,0,0,.55);text-align:center;";
+      toastEl.style.cssText = `position:fixed;left:50%;top:18px;transform:translateX(-50%);z-index:2147483600;max-width:440px;padding:12px 18px;border-radius:12px;background:rgba(34,20,31,.92);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);border:1px solid ${T.red};color:#FFD7D7;font:600 13px ${T.ui};box-shadow:0 12px 40px rgba(0,0,0,.55);text-align:center;`;
       (document.body || document.documentElement).appendChild(toastEl);
     }
     toastEl.textContent = msg;
@@ -435,6 +435,11 @@
       // tint the pill by group only in Ticker mode (groups are inert otherwise)
       chip.style.color = m === "ticker" ? g.color : T.ink;
       grpSeg.style.display = m === "ticker" ? "flex" : "none";
+      // Replay mode shows the transport bar (whose anchor is the loop mark), so
+      // drop the pill's own loop glyph to avoid two stacked circles in the corner.
+      const showMark = m !== "replay";
+      markSeg.style.display = showMark ? "flex" : "none";
+      modeSeg.style.paddingLeft = showMark ? "7px" : "13px";
       paintGroup();
       paintInfo();
     };

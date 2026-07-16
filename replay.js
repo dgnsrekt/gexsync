@@ -247,7 +247,9 @@
     }
     if (changes[MODE_KEY]?.newValue) { mode = changes[MODE_KEY].newValue === "live" ? "live" : changes[MODE_KEY].newValue; renderBar(); updateBlocker(); if (active()) maybeBuildMap(); }
     const msg = changes[CHAN]?.newValue;
-    if (active() && !isMaster() && msg && msg.from !== ME) apply(msg);
+    // ONLY enrolled clients apply — a replay-mode tab that never joined must not
+    // load history / play / seek just because it's not the master.
+    if (isClient() && msg && msg.from !== ME) apply(msg);
   });
 
   // ---- master: broadcast local changes (our bar drives native controls, whose
@@ -339,15 +341,15 @@
   }
 
   // ---- reusable modal (review before load, confirm before exit) ----
-  function modal(bodyHtml, okLabel, onOk) {
+  function modal(bodyHtml, okLabel, onOk, okBg = "#16E0A3", okInk = "#08110c") {
     let m = document.getElementById("gexsync-replay-modal");
-    if (!m) { m = document.createElement("div"); m.id = "gexsync-replay-modal"; m.style.cssText = "position:fixed;inset:0;z-index:2147483003;display:flex;align-items:center;justify-content:center;background:rgba(8,8,14,.62);backdrop-filter:blur(3px);font-family:system-ui,-apple-system,sans-serif;color:#e7e9ea;"; document.documentElement.appendChild(m); }
-    const btn = "height:34px;padding:0 16px;border-radius:9999px;font:600 13px system-ui;cursor:pointer;border:1px solid rgba(255,255,255,.18);";
-    m.innerHTML = `<div style="min-width:320px;max-width:560px;padding:22px 26px;border-radius:16px;background:rgba(20,18,32,.97);border:1px solid rgba(255,255,255,.15);box-shadow:0 30px 80px rgba(0,0,0,.65)">
+    if (!m) { m = document.createElement("div"); m.id = "gexsync-replay-modal"; m.style.cssText = "position:fixed;inset:0;z-index:2147483003;display:flex;align-items:center;justify-content:center;background:rgba(12,8,18,.62);backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px);font-family:'IBM Plex Sans',system-ui,-apple-system,sans-serif;color:#E7E9EA;"; document.documentElement.appendChild(m); }
+    const btn = "height:36px;padding:0 18px;border-radius:9999px;font:600 13px 'IBM Plex Sans',system-ui;cursor:pointer;border:1px solid rgba(255,255,255,.18);";
+    m.innerHTML = `<div style="min-width:320px;max-width:560px;padding:24px 28px;border-radius:18px;background:rgba(22,20,31,.97);border:1px solid rgba(255,255,255,.14);box-shadow:0 30px 80px rgba(0,0,0,.65)">
         ${bodyHtml}
-        <div style="margin-top:20px;display:flex;gap:10px;justify-content:flex-end">
-          <button data-x="cancel" style="${btn}background:transparent;color:#e7e9ea">Cancel</button>
-          <button data-x="ok" style="${btn}background:#00d68f;border-color:#00d68f;color:#08110c">${okLabel}</button>
+        <div style="margin-top:22px;display:flex;gap:10px;justify-content:flex-end">
+          <button data-x="cancel" style="${btn}background:transparent;color:#E7E9EA">Cancel</button>
+          <button data-x="ok" style="${btn}background:${okBg};border-color:${okBg};color:${okInk}">${okLabel}</button>
         </div></div>`;
     m.style.display = "flex";
     m.querySelector('[data-x=cancel]').onclick = () => { m.style.display = "none"; };
@@ -355,22 +357,26 @@
   }
   async function showReview() {
     const r = await roster();
-    const cell = "padding:5px 10px;border-bottom:1px solid rgba(255,255,255,.08);white-space:nowrap";
-    const rows = r.map((e) => `<tr>
-      <td style="${cell}">${e.role === "master" ? "★ master" : "client"}</td>
-      <td style="${cell}">${(e.page || "").replace(/^\//, "")}</td>
-      <td style="${cell}">${e.ticker || "?"}</td>
-      <td style="${cell}">${e.profile || "?"}</td>
-      <td style="${cell}">${e.date || "?"}</td></tr>`).join("");
-    modal(`<div style="font:600 16px system-ui;margin-bottom:4px">Start replay session?</div>
-      <div style="color:#9aa0aa;font-size:12px;margin-bottom:14px">Review every tab — loading locks all of these until you Exit.</div>
-      <table style="border-collapse:collapse;width:100%;font-size:13px">
-        <thead><tr style="color:#9aa0aa;text-align:left">
-          <th style="${cell}">role</th><th style="${cell}">page</th><th style="${cell}">ticker</th><th style="${cell}">profile</th><th style="${cell}">date</th></tr></thead>
+    const cell = "padding:6px 11px;border-bottom:1px solid rgba(255,255,255,.08);white-space:nowrap;font:500 12.5px 'JetBrains Mono',ui-monospace,monospace";
+    const hcell = "padding:6px 11px;border-bottom:1px solid rgba(255,255,255,.12);font:500 10px 'JetBrains Mono',ui-monospace,monospace;letter-spacing:.12em;text-transform:uppercase;color:#9AA0AA";
+    const rows = r.map((e) => {
+      const role = e.role === "master" ? `<span style="color:#16E0A3">★ master</span>` : `<span style="color:#4AA3FF">client</span>`;
+      return `<tr>
+        <td style="${cell}">${role}</td>
+        <td style="${cell}">${(e.page || "").replace(/^\//, "")}</td>
+        <td style="${cell}">${e.ticker || "?"}</td>
+        <td style="${cell}">${e.profile || "?"}</td>
+        <td style="${cell}">${e.date || "?"}</td></tr>`;
+    }).join("");
+    modal(`<div style="font:600 17px 'IBM Plex Sans',system-ui;margin-bottom:4px">Start replay session?</div>
+      <div style="color:#9AA0AA;font-size:12px;margin-bottom:14px">Review every tab — loading locks all of these until you Exit.</div>
+      <table style="border-collapse:collapse;width:100%">
+        <thead><tr style="text-align:left">
+          <th style="${hcell}">role</th><th style="${hcell}">page</th><th style="${hcell}">ticker</th><th style="${hcell}">profile</th><th style="${hcell}">date</th></tr></thead>
         <tbody>${rows}</tbody></table>`, "Confirm &amp; load", loadAll);
   }
-  const confirmExit = () => modal(`<div style="font:600 16px system-ui">Exit replay session?</div>
-    <div style="color:#9aa0aa;font-size:12px;margin-top:8px">Unlocks every tab and ends the session for everyone.</div>`, "Exit replay", exitSession);
+  const confirmExit = () => modal(`<div style="font:600 17px 'IBM Plex Sans',system-ui">Exit replay session?</div>
+    <div style="color:#9AA0AA;font-size:12px;margin-top:8px">Unlocks every tab and ends the session for everyone.</div>`, "Exit replay", exitSession, "#FF5C5C", "#2a0808");
 
   // ---- floating bar (shadow DOM, corner-anchored expand) ----
   const s = (inner, o = "") => `<svg viewBox="0 0 24 24" width="16" height="16" ${o}>${inner}</svg>`;
@@ -405,6 +411,10 @@
         return `<button class="b act" data-cmd="bemaster">Be master</button><span class="hint">set this tab's ticker &amp; profile first</span>`;
       return `<button class="b act" data-cmd="joinclient">Join as client</button><span class="hint">master ready — join to sync this tab</span>`;
     }
+    // active session (loading/running) but this tab never joined → bystander:
+    // no transport, no data touched, just a note. It can leave via the popup.
+    if (!role)
+      return `<span class="tag">replay in progress</span><span class="hint">not joined — this tab stays live</span>`;
     if (session.phase === "loading")
       return `<span class="tag">syncing…</span><span class="cnt">calibrating tabs — please wait</span>
         <span class="sep"></span><button class="b ex" data-cmd="exit">Exit</button>`;
@@ -436,14 +446,16 @@
     const root = host.attachShadow({ mode: "open" });
     root.innerHTML = `
       <style>
+        /* brand: mint #16E0A3 master, azure #4AA3FF client, red #FF5C5C exit,
+           amber #FFB454 no-data. Fonts injected at document level by content.js. */
         .bar { position:fixed; left:16px; bottom:20px; display:flex; align-items:center; padding:6px;
-          border-radius:9999px; background:rgba(20,18,32,.66); backdrop-filter:blur(16px);
+          border-radius:9999px; background:rgba(22,20,31,.8); backdrop-filter:blur(16px); -webkit-backdrop-filter:blur(16px);
           border:1px solid rgba(255,255,255,.12); box-shadow:0 16px 48px rgba(0,0,0,.5);
-          z-index:2147483000; font:13px system-ui,-apple-system,sans-serif; color:#e7e9ea; user-select:none; }
+          z-index:2147483000; font:500 13px 'IBM Plex Sans',system-ui,-apple-system,sans-serif; color:#E7E9EA; user-select:none; }
         .anchor { flex:0 0 auto; width:38px; height:38px; border-radius:9999px; border:none;
-          background:transparent; color:#9aa0aa; cursor:pointer; display:flex; align-items:center; justify-content:center; padding:0; }
-        .bar[data-role="master"] .anchor { color:#00d68f; }
-        .bar[data-role="client"] .anchor { color:#4aa3ff; }
+          background:transparent; color:#9AA0AA; cursor:pointer; display:flex; align-items:center; justify-content:center; padding:0; }
+        .bar[data-role="master"] .anchor { color:#16E0A3; }
+        .bar[data-role="client"] .anchor { color:#4AA3FF; }
         .bar[data-cal="1"] .anchor { animation:calpulse 1.1s ease-in-out infinite; }
         @keyframes calpulse { 0%,100%{opacity:.35} 50%{opacity:1} }
         .rest { display:flex; align-items:center; gap:3px; max-width:0; opacity:0; overflow:hidden;
@@ -451,30 +463,30 @@
         .bar[data-open="1"] .rest { max-width:940px; opacity:1; margin-left:4px; }
         .scrub { width:130px; height:4px; -webkit-appearance:none; appearance:none; margin:0 4px;
           background:rgba(255,255,255,.22); border-radius:9999px; cursor:pointer; outline:none; flex:0 0 auto; }
-        .scrub::-webkit-slider-thumb { -webkit-appearance:none; width:13px; height:13px; border-radius:50%; background:#e7e9ea; cursor:pointer; }
-        .scrub::-moz-range-thumb { width:13px; height:13px; border:none; border-radius:50%; background:#e7e9ea; cursor:pointer; }
+        .scrub::-webkit-slider-thumb { -webkit-appearance:none; width:13px; height:13px; border-radius:50%; background:#16E0A3; cursor:pointer; }
+        .scrub::-moz-range-thumb { width:13px; height:13px; border:none; border-radius:50%; background:#16E0A3; cursor:pointer; }
         .b { flex:0 0 auto; height:34px; min-width:34px; padding:0 8px; border-radius:9999px; border:none;
-          background:transparent; color:#e7e9ea; cursor:pointer; font:inherit; font-size:13px;
+          background:transparent; color:#E7E9EA; cursor:pointer; font:inherit; font-size:13px;
           display:flex; align-items:center; justify-content:center; line-height:1; }
         .b svg { display:block; }
         .b:hover { background:rgba(255,255,255,.12); color:#fff; }
         .b[disabled] { opacity:.4; cursor:default; }
         .b[disabled]:hover { background:transparent; }
-        .pp { background:rgba(255,255,255,.95); color:#0a0a12; }
+        .pp { background:#E7E9EA; color:#0a0a12; }
         .pp:hover { background:#fff; color:#000; }
-        .act { background:#00d68f; color:#08110c; font-weight:700; padding:0 14px; }
-        .act:hover { background:#1ee6a2; color:#000; }
-        .act[disabled] { background:rgba(255,255,255,.14); color:#9aa0aa; }
-        .ex { color:#ff9d9d; font-weight:600; padding:0 12px; }
-        .ex:hover { background:rgba(255,90,90,.18); color:#ffbcbc; }
-        .speed { font-size:12px; font-weight:600; min-width:40px; }
-        .sep { width:1px; height:20px; background:rgba(255,255,255,.14); margin:0 3px; flex:0 0 auto; }
+        .act { background:#16E0A3; color:#08110c; font-weight:700; padding:0 14px; }
+        .act:hover { background:#3BF7C0; color:#000; }
+        .act[disabled] { background:rgba(255,255,255,.14); color:#9AA0AA; }
+        .ex { color:#FF9D9D; font-weight:600; padding:0 12px; }
+        .ex:hover { background:rgba(255,92,92,.18); color:#FFBCBC; }
+        .speed { font-family:'JetBrains Mono',ui-monospace,monospace; font-size:12px; font-weight:700; min-width:40px; }
+        .sep { width:1px; height:20px; background:rgba(255,255,255,.12); margin:0 3px; flex:0 0 auto; }
         .tag { font-weight:700; padding:0 4px 0 8px; white-space:nowrap; }
-        .tag.master { color:#00d68f; } .tag.client { color:#4aa3ff; }
-        .cnt, .hint { color:#9aa0aa; font-size:12px; padding:0 8px; white-space:nowrap; }
-        .foll { color:#9aa0aa; font-size:12px; white-space:nowrap; padding-left:6px; }
-        .mtime, .ftime { font-variant-numeric:tabular-nums; font-weight:600; min-width:96px; white-space:nowrap; text-align:center; }
-        .bar.nodata .foll, .bar.nodata .ftime { color:#ff9d4a; }
+        .tag.master { color:#16E0A3; } .tag.client { color:#4AA3FF; }
+        .cnt, .hint { color:#9AA0AA; font-size:12px; padding:0 8px; white-space:nowrap; }
+        .foll { color:#9AA0AA; font-size:12px; white-space:nowrap; padding-left:6px; }
+        .mtime, .ftime { font-family:'JetBrains Mono',ui-monospace,monospace; font-variant-numeric:tabular-nums; font-weight:600; min-width:96px; white-space:nowrap; text-align:center; }
+        .bar.nodata .foll, .bar.nodata .ftime { color:#FFB454; }
       </style>
       <div class="bar" data-open="0" data-role="none">
         <button class="anchor" title="GexSync replay">${IC.replay}</button>
@@ -486,11 +498,11 @@
     const overlay = document.createElement("div");
     overlay.id = "gexsync-cal-overlay";
     // z-index sits BELOW the bar (2147483000) so the loading-phase Exit stays clickable if a sync hangs
-    overlay.style.cssText = "position:fixed;inset:0;z-index:2147482900;display:none;align-items:center;justify-content:center;background:rgba(8,8,14,.6);backdrop-filter:blur(2px);font-family:system-ui,-apple-system,sans-serif;color:#e7e9ea;";
-    overlay.innerHTML = `<div style="padding:22px 30px;border-radius:14px;background:rgba(20,18,32,.94);border:1px solid rgba(255,255,255,.14);box-shadow:0 24px 70px rgba(0,0,0,.6);text-align:center">
-      <div style="font:600 15px system-ui">Syncing replay…</div>
-      <div class="calprog" style="margin-top:10px;color:#4ade80;font:700 26px ui-monospace,monospace">0 / 0</div>
-      <div style="margin-top:8px;color:#9aa0aa;font-size:12px">loading history + building time maps — please wait</div></div>`;
+    overlay.style.cssText = "position:fixed;inset:0;z-index:2147482900;display:none;align-items:center;justify-content:center;background:rgba(12,8,18,.6);backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px);font-family:'IBM Plex Sans',system-ui,-apple-system,sans-serif;color:#E7E9EA;";
+    overlay.innerHTML = `<div style="padding:24px 32px;border-radius:16px;background:rgba(22,20,31,.92);border:1px solid rgba(255,255,255,.14);box-shadow:0 24px 70px rgba(0,0,0,.6);text-align:center">
+      <div style="font:600 15px 'IBM Plex Sans',system-ui">Syncing replay…</div>
+      <div class="calprog" style="margin-top:12px;color:#16E0A3;font:700 28px 'JetBrains Mono',ui-monospace,monospace">0 / 0</div>
+      <div style="margin-top:8px;color:#9AA0AA;font-size:12px">loading history + building time maps — please wait</div></div>`;
     document.documentElement.appendChild(overlay);
 
     const bar = root.querySelector(".bar");
@@ -538,10 +550,16 @@
       if (!active()) { overlay.style.display = "none"; return; }
 
       const ids = await presentIds();
-      if (session.phase !== "idle") { // dead-master → auto-exit so a closed master can't wedge the session
-        if (ids.has(session.master)) masterSeen = Date.now();
-        else if (Date.now() - masterSeen > 10000) { exitSession(); return; }
-      } else masterSeen = Date.now();
+      if (ids.has(session.master)) masterSeen = Date.now();
+      if (session.phase === "idle") {
+        // setup: a claimed master that vanished (tab closed / extension reloaded)
+        // would leave every tab stuck on "Join as client" with no way to claim.
+        // Release it once it's been gone a beat or two so someone can be master.
+        if (session.master && Date.now() - masterSeen > 8000)
+          writeSession({ master: null, clients: session.clients.filter((c) => ids.has(c)) });
+      } else if (!ids.has(session.master) && Date.now() - masterSeen > 10000) {
+        exitSession(); return; // dead master mid-session → tear down so it can't wedge
+      }
 
       if (session.phase === "loading") {
         const { n, m } = await groupReady();
