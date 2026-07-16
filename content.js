@@ -321,6 +321,28 @@
     });
   }, 400);
 
+  // ---- rate-limit toast: GEXbot answered 429 (see netwatch.js, MAIN world) ----
+  // Dev-phase reloads can blow GEXbot's daily quota on /hist/spot; surface it so
+  // you know to cool off. Auto-hides; re-arms on each new hit.
+  let toastEl = null, toastTimer = null;
+  function showToast(msg) {
+    if (!alive()) return;
+    if (!toastEl) {
+      toastEl = document.createElement("div");
+      toastEl.id = "gexsync-toast";
+      toastEl.style.cssText = "position:fixed;left:50%;top:18px;transform:translateX(-50%);z-index:2147483600;max-width:440px;padding:12px 18px;border-radius:12px;background:rgba(60,14,14,.96);border:1px solid #ff4d4f;color:#ffdede;font:600 13px system-ui,-apple-system,sans-serif;box-shadow:0 12px 40px rgba(0,0,0,.55);text-align:center;";
+      (document.body || document.documentElement).appendChild(toastEl);
+    }
+    toastEl.textContent = msg;
+    toastEl.style.display = "block";
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => { if (toastEl) toastEl.style.display = "none"; }, 9000);
+  }
+  window.addEventListener("gexsync-429", (e) => {
+    const path = String(e.detail?.url || "").replace(/^https?:\/\/[^/]+/, "").split("?")[0];
+    showToast(`GexSync: GEXbot rate limit (${e.detail?.status}) on ${path || "API"} — cool off on reloads.`);
+  });
+
   // ---- persistent chip: mode segment (click cycles mode) + group segment
   // (Ticker mode only, click cycles this tab's color group) ----
   let renderChip = () => {};
