@@ -91,13 +91,26 @@
   }
 
   function watch(group, groupName) {
-    if (!group) return;
-    new MutationObserver(() => {
+    if (!group) return null;
+    const obs = new MutationObserver(() => {
       if (applyingRemote || !profileSync()) return; // gex/options only sync in Live mode
       const keyword = selectedKeyword(group);
       // ponytail: t forces onChanged to fire even when keyword repeats
       if (keyword) send({ [KEY]: { group: groupName, keyword, t: performance.now() } });
-    }).observe(group, { attributes: true, subtree: true, attributeFilter: ["aria-pressed", "class"] });
+    });
+    obs.observe(group, { attributes: true, subtree: true, attributeFilter: ["aria-pressed", "class"] });
+    return obs;
+  }
+
+  // (Re)attach the gex/options observers whenever their group elements appear or
+  // swap. /state renders TWO groups that can mount on different ticks; the old
+  // boot code latched after the first one appeared, leaving the other unwatched →
+  // /state profiles didn't sync (classic has only the gex group, so never hit it).
+  let watchedGex = null, watchedOptions = null, gexObs = null, optionsObs = null;
+  function watchGroups() {
+    const { gex, options } = getGroups();
+    if (gex && gex !== watchedGex) { gexObs?.disconnect(); gexObs = watch(gex, "gex"); watchedGex = gex; }
+    if (options && options !== watchedOptions) { optionsObs?.disconnect(); optionsObs = watch(options, "options"); watchedOptions = options; }
   }
 
   // ---- settings-panel collapse (chevron): ChevronLeft = collapsed ----
@@ -519,14 +532,11 @@
     if (tickerSync() && changes[tickerChan()]?.newValue) applyTicker(changes[tickerChan()].newValue.ticker);
   });
 
-  // SPA renders late; poll until controls exist, attach each once.
-  let groupsDone = false, panelDone = false;
-  const boot = setInterval(() => {
-    if (!groupsDone) {
-      const { gex, options } = getGroups();
-      if (gex || options) { watch(gex, "gex"); watch(options, "options"); groupsDone = true; }
-    }
+  // SPA renders late and swaps elements; keep polling (cheap) so group observers
+  // re-attach on mount/swap — like watchSwitches does for the greek switches.
+  let panelDone = false;
+  setInterval(() => {
+    watchGroups();
     if (!panelDone) panelDone = watchPanel();
-    if (groupsDone && panelDone) clearInterval(boot);
   }, 500);
 })();
