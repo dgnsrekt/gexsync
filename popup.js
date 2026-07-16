@@ -30,11 +30,42 @@ chrome.tabs.query({ url: "https://www.gexbot.com/*" }, async (tabs) => {
     rows.length ? rows.map((r) => `<div>${r}</div>`).join("") : "no gexbot tabs";
 });
 
-// Mode: live | replay (shared key read by content.js + replay.js)
+// Mode: profiles | ticker | replay (shared key read by content.js + replay.js)
+const SESSION_KEY = "replay-session";
+const idleSession = { phase: "idle", master: null, clients: [] };
+// Regular US equity trading hours, tz-correct, no API (holidays ignored — a stray
+// "are you sure" on a holiday is harmless). ponytail: add a holiday list only if it annoys.
+function marketOpen(d = new Date()) {
+  const p = new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", weekday: "short", hour: "2-digit", minute: "2-digit", hour12: false }).formatToParts(d);
+  const g = (t) => p.find((x) => x.type === t).value;
+  if (g("weekday") === "Sat" || g("weekday") === "Sun") return false;
+  const mins = +g("hour") * 60 + +g("minute");
+  return mins >= 570 && mins < 960; // 9:30 – 16:00 ET
+}
 const modeSel = document.getElementById("modeSel");
+let prevMode = "profiles", sessionLocked = false;
 const showMode = () => document.querySelectorAll("[data-mode]").forEach((el) => { el.hidden = el.dataset.mode !== modeSel.value; });
-chrome.storage.local.get("gexsync-mode", (r) => { const m = r["gexsync-mode"]; modeSel.value = m === "replay" ? "replay" : m === "ticker" ? "ticker" : "profiles"; showMode(); });
-modeSel.addEventListener("change", () => { showMode(); chrome.storage.local.set({ "gexsync-mode": modeSel.value }); });
+chrome.storage.local.get(["gexsync-mode", SESSION_KEY], (r) => {
+  const m = r["gexsync-mode"];
+  modeSel.value = prevMode = m === "replay" ? "replay" : m === "ticker" ? "ticker" : "profiles";
+  sessionLocked = !!r[SESSION_KEY] && r[SESSION_KEY].phase !== "idle";
+  showMode(); applyLock();
+});
+modeSel.addEventListener("change", () => {
+  const next = modeSel.value;
+  // leaving Replay with a session running → confirm, then tear it down for all tabs
+  if (prevMode === "replay" && next !== "replay" && sessionLocked) {
+    if (!confirm("Exit the active replay session? This unlocks every tab.")) { modeSel.value = "replay"; return; }
+    chrome.storage.local.set({ [SESSION_KEY]: idleSession });
+  }
+  // entering Replay during market hours → confirm (replay is for past sessions)
+  if (next === "replay" && prevMode !== "replay" && marketOpen()) {
+    if (!confirm("Market's open — replay is for reviewing past sessions. Enter replay anyway?")) { modeSel.value = prevMode; return; }
+  }
+  prevMode = next;
+  showMode();
+  chrome.storage.local.set({ "gexsync-mode": next });
+});
 
 const sel = document.getElementById("panelScope");
 const wm = document.getElementById("watermark");
@@ -46,15 +77,22 @@ wm.addEventListener("change", saveCfg);
 // Replay settings — merge on write to keep master.
 const track = document.getElementById("replayTrack");
 const dbg = document.getElementById("replayDebug");
-const scope = document.getElementById("replayScope");
-const auto = document.getElementById("replayAutoRestart");
 chrome.storage.local.get("replay-cfg", (r) => {
   const c = r["replay-cfg"] || {};
   track.value = c.heartbeat === false ? "onpause" : "heartbeat";
   dbg.checked = !!c.debug;
-  scope.value = c.scope === "all" ? "all" : "page";
-  auto.checked = !!c.autorestart;
 });
 const saveReplay = () => chrome.storage.local.get("replay-cfg", (r) =>
-  chrome.storage.local.set({ "replay-cfg": { ...(r["replay-cfg"] || {}), heartbeat: track.value === "heartbeat", debug: dbg.checked, scope: scope.value, autorestart: auto.checked } }));
-[track, dbg, scope, auto].forEach((el) => el.addEventListener("change", saveReplay));
+  chrome.storage.local.set({ "replay-cfg": { ...(r["replay-cfg"] || {}), heartbeat: track.value === "heartbeat", debug: dbg.checked } }));
+[track, dbg].forEach((el) => el.addEventListener("change", saveReplay));
+
+// Lock every setting while a replay session is active; Mode stays the exit path.
+function applyLock() {
+  [sel, wm, track, dbg].forEach((el) => { el.disabled = sessionLocked; });
+  document.getElementById("lockNote").hidden = !sessionLocked;
+}
+chrome.storage.onChanged.addListener((c, area) => {
+  if (area !== "local" || !c[SESSION_KEY]) return;
+  sessionLocked = !!c[SESSION_KEY].newValue && c[SESSION_KEY].newValue.phase !== "idle";
+  applyLock();
+});

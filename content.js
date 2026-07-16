@@ -27,8 +27,10 @@
   //   replay   — handled by replay.js
   const MODE_KEY = "gexsync-mode";
   const TICKER_KEY = "gexsync-ticker"; // cross-page (state + classic share the ticker)
+  const SESSION_KEY = "replay-session"; // replay.js's live session; locks the pill mode-cycle
   let mode = "profiles";
-  chrome.storage.local.get(MODE_KEY, (r) => { if (r[MODE_KEY]) mode = r[MODE_KEY] === "live" ? "profiles" : r[MODE_KEY]; renderChip(); });
+  let replayLocked = false; // a replay session is loaded/running → don't let the pill switch modes
+  chrome.storage.local.get([MODE_KEY, SESSION_KEY], (r) => { if (r[MODE_KEY]) mode = r[MODE_KEY] === "live" ? "profiles" : r[MODE_KEY]; replayLocked = !!r[SESSION_KEY] && r[SESSION_KEY].phase !== "idle"; renderChip(); });
   const profileSync = () => mode === "profiles";
   const tickerSync = () => mode === "ticker";
 
@@ -359,7 +361,7 @@
     const modeSeg = document.createElement("span");
     modeSeg.style.cssText = "display:flex;align-items:center;gap:7px;padding:6px 13px;cursor:pointer;";
     modeSeg.title = "GexSync mode — click to cycle (Profiles / Ticker / Replay)";
-    modeSeg.addEventListener("click", () => send({ [MODE_KEY]: MODES[(MODES.indexOf(mode) + 1) % MODES.length] }));
+    modeSeg.addEventListener("click", () => { if (replayLocked) return; send({ [MODE_KEY]: MODES[(MODES.indexOf(mode) + 1) % MODES.length] }); });
 
     const grpSeg = document.createElement("span");
     grpSeg.style.cssText = "display:flex;align-items:center;gap:6px;padding:6px 13px;cursor:pointer;border-left:1px solid rgba(255,255,255,.14);";
@@ -393,7 +395,10 @@
     };
     renderChip = () => {
       const m = MODES.includes(mode) ? mode : "profiles";
-      modeSeg.textContent = `mode: ${LABEL[m]}`;
+      // locked replay session → pill can't switch modes (Exit via the replay bar)
+      modeSeg.textContent = `mode: ${LABEL[m]}${replayLocked ? " 🔒" : ""}`;
+      modeSeg.style.cursor = replayLocked ? "default" : "pointer";
+      modeSeg.title = replayLocked ? "Locked during replay session — Exit via the replay bar" : "GexSync mode — click to cycle (Profiles / Ticker / Replay)";
       const g = GROUPS.find((x) => x.name === groupName()) || GROUPS[0];
       // tint the pill by group only in Ticker mode (groups are inert otherwise)
       chip.style.color = m === "ticker" ? g.color : "#e7e9ea";
@@ -470,6 +475,7 @@
     if (area !== "local") return;
     if (changes[CFG_KEY]?.newValue) { const c = changes[CFG_KEY].newValue; if (c.panelScope) panelScope = c.panelScope; watermark = c.watermark !== false; }
     if (changes[MODE_KEY]?.newValue) { mode = changes[MODE_KEY].newValue === "live" ? "profiles" : changes[MODE_KEY].newValue; renderChip(); }
+    if (changes[SESSION_KEY]) { replayLocked = !!changes[SESSION_KEY].newValue && changes[SESSION_KEY].newValue.phase !== "idle"; renderChip(); }
     if (profileSync() && changes[KEY]?.newValue) applyProfile(changes[KEY].newValue.group, changes[KEY].newValue.keyword);
     if (changes[panelKey()]?.newValue) applyPanel(changes[panelKey()].newValue.collapsed); // panel always
     if (profileSync() && changes[OPTS_KEY]?.newValue) applyOpts(changes[OPTS_KEY].newValue.state);
