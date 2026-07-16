@@ -2,9 +2,9 @@ const count = (page) =>
   new Promise((r) => chrome.tabs.query({ url: `https://www.gexbot.com/${page}*` }, (t) => r(t.length)));
 
 Promise.all([count("state"), count("classic")]).then(([state, classic]) => {
-  const line = (label, n) => `${label}: ${n} tab${n === 1 ? "" : "s"} synced`;
+  const line = (label, n) => `${label}: <b>${n}</b> tab${n === 1 ? "" : "s"} synced`;
   document.getElementById("count").innerHTML =
-    `${line("state", state)}<br>${line("classic", classic)}`;
+    `${line("state", state)} · ${line("classic", classic)}`;
 });
 
 // Per-tab state list. Ask each gexbot tab's content script for its state.
@@ -27,7 +27,7 @@ chrome.tabs.query({ url: "https://www.gexbot.com/*" }, async (tabs) => {
     return extra.length ? `${cols} · ${extra.join(" · ")}` : cols.trimEnd();
   }));
   document.getElementById("tabs").innerHTML =
-    rows.length ? rows.map((r) => `<div>${r}</div>`).join("") : "no gexbot tabs";
+    rows.length ? rows.map((r) => `<div>${r}</div>`).join("") : `<span class="muted">no gexbot tabs</span>`;
 });
 
 // Mode: profiles | ticker | replay (shared key read by content.js + replay.js)
@@ -42,30 +42,35 @@ function marketOpen(d = new Date()) {
   const mins = +g("hour") * 60 + +g("minute");
   return mins >= 570 && mins < 960; // 9:30 – 16:00 ET
 }
-const modeSel = document.getElementById("modeSel");
-let prevMode = "profiles", sessionLocked = false;
-const showMode = () => document.querySelectorAll("[data-mode]").forEach((el) => { el.hidden = el.dataset.mode !== modeSel.value; });
+const modeBtns = [...document.querySelectorAll("#modeSeg .seg-btn")];
+let curMode = "profiles", sessionLocked = false;
+const showMode = () => {
+  // only the content panels toggle — the seg buttons also carry data-mode
+  document.querySelectorAll("div[data-mode]").forEach((el) => { el.hidden = el.dataset.mode !== curMode; });
+  modeBtns.forEach((b) => b.setAttribute("aria-selected", b.dataset.mode === curMode ? "true" : "false"));
+};
 chrome.storage.local.get(["gexsync-mode", SESSION_KEY], (r) => {
   const m = r["gexsync-mode"];
-  modeSel.value = prevMode = m === "replay" ? "replay" : m === "ticker" ? "ticker" : "profiles";
+  curMode = m === "replay" ? "replay" : m === "ticker" ? "ticker" : "profiles";
   sessionLocked = !!r[SESSION_KEY] && r[SESSION_KEY].phase !== "idle";
   showMode(); applyLock();
 });
-modeSel.addEventListener("change", () => {
-  const next = modeSel.value;
+function selectMode(next) {
+  if (next === curMode) return;
   // leaving Replay with a session running → confirm, then tear it down for all tabs
-  if (prevMode === "replay" && next !== "replay" && sessionLocked) {
-    if (!confirm("Exit the active replay session? This unlocks every tab.")) { modeSel.value = "replay"; return; }
+  if (curMode === "replay" && sessionLocked) {
+    if (!confirm("Exit the active replay session? This unlocks every tab.")) return;
     chrome.storage.local.set({ [SESSION_KEY]: idleSession });
   }
   // entering Replay during market hours → confirm (replay is for past sessions)
-  if (next === "replay" && prevMode !== "replay" && marketOpen()) {
-    if (!confirm("Market's open — replay is for reviewing past sessions. Enter replay anyway?")) { modeSel.value = prevMode; return; }
+  if (next === "replay" && marketOpen()) {
+    if (!confirm("Market's open — replay is for reviewing past sessions. Enter replay anyway?")) return;
   }
-  prevMode = next;
+  curMode = next;
   showMode();
   chrome.storage.local.set({ "gexsync-mode": next });
-});
+}
+modeBtns.forEach((b) => b.addEventListener("click", () => selectMode(b.dataset.mode)));
 
 const sel = document.getElementById("panelScope");
 const wm = document.getElementById("watermark");
