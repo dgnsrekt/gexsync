@@ -11,6 +11,28 @@
   const send = (obj) => { if (alive()) chrome.storage.local.set(obj); };
   const get = (keys, cb) => { if (alive()) chrome.storage.local.get(keys, cb); };
 
+  // ---- brand tokens + fonts (shared with the popup / replay bar) ----
+  const T = {
+    mint: "#16E0A3", azure: "#4AA3FF", red: "#FF5C5C", amber: "#FFB454",
+    ink: "#E7E9EA", muted: "#9AA0AA", glass: "rgba(22,20,31,.82)",
+    ui: "'IBM Plex Sans',system-ui,-apple-system,sans-serif",
+    mono: "'JetBrains Mono',ui-monospace,SFMono-Regular,monospace",
+  };
+  // Inject the packaged woff2 once at document level (covers light DOM + shadow
+  // roots — @font-face isn't scoped). No external requests.
+  function injectFonts() {
+    if (!alive() || document.getElementById("gexsync-fonts")) return;
+    const u = (f) => chrome.runtime.getURL(`fonts/${f}`);
+    const st = document.createElement("style");
+    st.id = "gexsync-fonts";
+    st.textContent =
+      `@font-face{font-family:'Space Grotesk';font-weight:400 700;font-display:swap;src:url('${u("SpaceGrotesk.woff2")}') format('woff2')}` +
+      `@font-face{font-family:'IBM Plex Sans';font-weight:400 700;font-display:swap;src:url('${u("IBMPlexSans.woff2")}') format('woff2')}` +
+      `@font-face{font-family:'JetBrains Mono';font-weight:400 700;font-display:swap;src:url('${u("JetBrainsMono.woff2")}') format('woff2')}`;
+    (document.head || document.documentElement).appendChild(st);
+  }
+  injectFonts();
+
   // Channel scope: "page" appends pathname (state/classic separate); "all" shares.
   const scopedKey = (base, scope) => (scope === "all" ? base : base + location.pathname);
   let panelScope = "page"; // config-driven, kept live via onChanged below
@@ -178,15 +200,16 @@
   // change some to red (etc.) to split them off. The group lives in sessionStorage
   // (per-tab, survives the reload — localStorage is shared across same-origin
   // tabs, so it can't hold a per-tab value).
+  // Brand ticker-group swatches, harmonized to one lightness (see theme.css).
   const GROUPS = [
-    { name: "green", color: "#00d68f" },
-    { name: "red", color: "#ff4d4f" },
-    { name: "blue", color: "#4aa3ff" },
-    { name: "yellow", color: "#ffb454" },
-    { name: "purple", color: "#b57aff" },
-    { name: "cyan", color: "#22d3ee" },
-    { name: "orange", color: "#ff8c42" },
-    { name: "pink", color: "#ff5cc8" },
+    { name: "green", color: "#16E0A3" },
+    { name: "red", color: "#FF5C5C" },
+    { name: "blue", color: "#4AA3FF" },
+    { name: "yellow", color: "#FFC24A" },
+    { name: "purple", color: "#B57AFF" },
+    { name: "cyan", color: "#22D3EE" },
+    { name: "orange", color: "#FF8C42" },
+    { name: "pink", color: "#FF5CC8" },
   ];
   // Validate against GROUPS so a stale value (e.g. "none" from an older build)
   // can't leave a tab displaying green while broadcasting on a dead channel.
@@ -354,17 +377,23 @@
     chip.id = "gexsync-mode-chip";
     // bottom-LEFT, raised above the replay transport bar (left:20 bottom:20) so
     // they don't overlap in Replay mode; the split-view divider covered the right.
-    chip.style.cssText = "position:fixed;left:16px;bottom:72px;z-index:2147482000;display:flex;align-items:center;border-radius:9999px;background:rgba(20,18,32,.82);backdrop-filter:blur(10px);border:1px solid rgba(255,255,255,.14);color:#e7e9ea;font:600 13px system-ui,-apple-system,sans-serif;box-shadow:0 8px 24px rgba(0,0,0,.45);user-select:none;";
+    chip.style.cssText = `position:fixed;left:16px;bottom:72px;z-index:2147482000;display:flex;align-items:center;border-radius:9999px;background:${T.glass};backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);border:1px solid rgba(255,255,255,.12);color:${T.ink};font:600 13px ${T.ui};box-shadow:0 8px 24px rgba(0,0,0,.45);user-select:none;`;
     const MODES = ["profiles", "ticker", "replay"];
     const LABEL = { profiles: "Profiles", ticker: "Ticker", replay: "Replay" };
 
+    // brand mark glyph (the sync loop) at the far left, muted so it reads as
+    // identity, not status
+    const markSeg = document.createElement("span");
+    markSeg.style.cssText = `display:flex;align-items:center;padding:6px 3px 6px 13px;color:${T.muted};`;
+    markSeg.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4.5v5h5"/></svg>`;
+
     const modeSeg = document.createElement("span");
-    modeSeg.style.cssText = "display:flex;align-items:center;gap:7px;padding:6px 13px;cursor:pointer;";
+    modeSeg.style.cssText = "display:flex;align-items:center;gap:7px;padding:6px 13px 6px 7px;cursor:pointer;";
     modeSeg.title = "GexSync mode — click to cycle (Profiles / Ticker / Replay)";
     modeSeg.addEventListener("click", () => { if (replayLocked) return; send({ [MODE_KEY]: MODES[(MODES.indexOf(mode) + 1) % MODES.length] }); });
 
     const grpSeg = document.createElement("span");
-    grpSeg.style.cssText = "display:flex;align-items:center;gap:6px;padding:6px 13px;cursor:pointer;border-left:1px solid rgba(255,255,255,.14);";
+    grpSeg.style.cssText = "display:flex;align-items:center;gap:6px;padding:6px 13px;cursor:pointer;border-left:1px solid rgba(255,255,255,.12);";
     grpSeg.title = "Ticker group — click to cycle color; only same-color tabs sync";
     grpSeg.addEventListener("click", () => {
       const i = GROUPS.findIndex((g) => g.name === groupName());
@@ -376,16 +405,19 @@
     // side panel closed, replaces the top-left debug badge that blocked the nav
     // links. replay.js appends MASTER/client via chip.dataset.replayRole.
     const infoSeg = document.createElement("span");
-    infoSeg.style.cssText = "display:flex;align-items:center;padding:6px 13px;border-left:1px solid rgba(255,255,255,.14);font:600 12px ui-monospace,SFMono-Regular,monospace;letter-spacing:.3px;white-space:nowrap;";
+    infoSeg.style.cssText = `display:flex;align-items:center;padding:6px 14px;border-left:1px solid rgba(255,255,255,.12);font:500 12px ${T.mono};letter-spacing:.3px;white-space:nowrap;color:${T.ink};`;
 
-    chip.append(modeSeg, grpSeg, infoSeg);
+    chip.append(markSeg, modeSeg, grpSeg, infoSeg);
     const shortId = TAB.slice(0, 3).toUpperCase();
+    const sep = `<span style="color:${T.muted}">·</span>`;
     const paintInfo = () => {
-      const role = mode === "replay" && chip.dataset.replayRole ? ` · ${chip.dataset.replayRole}` : "";
+      // role: MASTER in mint, client in azure (fed by replay.js)
+      const r = mode === "replay" && chip.dataset.replayRole;
+      const role = r ? ` ${sep} <span style="color:${r === "MASTER" ? T.mint : T.azure}">${r}</span>` : "";
       const page = location.pathname.replace(/^\//, "").toUpperCase();
       const prof = profileLabel().replace("90d", "90 days").toUpperCase();
-      // order: ticker · CLASSIC/STATE · profile [· role] · tab-id (titled)
-      infoSeg.innerHTML = `${tickerValue() || "?"} · ${page} · ${prof}${role} · <span title="tab id" style="cursor:help">#${shortId}</span>`;
+      // order: ticker · CLASSIC/STATE · profile [· role] · tab-id (titled, muted)
+      infoSeg.innerHTML = `${tickerValue() || "?"} ${sep} ${page} ${sep} ${prof}${role} ${sep} <span title="tab id" style="cursor:help;color:${T.muted}">#${shortId}</span>`;
     };
     // swatch + how many tabs share this group (min-width holds 2 digits steady)
     let groupCount = 1;
@@ -401,7 +433,7 @@
       modeSeg.title = replayLocked ? "Locked during replay session — Exit via the replay bar" : "GexSync mode — click to cycle (Profiles / Ticker / Replay)";
       const g = GROUPS.find((x) => x.name === groupName()) || GROUPS[0];
       // tint the pill by group only in Ticker mode (groups are inert otherwise)
-      chip.style.color = m === "ticker" ? g.color : "#e7e9ea";
+      chip.style.color = m === "ticker" ? g.color : T.ink;
       grpSeg.style.display = m === "ticker" ? "flex" : "none";
       paintGroup();
       paintInfo();

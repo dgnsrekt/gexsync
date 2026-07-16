@@ -15,5 +15,9 @@
     "js": ["netwatch.js"],
     "run_at": "document_start",
     "world": "MAIN"
+  }],
+  "web_accessible_resources": [{
+    "resources": ["fonts/SpaceGrotesk.woff2", "fonts/IBMPlexSans.woff2", "fonts/JetBrainsMono.woff2"],
+    "matches": ["https://www.gexbot.com/*"]
   }]
 }
