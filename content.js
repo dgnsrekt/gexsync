@@ -163,7 +163,14 @@
   // Set the ticker via GEXbot's URL-hash scheme (/state#TICKER#profile), which
   // encodes THIS tab's own profile alongside the new ticker; then strip the hash
   // and reload the bare url so the price line renders (see reloadClean below).
-  const tickerValue = () => document.querySelector("input[role=combobox]")?.value || null;
+  // Target the ticker combobox specifically — GEXbot's Settings panel adds a
+  // "Time Zone" combobox at DOM index 0, so a bare querySelector("input[role=
+  // combobox]") would read the timezone and mistake it for a ticker change.
+  const tickerInput = () =>
+    [...document.querySelectorAll("input[role=combobox]")].find(
+      (el) => (el.closest(".MuiAutocomplete-root, .MuiFormControl-root")?.querySelector("label")?.textContent || "").trim().toLowerCase() === "ticker"
+    ) || null;
+  const tickerValue = () => tickerInput()?.value || null;
   // Ticker groups: scope ticker sync to same-color tabs, so e.g. a green group on
   // TSLA and a red group on NVDA don't touch each other. Every tab starts green;
   // change some to red (etc.) to split them off. The group lives in sessionStorage
@@ -426,7 +433,7 @@
     return {
       id: TAB.slice(0, 3).toUpperCase(), // same short id shown in the pill
       page: location.pathname.replace(/^\//, ""), // "state" | "classic"
-      ticker: document.querySelector("input[role=combobox]")?.value || null,
+      ticker: tickerValue(),
       gex: selectedKeyword(gex),
       options: selectedKeyword(options),
       greeks: OPTS.filter((k) => sw[k]?.checked),
