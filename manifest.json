@@ -5,7 +5,11 @@
   "description": "Sync gex/options profile + replay transport across GEXbot tabs, tickers stay independent.",
   "permissions": ["storage"],
   "host_permissions": ["https://www.gexbot.com/*"],
-  "action": { "default_popup": "popup.html" },
+  "icons": { "16": "icons/icon16.png", "32": "icons/icon32.png", "48": "icons/icon48.png", "128": "icons/icon128.png" },
+  "action": {
+    "default_popup": "popup.html",
+    "default_icon": { "16": "icons/icon16.png", "32": "icons/icon32.png", "48": "icons/icon48.png", "128": "icons/icon128.png" }
+  },
   "content_scripts": [{
     "matches": ["https://www.gexbot.com/state*", "https://www.gexbot.com/classic*"],
     "js": ["content.js", "replay.js"],
@@ -15,5 +19,9 @@
     "js": ["netwatch.js"],
     "run_at": "document_start",
     "world": "MAIN"
+  }],
+  "web_accessible_resources": [{
+    "resources": ["fonts/SpaceGrotesk.woff2", "fonts/IBMPlexSans.woff2", "fonts/JetBrainsMono.woff2"],
+    "matches": ["https://www.gexbot.com/*"]
   }]
 }
