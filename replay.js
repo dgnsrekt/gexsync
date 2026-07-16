@@ -497,18 +497,6 @@
     const rest = root.querySelector(".rest");
     barUI = { host, overlay, bar, rest };
 
-    // hover opens; leaving keeps it up briefly (or forever if pinned by click)
-    const anchor = root.querySelector(".anchor");
-    let closeT;
-    bar.addEventListener("mouseenter", () => { clearTimeout(closeT); bar.dataset.open = "1"; });
-    bar.addEventListener("mouseleave", () => { if (bar.dataset.pinned !== "1" && bar.dataset.force !== "1") { clearTimeout(closeT); closeT = setTimeout(() => { bar.dataset.open = "0"; }, 1500); } });
-    anchor.addEventListener("click", () => {
-      const p = bar.dataset.pinned === "1";
-      bar.dataset.pinned = p ? "0" : "1";
-      bar.dataset.open = p ? "0" : "1";
-      anchor.innerHTML = p ? IC.replay : IC.lock;
-    });
-
     // delegated controls — one handler survives .rest re-renders
     rest.addEventListener("click", (e) => {
       const b = e.target.closest("button[data-cmd]");
@@ -532,11 +520,7 @@
       barUI.host.style.display = active() ? "" : "none";
       const role = myRole();
       bar.dataset.role = role || "none";
-      // keep the bar expanded through setup/loading so the buttons are visible;
-      // only the running transport collapses back to hover-to-open.
-      const force = active() && session.phase !== "running";
-      bar.dataset.force = force ? "1" : "0";
-      if (force) bar.dataset.open = "1";
+      bar.dataset.open = active() ? "1" : "0"; // always expanded while in Replay mode
       const key = `${active() ? 1 : 0}|${session.phase}|${role}|${session.master ? 1 : 0}|${session.clients.length}`;
       if (key === lastKey) return;
       lastKey = key;
