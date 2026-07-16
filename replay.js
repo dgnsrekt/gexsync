@@ -315,7 +315,7 @@
     const root = host.attachShadow({ mode: "open" });
     root.innerHTML = `
       <style>
-        .bar { position:fixed; left:20px; bottom:20px; display:flex; align-items:center; padding:6px;
+        .bar { position:fixed; left:16px; bottom:20px; display:flex; align-items:center; padding:6px;
           border-radius:9999px; background:rgba(20,18,32,.66); backdrop-filter:blur(16px);
           border:1px solid rgba(255,255,255,.12); box-shadow:0 16px 48px rgba(0,0,0,.5);
           z-index:2147483000; font:13px system-ui,-apple-system,sans-serif; color:#e7e9ea; user-select:none; }
