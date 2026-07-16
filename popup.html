@@ -25,6 +25,9 @@
       <option value="replay">Replay — sync transport</option>
     </select>
   </label>
+  <div id="lockNote" hidden style="margin-top:8px;padding:8px 10px;border-radius:8px;background:#3a1414;color:#ffbcbc;font-size:12px">
+    🔒 Replay session active — settings are locked. Switch Mode off Replay (or hit Exit in the replay bar) to end it.
+  </div>
 
   <hr style="margin:12px 0;border:none;border-top:1px solid #ddd">
   <div data-mode="profiles">
@@ -46,16 +49,6 @@
     <div style="margin-top:4px;color:#777;font-size:12px">
       Set each tab's ticker + date + load history; first tab is master, others follow (aligned by time-of-day).
     </div>
-    <label style="display:block;margin-top:8px">
-      Sync scope:
-      <select id="replayScope" style="margin-top:4px;width:100%">
-        <option value="page">By page (state / classic separate)</option>
-        <option value="all">All tabs (state + classic together)</option>
-      </select>
-    </label>
-    <label style="display:block;margin-top:8px">
-      <input type="checkbox" id="replayAutoRestart"> Auto-restart to start when calibration finishes
-    </label>
     <label style="display:block;margin-top:8px">
       <input type="checkbox" id="replayDebug"> Debug (show master/client role in pill)
     </label>
