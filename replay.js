@@ -331,11 +331,17 @@
     if (!blocker) {
       blocker = document.createElement("div");
       blocker.id = "gexsync-panel-lock";
-      blocker.style.cssText = "position:fixed;z-index:2147482500;background:transparent;cursor:not-allowed;";
-      blocker.title = "Locked during replay session — Exit to change";
+      // visible amber scrim (amber = the brand "locked" role) + a message so the
+      // user knows GexSync locked the panel on purpose — not a GEXbot bug.
+      blocker.style.cssText = "position:fixed;z-index:2147482500;display:flex;align-items:center;justify-content:center;cursor:not-allowed;background:rgba(10,8,16,.42);backdrop-filter:saturate(.5);-webkit-backdrop-filter:saturate(.5);box-shadow:inset 0 0 0 1.5px rgba(255,180,84,.4);font-family:'IBM Plex Sans',system-ui,-apple-system,sans-serif;";
+      blocker.title = "Locked by GexSync for replay sync — Exit the replay bar to unlock";
+      blocker.innerHTML = `<div style="display:flex;flex-direction:column;align-items:center;gap:7px;padding:14px 16px;border-radius:14px;background:rgba(22,20,31,.95);border:1px solid rgba(255,180,84,.5);box-shadow:0 12px 34px rgba(0,0,0,.55);max-width:210px;text-align:center">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#FFB454" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>
+        <div style="color:#FFB454;font:700 12.5px 'IBM Plex Sans',system-ui">Locked for replay sync</div>
+        <div style="color:#9AA0AA;font:500 11px 'IBM Plex Sans',system-ui;line-height:1.4">GexSync locked this panel so the tabs stay in sync. Hit <b style="color:#E7E9EA">Exit</b> in the replay bar to unlock.</div></div>`;
       document.documentElement.appendChild(blocker);
     }
-    blocker.style.display = "block";
+    blocker.style.display = "flex";
     blocker.style.left = rect.x + "px"; blocker.style.top = rect.y + "px";
     blocker.style.width = rect.width + "px"; blocker.style.height = rect.height + "px";
   }
