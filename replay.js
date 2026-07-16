@@ -153,19 +153,25 @@
     if (!alive()) return;
     if ((await chrome.storage.local.get(LOCK_KEY))[LOCK_KEY]?.holder === ME) await chrome.storage.local.remove(LOCK_KEY);
   }
-  let buildTries = 0;
+  let buildTries = 0, recalCount = 0, liveGiveUp = false;
   async function maybeBuildMap() {
     const el = slider();
     // only participants calibrate, and only once the session is loading/running
     if (!el || building || calibrating || !participating() || session.phase === "idle") return;
     if (document.hidden) return; // hidden tabs don't repaint the chart → stale reads
+    if (liveGiveUp) return; // stopped chasing live-growing data (see cap below)
     const max = +el.max || 0;
     if (max === mapMax && timeMap) return;
     if (max < 2) { timeMap = null; mapMax = max; return; }
+    // Live data (market hours on a non-past date) keeps growing max → endless
+    // recalibration that never stabilizes and hangs the session at "N/M". After a
+    // few rebuilds, give up and accept the last map so the group can finish loading.
+    if (recalCount >= 4) { liveGiveUp = true; beat(); return; }
     if (!(await acquireCalLock())) return;
     mapMax = max;
     building = true;
     try { await buildMap(max); } finally { building = false; await releaseCalLock(); }
+    if (timeMap) recalCount++; // if max keeps changing (live data) we'll hit the cap
     if (!timeMap && buildTries++ < 3) mapMax = -1; // self-heal: retry a few times
     beat(); // publish readiness now — don't wait for the 3s heartbeat to flip the group ready
   }
@@ -238,11 +244,11 @@
       const prevPhase = session.phase;
       session = changes[SESSION_KEY].newValue || { phase: "idle", master: null, clients: [] };
       // exit → return to live + drop this tab's cached map so a fresh session recalibrates cleanly
-      if (wasPart && session.phase === "idle") { exitPlayback(); timeMap = null; mapMax = -1; buildTries = 0; clientNoData = false; lastMasterTod = null; }
+      if (wasPart && session.phase === "idle") { exitPlayback(); timeMap = null; mapMax = -1; buildTries = 0; recalCount = 0; liveGiveUp = false; clientNoData = false; lastMasterTod = null; }
       // entering loading → force a fresh calibration so "ready" is honest. Otherwise the
       // stale idle-phase ready:true (slider max<2) flips the session straight to running,
       // killing the syncing overlay and the post-load restart.
-      if (participating() && prevPhase !== "loading" && session.phase === "loading") { timeMap = null; mapMax = -1; buildTries = 0; clientNoData = false; beat(); }
+      if (participating() && prevPhase !== "loading" && session.phase === "loading") { timeMap = null; mapMax = -1; buildTries = 0; recalCount = 0; liveGiveUp = false; clientNoData = false; beat(); }
       renderBar(); updateBlocker();
     }
     if (changes[MODE_KEY]?.newValue) { mode = changes[MODE_KEY].newValue === "live" ? "live" : changes[MODE_KEY].newValue; renderBar(); updateBlocker(); if (active()) maybeBuildMap(); }
@@ -298,7 +304,7 @@
   // breaking the post-load restart). Empty-date wedge escapes via Exit.
   const selfReady = () => {
     if (!participating() || document.hidden) return true;
-    if (session.phase === "loading") return timeMap != null;
+    if (session.phase === "loading") return timeMap != null || liveGiveUp;
     return timeMap != null || (+(slider()?.max) || 0) < 2;
   };
   const beat = () => { if (alive()) chrome.storage.local.set({ [PART + ME]: { t: Date.now(), role: myRole(), page: PAGE, ticker: tickerValue(), profile: profileValue(), date: dateValue(), ready: selfReady() } }); };
@@ -361,22 +367,37 @@
     m.querySelector('[data-x=cancel]').onclick = () => { m.style.display = "none"; };
     m.querySelector('[data-x=ok]').onclick = () => { m.style.display = "none"; onOk(); };
   }
+  // A replay tab must be on a PAST date. "Today"/today's date is live: its data
+  // keeps growing during market hours so it never finishes calibrating and hangs
+  // the session. Flag those rows in the review so the mistake is obvious.
+  function isLiveDate(d) {
+    if (!d || /today/i.test(d)) return true;
+    const m = d.match(/(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+    if (!m) return true;
+    const et = new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(new Date());
+    const g = (t) => +et.find((x) => x.type === t).value;
+    return new Date(+m[3], +m[1] - 1, +m[2]) >= new Date(g("year"), g("month") - 1, g("day"));
+  }
   async function showReview() {
     const r = await roster();
     const cell = "padding:6px 11px;border-bottom:1px solid rgba(255,255,255,.08);white-space:nowrap;font:500 12.5px 'JetBrains Mono',ui-monospace,monospace";
     const hcell = "padding:6px 11px;border-bottom:1px solid rgba(255,255,255,.12);font:500 10px 'JetBrains Mono',ui-monospace,monospace;letter-spacing:.12em;text-transform:uppercase;color:#9AA0AA";
+    let anyLive = false;
     const rows = r.map((e) => {
       const role = e.role === "master" ? `<span style="color:#16E0A3">★ master</span>` : `<span style="color:#4AA3FF">client</span>`;
+      const live = isLiveDate(e.date); if (live) anyLive = true;
+      const dateCell = live ? `<td style="${cell};color:#FFB454">⚠ ${e.date || "?"}</td>` : `<td style="${cell}">${e.date || "?"}</td>`;
       return `<tr>
         <td style="${cell}">${role}</td>
         <td style="${cell}">${(e.page || "").replace(/^\//, "")}</td>
         <td style="${cell}">${e.ticker || "?"}</td>
         <td style="${cell}">${e.profile || "?"}</td>
-        <td style="${cell}">${e.date || "?"}</td></tr>`;
+        ${dateCell}</tr>`;
     }).join("");
+    const warn = anyLive ? `<div style="margin:0 0 12px;padding:9px 12px;border-radius:9px;background:rgba(255,180,84,.13);border:1px solid rgba(255,180,84,.5);color:#FFB454;font:500 11.5px 'IBM Plex Sans',system-ui;line-height:1.4">⚠ A highlighted tab is on a <b>live date (today)</b> — replay needs past dates. During market hours it won't finish calibrating.</div>` : "";
     modal(`<div style="font:600 17px 'IBM Plex Sans',system-ui;margin-bottom:4px">Start replay session?</div>
       <div style="color:#9AA0AA;font-size:12px;margin-bottom:14px">Review every tab — loading locks all of these until you Exit.</div>
-      <table style="border-collapse:collapse;width:100%">
+      ${warn}<table style="border-collapse:collapse;width:100%">
         <thead><tr style="text-align:left">
           <th style="${hcell}">role</th><th style="${hcell}">page</th><th style="${hcell}">ticker</th><th style="${hcell}">profile</th><th style="${hcell}">date</th></tr></thead>
         <tbody>${rows}</tbody></table>`, "Confirm &amp; load", loadAll);
