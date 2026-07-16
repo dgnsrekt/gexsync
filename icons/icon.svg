@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#1B1830"/>
+      <stop offset="1" stop-color="#100E1C"/>
+    </linearGradient>
+  </defs>
+  <!-- badge -->
+  <rect x="6" y="6" width="116" height="116" rx="30" fill="url(#bg)" stroke="#16E0A3" stroke-width="2.5" stroke-opacity="0.55"/>
+  <!-- two synced panels -->
+  <rect x="29" y="42" width="27" height="44" rx="8" fill="#16E0A3"/>
+  <rect x="72" y="42" width="27" height="44" rx="8" fill="#4AA3FF"/>
+  <!-- shared time cursor + node -->
+  <line x1="64" y1="30" x2="64" y2="98" stroke="#16E0A3" stroke-width="7" stroke-linecap="round"/>
+  <circle cx="64" cy="64" r="9" fill="#16E0A3"/>
+</svg>
