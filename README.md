@@ -1,5 +1,11 @@
 # GexSync
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-informational.svg)](LICENSE)
+![Manifest V3](https://img.shields.io/badge/Chrome-Manifest%20V3-4285F4?logo=googlechrome&logoColor=white)
+![No build step](https://img.shields.io/badge/build-none-brightgreen.svg)
+![Zero dependencies](https://img.shields.io/badge/dependencies-0-brightgreen.svg)
+[![GitHub stars](https://img.shields.io/github/stars/dgnsrekt/gexsync?style=social)](https://github.com/dgnsrekt/gexsync/stargazers)
+
 A Chrome extension (Manifest V3) that keeps multiple [GEXbot](https://www.gexbot.com)
 trading tabs in sync. Pick one of three modes — **Profiles**, **Ticker**, or
 **Replay** — and GexSync mirrors that dimension across your open `/state` and
