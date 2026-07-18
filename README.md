@@ -14,6 +14,12 @@ trading tabs in sync. Pick one of three modes — **Profiles**, **Ticker**, or
 No build step, no npm, no external services. It runs only on `gexbot.com` and
 nothing ever leaves your browser.
 
+## ▶ Watch the 30-second tour
+
+[![GexSync — 30-second tour](docs/promo-poster.png)](docs/gexsync-promo.mp4)
+
+*Click to play. Profiles, ticker, and replay sync — the whole thing in half a minute.*
+
 ## Ask an AI instead
 
 Rather read the answers than the docs? Copy the prompt below (hover the box and
