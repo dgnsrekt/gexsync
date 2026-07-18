@@ -16,9 +16,9 @@ nothing ever leaves your browser.
 
 ## ▶ Watch the 30-second tour
 
-[![GexSync — 30-second tour](docs/promo-poster.png)](docs/gexsync-promo.mp4)
+[![GexSync — 30-second tour](docs/gexsync-promo.gif)](https://x.com/DGNSREKT/status/2078327126411907501)
 
-*Click to play. Profiles, ticker, and replay sync — the whole thing in half a minute.*
+*Click for the full video + a thread on how each mode works. Profiles, ticker, and replay sync — the whole thing in half a minute.*
 
 ## Ask an AI instead
 
