@@ -8,6 +8,19 @@ trading tabs in sync. Pick one of three modes — **Profiles**, **Ticker**, or
 No build step, no npm, no external services. It runs only on `gexbot.com` and
 nothing ever leaves your browser.
 
+## Ask an AI instead
+
+Rather read the answers than the docs? Copy the prompt below (hover the box and
+click the copy icon) and paste it into ChatGPT, Claude, Gemini, or any AI that
+can read a URL — it will answer from this repo's knowledge base.
+
+```text
+Read the knowledge base at https://github.com/dgnsrekt/gexsync/blob/master/knowledge/index.md (OKF v0.1 format — start at index.md). Then use the information to answer the following questions:
+
+How do I install this Chrome extension?
+What does it do, and is it safe?
+```
+
 ## Install (Load unpacked)
 
 GexSync isn't on the Chrome Web Store yet, so you load it from this repo:
