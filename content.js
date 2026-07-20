@@ -11,6 +11,11 @@
   const send = (obj) => { if (alive()) chrome.storage.local.set(obj); };
   const get = (keys, cb) => { if (alive()) chrome.storage.local.get(keys, cb); };
 
+  // Only /classic and /state get the sync UI. GEXbot is a SPA: navigating to
+  // /research, /api, /pricing, … keeps this (already-injected) script alive, so
+  // gate every side-effect on the live path and hide our UI when off those pages.
+  const onSyncPage = () => /^\/(classic|state)(?=$|[/?#])/.test(location.pathname);
+
   // ---- brand tokens + fonts (shared with the popup / replay bar) ----
   const T = {
     mint: "#16E0A3", azure: "#4AA3FF", red: "#FF5C5C", amber: "#FFB454",
@@ -208,6 +213,13 @@
       (el) => (el.closest(".MuiAutocomplete-root, .MuiFormControl-root")?.querySelector("label")?.textContent || "").trim().toLowerCase() === "ticker"
     ) || null;
   const tickerValue = () => tickerInput()?.value || null;
+  // GEXbot renders "es future" mode by suffixing the ticker: SPX -> "SPX⇒ES"
+  // (U+21D2). Ticker SYNC must key off the real underlying, so strip the suffix;
+  // the spot↔es toggle is synced separately (see below) as its own ticker-axis.
+  const baseTicker = () => { const v = tickerValue(); return v ? (v.match(/^[A-Za-z0-9.]+/)?.[0] || v) : null; };
+  const esFutureOn = () => { const v = tickerValue(); return v == null ? null : /⇒/.test(v); };
+  const esToggleBtn = (on) => [...document.querySelectorAll("button")]
+    .find((b) => b.textContent.trim().toLowerCase() === (on ? "es future" : "spot price")) || null;
   // Ticker groups: scope ticker sync to same-color tabs, so e.g. a green group on
   // TSLA and a red group on NVDA don't touch each other. Every tab starts green;
   // change some to red (etc.) to split them off. The group lives in sessionStorage
@@ -282,7 +294,7 @@
     : (sessionStorage.gexsyncTab = Math.random().toString(36).slice(2));
   const lockFree = (l) => !l || !l.holder || l.holder === TAB || Date.now() > l.exp;
   function applyTicker(ticker) {
-    if (!ticker || tickerValue() === ticker) return; // already on this ticker
+    if (!ticker || baseTicker() === ticker) return; // already on this ticker (ignore the es-future suffix)
     applyingRemote = true; // hold off the poll while we queue the reload
     pendingReload = true; // this tab is now part of the in-flight sync (keeps busy fresh)
     const tryReload = () => get(LOCK_KEY, (r) => {
@@ -316,13 +328,41 @@
   releaseLockOnBoot();
   let lastTicker = null;
   setInterval(() => {
-    const t = tickerValue();
+    if (!onSyncPage()) return;
+    const t = baseTicker(); // underlying only — the es-future suffix syncs on its own channel
     if (lastTicker === null) { lastTicker = t; return; }       // baseline — don't broadcast the initial value
     if (applyingRemote || !tickerSync()) { lastTicker = t; return; }
     if (t && t !== lastTicker) {
       lastTicker = t;
       send({ [tickerChan()]: { ticker: t, t: performance.now() } });
       send({ [busyKey()]: { exp: Date.now() + 3000 } }); // seed the busy flag; followers extend it as they reload
+    }
+  }, 400);
+
+  // ---- spot ↔ es-future sync (Ticker mode; it's a ticker-axis view) ----
+  // GEXbot has no dedicated key for it — the toggle just flips the ticker to
+  // "SPX⇒ES". Sync it group-scoped like the ticker, but APPLY by clicking the
+  // toggle button: it updates the chart live (no reload) and each page (classic /
+  // state stores it separately) flips its own button, so it's cross-page safe.
+  const ES_CHAN = () => `${TICKER_KEY}-es:${groupName()}`;
+  function applyEs(on) {
+    const cur = esFutureOn();
+    if (cur === null || cur === on) return; // this ticker has no es toggle, or already matched
+    const b = esToggleBtn(on);
+    if (!b) return;
+    applyingRemote = true;
+    b.click();
+    setTimeout(() => { applyingRemote = false; }, 500); // outlast one poll tick so we don't echo
+  }
+  let lastEs = null;
+  setInterval(() => {
+    if (!onSyncPage()) return;
+    const on = esFutureOn();
+    if (lastEs === null) { lastEs = on; return; }
+    if (applyingRemote || !tickerSync()) { lastEs = on; return; }
+    if (on !== null && on !== lastEs) {
+      lastEs = on;
+      send({ [ES_CHAN()]: { es: on, t: performance.now() } });
     }
   }, 400);
 
@@ -351,7 +391,7 @@
     overlayEl.style.display = "flex";
   }
   setInterval(() => {
-    if (!alive() || !tickerSync()) { setOverlay(false); return; } // orphaned/off-ticker: drop the overlay
+    if (!alive() || !onSyncPage() || !tickerSync()) { setOverlay(false); return; } // orphaned/off-page/off-ticker: drop the overlay
     if (pendingReload || sessionStorage.gexsyncReloading === "1") send({ [busyKey()]: { exp: Date.now() + 2500 } });
     get([busyKey(), tickerChan()], (r) => {
       const b = r[busyKey()];
@@ -466,7 +506,7 @@
     const TP = "gexsync-tp:" + TAB;
     setInterval(() => {
       if (!alive()) return; // orphaned content script: stay quiet
-      if (mode !== "ticker") { chrome.storage.local.remove(TP); return; } // drop presence off-ticker
+      if (!onSyncPage() || mode !== "ticker") { chrome.storage.local.remove(TP); return; } // drop presence off-page / off-ticker
       send({ [TP]: { group: groupName(), exp: Date.now() + 5000 } });
       get(null, (all) => {
         const now = Date.now(), mine = groupName(), stale = [];
@@ -490,6 +530,7 @@
   // the chart), e.g. "META" -> "META LATEST". React only rewrites it on ticker
   // change, so a light interval re-appends and keeps it synced to the profile.
   function paintWatermark() {
+    if (!onSyncPage()) return;
     const tk = tickerValue();
     if (!tk) return;
     const wm = [...document.querySelectorAll("h6.MuiTypography-h6")]
@@ -526,16 +567,36 @@
     if (changes[CFG_KEY]?.newValue) { const c = changes[CFG_KEY].newValue; if (c.panelScope) panelScope = c.panelScope; watermark = c.watermark !== false; }
     if (changes[MODE_KEY]?.newValue) { mode = changes[MODE_KEY].newValue === "live" ? "profiles" : changes[MODE_KEY].newValue; renderChip(); }
     if (changes[SESSION_KEY]) { replayLocked = !!changes[SESSION_KEY].newValue && changes[SESSION_KEY].newValue.phase !== "idle"; renderChip(); }
+    if (!onSyncPage()) return; // off /classic|/state (SPA nav): don't touch the page
     if (profileSync() && changes[KEY]?.newValue) applyProfile(changes[KEY].newValue.group, changes[KEY].newValue.keyword);
     if (changes[panelKey()]?.newValue) applyPanel(changes[panelKey()].newValue.collapsed); // panel always
     if (profileSync() && changes[OPTS_KEY]?.newValue) applyOpts(changes[OPTS_KEY].newValue.state);
     if (tickerSync() && changes[tickerChan()]?.newValue) applyTicker(changes[tickerChan()].newValue.ticker);
+    if (tickerSync() && changes[ES_CHAN()]?.newValue) applyEs(changes[ES_CHAN()].newValue.es);
   });
+
+  // Show our UI only on /classic|/state. GEXbot is a SPA, so navigating to
+  // /research, /api, /pricing, … doesn't reload (this script stays alive) — hide
+  // the chip + overlays and drop this tab's group presence so it stops bleeding
+  // onto other pages and stops inflating the group count. Restored on return.
+  function applyPageActive() {
+    const on = onSyncPage();
+    const chip = document.getElementById("gexsync-mode-chip");
+    if (chip) chip.style.display = on ? "flex" : "none";
+    if (!on) {
+      setOverlay(false);
+      if (toastEl) toastEl.style.display = "none";
+      if (alive()) chrome.storage.local.remove("gexsync-tp:" + TAB); // un-count from the group
+    }
+  }
 
   // SPA renders late and swaps elements; keep polling (cheap) so group observers
   // re-attach on mount/swap — like watchSwitches does for the greek switches.
-  let panelDone = false;
+  let panelDone = false, lastPath = location.pathname;
+  applyPageActive();
   setInterval(() => {
+    if (location.pathname !== lastPath) { lastPath = location.pathname; applyPageActive(); }
+    if (!onSyncPage()) return; // dormant off /classic|/state
     watchGroups();
     if (!panelDone) panelDone = watchPanel();
   }, 500);

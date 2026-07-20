@@ -28,9 +28,12 @@
   let seekSeq = 0, lastSeekSent = 0;
   let timeMap = null, mapMax = -1, building = false, calibrating = false; // index↔time map
   let scrubUntil = 0; // suppress live-position updates while dragging the mini scrubber
-  const PAGE = location.pathname;           // "/state" | "/classic"
+  const PAGE = location.pathname;           // "/state" | "/classic" (at load)
   let mode = "live";
   const active = () => mode === "replay";
+  // GEXbot is a SPA — nav to /research, /pricing, … keeps this script alive. Hide
+  // the bar + drop presence when off /classic|/state so it doesn't bleed over.
+  const onSyncPage = () => /^\/(classic|state)(?=$|[/?#])/.test(location.pathname);
   const ME = Math.random().toString(36).slice(2);
   let cfg = { heartbeat: true, debug: false };
   let session = { phase: "idle", master: null, clients: [] };
@@ -307,7 +310,7 @@
     if (session.phase === "loading") return timeMap != null || liveGiveUp;
     return timeMap != null || (+(slider()?.max) || 0) < 2;
   };
-  const beat = () => { if (alive()) chrome.storage.local.set({ [PART + ME]: { t: Date.now(), role: myRole(), page: PAGE, ticker: tickerValue(), profile: profileValue(), date: dateValue(), ready: selfReady() } }); };
+  const beat = () => { if (alive() && onSyncPage()) chrome.storage.local.set({ [PART + ME]: { t: Date.now(), role: myRole(), page: PAGE, ticker: tickerValue(), profile: profileValue(), date: dateValue(), ready: selfReady() } }); };
   async function partEntries() {
     if (!alive()) return [];
     const all = await chrome.storage.local.get(null);
@@ -321,6 +324,16 @@
   beat();
   setInterval(() => { beat(); maybeBuildMap(); }, 3000);
   setTimeout(maybeBuildMap, 1500);
+  // SPA route watch: leaving /classic|/state hides the bar + drops presence so a
+  // replay tab that navigated away stops appearing in the roster (the session
+  // self-heals as its PART entry expires). UI is restored on return.
+  let rpPath = location.pathname;
+  setInterval(() => {
+    if (location.pathname === rpPath) return;
+    rpPath = location.pathname;
+    if (!onSyncPage() && alive()) chrome.storage.local.remove(PART + ME);
+    renderBar(); updateBlocker();
+  }, 500);
   document.addEventListener("visibilitychange", () => { if (!document.hidden) maybeBuildMap(); });
   window.addEventListener("beforeunload", () => { if (alive()) chrome.storage.local.remove(PART + ME); });
 
@@ -556,7 +569,7 @@
     rest.addEventListener("input", (e) => { if (e.target.classList.contains("scrub")) { scrubUntil = performance.now() + 500; setSlider(+e.target.value); } });
 
     renderBar = () => {
-      barUI.host.style.display = active() ? "" : "none";
+      barUI.host.style.display = (active() && onSyncPage()) ? "" : "none";
       const role = myRole();
       bar.dataset.role = role || "none";
       bar.dataset.open = active() ? "1" : "0"; // always expanded while in Replay mode
@@ -574,7 +587,7 @@
       updateBlocker();
       const chip = document.getElementById("gexsync-mode-chip");
       if (chip) chip.dataset.replayRole = cfg.debug && participating() ? (isMaster() ? "MASTER" : "client") : "";
-      if (!active()) { overlay.style.display = "none"; return; }
+      if (!active() || !onSyncPage()) { overlay.style.display = "none"; return; }
 
       const ids = await presentIds();
       if (ids.has(session.master)) masterSeen = Date.now();
