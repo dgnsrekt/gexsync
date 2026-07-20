@@ -4,6 +4,7 @@
 ![Manifest V3](https://img.shields.io/badge/Chrome-Manifest%20V3-4285F4?logo=googlechrome&logoColor=white)
 ![No build step](https://img.shields.io/badge/build-none-brightgreen.svg)
 ![Zero dependencies](https://img.shields.io/badge/dependencies-0-brightgreen.svg)
+[![Latest release](https://img.shields.io/github/v/release/dgnsrekt/gexsync?label=release&color=16E0A3)](https://github.com/dgnsrekt/gexsync/releases/latest)
 [![GitHub stars](https://img.shields.io/github/stars/dgnsrekt/gexsync?style=social)](https://github.com/dgnsrekt/gexsync/stargazers)
 
 A Chrome extension (Manifest V3) that keeps multiple [GEXbot](https://www.gexbot.com)
@@ -37,8 +38,12 @@ What does it do, and is it safe?
 
 GexSync isn't on the Chrome Web Store yet, so you load it from this repo:
 
-1. **Get the files.** Either `git clone https://github.com/dgnsrekt/gexsync.git`,
-   or click the green **Code** button on GitHub → **Download ZIP**, then unzip it.
+1. **Get the files.** Download the latest packaged build — the
+   `gexsync-vX.Y.Z.zip` on the
+   [**Releases page**](https://github.com/dgnsrekt/gexsync/releases/latest) — and
+   unzip it (you'll get a `gexsync/` folder). Prefer the source? `git clone
+   https://github.com/dgnsrekt/gexsync.git`, or use the green **Code** button →
+   **Download ZIP**.
 2. Open Chrome and go to `chrome://extensions`.
 3. Turn on **Developer mode** (toggle in the top-right corner).
 4. Click **Load unpacked** and select the `gexsync` folder (the one containing
