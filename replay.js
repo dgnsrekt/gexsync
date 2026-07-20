@@ -366,19 +366,20 @@
   }
 
   // ---- reusable modal (review before load, confirm before exit) ----
-  function modal(bodyHtml, okLabel, onOk, okBg = "#16E0A3", okInk = "#08110c") {
+  function modal(bodyHtml, okLabel, onOk, okBg = "#16E0A3", okInk = "#08110c", okDisabled = false) {
     let m = document.getElementById("gexsync-replay-modal");
     if (!m) { m = document.createElement("div"); m.id = "gexsync-replay-modal"; m.style.cssText = "position:fixed;inset:0;z-index:2147483003;display:flex;align-items:center;justify-content:center;background:rgba(12,8,18,.62);backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px);font-family:'IBM Plex Sans',system-ui,-apple-system,sans-serif;color:#E7E9EA;"; document.documentElement.appendChild(m); }
     const btn = "height:36px;padding:0 18px;border-radius:9999px;font:600 13px 'IBM Plex Sans',system-ui;cursor:pointer;border:1px solid rgba(255,255,255,.18);";
+    const okStyle = okDisabled ? `${btn}background:rgba(255,255,255,.12);border-color:rgba(255,255,255,.12);color:#9AA0AA;cursor:not-allowed` : `${btn}background:${okBg};border-color:${okBg};color:${okInk}`;
     m.innerHTML = `<div style="min-width:320px;max-width:560px;padding:24px 28px;border-radius:18px;background:rgba(22,20,31,.97);border:1px solid rgba(255,255,255,.14);box-shadow:0 30px 80px rgba(0,0,0,.65)">
         ${bodyHtml}
         <div style="margin-top:22px;display:flex;gap:10px;justify-content:flex-end">
           <button data-x="cancel" style="${btn}background:transparent;color:#E7E9EA">Cancel</button>
-          <button data-x="ok" style="${btn}background:${okBg};border-color:${okBg};color:${okInk}">${okLabel}</button>
+          <button data-x="ok"${okDisabled ? " disabled" : ""} style="${okStyle}">${okLabel}</button>
         </div></div>`;
     m.style.display = "flex";
     m.querySelector('[data-x=cancel]').onclick = () => { m.style.display = "none"; };
-    m.querySelector('[data-x=ok]').onclick = () => { m.style.display = "none"; onOk(); };
+    m.querySelector('[data-x=ok]').onclick = okDisabled ? null : () => { m.style.display = "none"; onOk(); };
   }
   // A replay tab must be on a PAST date. "Today"/today's date is live: its data
   // keeps growing during market hours so it never finishes calibrating and hangs
@@ -395,25 +396,30 @@
     const r = await roster();
     const cell = "padding:6px 11px;border-bottom:1px solid rgba(255,255,255,.08);white-space:nowrap;font:500 12.5px 'JetBrains Mono',ui-monospace,monospace";
     const hcell = "padding:6px 11px;border-bottom:1px solid rgba(255,255,255,.12);font:500 10px 'JetBrains Mono',ui-monospace,monospace;letter-spacing:.12em;text-transform:uppercase;color:#9AA0AA";
-    let anyLive = false;
+    let anyLive = false, anyConverted = false;
     const rows = r.map((e) => {
       const role = e.role === "master" ? `<span style="color:#16E0A3">★ master</span>` : `<span style="color:#4AA3FF">client</span>`;
       const live = isLiveDate(e.date); if (live) anyLive = true;
+      // es-future "converted" ticker (SPY⇒ES): GEXbot disables deep history for
+      // these (FAQ #41). Our load bypasses their lock, so block it — flag the tab.
+      const conv = /⇒/.test(e.ticker || ""); if (conv) anyConverted = true;
       const dateCell = live ? `<td style="${cell};color:#FFB454">⚠ ${e.date || "?"}</td>` : `<td style="${cell}">${e.date || "?"}</td>`;
+      const tickerCell = conv ? `<td style="${cell};color:#FF9D9D">⛔ ${e.ticker}</td>` : `<td style="${cell}">${e.ticker || "?"}</td>`;
       return `<tr>
         <td style="${cell}">${role}</td>
         <td style="${cell}">${(e.page || "").replace(/^\//, "")}</td>
-        <td style="${cell}">${e.ticker || "?"}</td>
+        ${tickerCell}
         <td style="${cell}">${e.profile || "?"}</td>
         ${dateCell}</tr>`;
     }).join("");
+    const convWarn = anyConverted ? `<div style="margin:0 0 12px;padding:9px 12px;border-radius:9px;background:rgba(255,92,92,.14);border:1px solid rgba(255,92,92,.55);color:#FF9D9D;font:500 11.5px 'IBM Plex Sans',system-ui;line-height:1.4">⛔ A highlighted tab uses an <b>es-future conversion</b> (⇒). GEXbot disables deep history for converted tickers (<b>FAQ&nbsp;#41</b>) — a replay load would pull the wrong data. Switch those tabs from <b>es future</b> back to <b>spot price</b>, then reopen this.</div>` : "";
     const warn = anyLive ? `<div style="margin:0 0 12px;padding:9px 12px;border-radius:9px;background:rgba(255,180,84,.13);border:1px solid rgba(255,180,84,.5);color:#FFB454;font:500 11.5px 'IBM Plex Sans',system-ui;line-height:1.4">⚠ A highlighted tab is on a <b>live date (today)</b> — replay needs past dates. During market hours it won't finish calibrating.</div>` : "";
     modal(`<div style="font:600 17px 'IBM Plex Sans',system-ui;margin-bottom:4px">Start replay session?</div>
       <div style="color:#9AA0AA;font-size:12px;margin-bottom:14px">Review every tab — loading locks all of these until you Exit.</div>
-      ${warn}<table style="border-collapse:collapse;width:100%">
+      ${convWarn}${warn}<table style="border-collapse:collapse;width:100%">
         <thead><tr style="text-align:left">
           <th style="${hcell}">role</th><th style="${hcell}">page</th><th style="${hcell}">ticker</th><th style="${hcell}">profile</th><th style="${hcell}">date</th></tr></thead>
-        <tbody>${rows}</tbody></table>`, "Confirm &amp; load", loadAll);
+        <tbody>${rows}</tbody></table>`, "Confirm &amp; load", loadAll, "#16E0A3", "#08110c", anyConverted);
   }
   const confirmExit = () => modal(`<div style="font:600 17px 'IBM Plex Sans',system-ui">Exit replay session?</div>
     <div style="color:#9AA0AA;font-size:12px;margin-top:8px">Unlocks every tab and ends the session for everyone.</div>`, "Exit replay", exitSession, "#FF5C5C", "#2a0808");
