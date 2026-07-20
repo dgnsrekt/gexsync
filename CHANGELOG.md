@@ -4,6 +4,21 @@ All notable changes to GexSync are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and the project follows
 [semantic versioning](https://semver.org/).
 
+## [1.0.2] — 2026-07-20
+
+### Fixed
+- **Spot ↔ futures now syncs for every convertible ticker, not just SPX.** GEXbot
+  labels the toggle by product — `es future`, `nq future`, `rty future`,
+  `ym future`, `gc future`, `cl future` — so the previous hardcoded "es future"
+  match only reached SPX/SPY. The follower now finds the future button
+  generically, so NDX, RUT, QQQ, DIA, IWM, GLD, and USO sync too.
+
+### Added
+- **Spot ↔ futures sync overlay.** A brief, auto-dismissing card ("syncing
+  \<group\> · spot price → \<product\> future") now flashes on every group tab
+  when the toggle syncs, matching the ticker-sync flow even though the change
+  applies live with no reload.
+
 ## [1.0.1] — 2026-07-20
 
 ### Fixed
@@ -39,5 +54,6 @@ All notable changes to GexSync are documented here. The format is based on
   different dates, tickers, and profiles side by side.
 - Bundled README, LICENSE, and OKF knowledge base.
 
+[1.0.2]: https://github.com/dgnsrekt/gexsync/compare/v1.0.1...v1.0.2
 [1.0.1]: https://github.com/dgnsrekt/gexsync/compare/v1.0...v1.0.1
 [1.0]: https://github.com/dgnsrekt/gexsync/releases/tag/v1.0
