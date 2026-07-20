@@ -202,9 +202,10 @@
   setInterval(watchSwitches, 600); // re-observe as the panel/floating-panel swaps the switch elements
 
   // ---- ticker sync (Ticker mode) ----
-  // Set the ticker via GEXbot's URL-hash scheme (/state#TICKER#profile), which
-  // encodes THIS tab's own profile alongside the new ticker; then strip the hash
-  // and reload the bare url so the price line renders (see reloadClean below).
+  // Apply the ticker via GEXbot's URL-hash scheme (/state#TICKER#profile) as an
+  // IN-APP hashchange (no reload): the SPA switches ticker + renders the price line
+  // live off the hash. See applyTicker below. Encodes THIS tab's own profile so
+  // profiles stay independent across the group.
   // Target the ticker combobox specifically — GEXbot's Settings panel adds a
   // "Time Zone" combobox at DOM index 0, so a bare querySelector("input[role=
   // combobox]") would read the timezone and mistake it for a ticker change.
@@ -248,8 +249,6 @@
   // can't leave a tab displaying green while broadcasting on a dead channel.
   const groupName = () => { const g = sessionStorage.gexsyncGroup; return GROUPS.some((x) => x.name === g) ? g : "green"; };
   const tickerChan = () => `${TICKER_KEY}:${groupName()}`;
-  const busyKey = () => `${tickerChan()}:busy`; // group-scoped "a sync is in flight" flag
-  let pendingReload = false; // this tab is queued/reloading for a ticker change
   // Compact profile for the pill: "90d" | "latest" | "next" | "latest·delta".
   const profileLabel = () => {
     const { gex, options } = getGroups();
@@ -267,73 +266,20 @@
     if (o && greek) return `option#${o}#greek:${greek}`; // options mode
     return o || "latest";
   }
-  function reloadClean(ticker) {
-    applyingRemote = true;
-    sessionStorage.gexsyncReloading = "1"; // marks us as lock holder across the reload
-    // Apply ticker + THIS tab's profile via the hash (GEXbot persists both to
-    // localStorage), then strip the hash and reload the BARE url. The intraday
-    // price line only renders on a fresh bare-url load — an in-place hash strip
-    // leaves it blank. The lock (below) serializes tabs so the two /state tabs
-    // never read the shared localStorage profile at the same time and collapse.
-    location.hash = `#${ticker}#${profileSegment()}`;
-    window.dispatchEvent(new HashChangeEvent("hashchange"));
-    setTimeout(() => {
-      history.replaceState(null, "", location.pathname);
-      location.reload();
-    }, 800); // let GEXbot commit the hash's ticker + profile to localStorage first
-  }
-  // Serialize follower reloads. Two /state tabs reloading + fetching at once
-  // wedges the second on "Loading… / no data" AND races the shared localStorage
-  // profile into a collapse — so tabs reload ONE AT A TIME via a storage lock:
-  // acquire before reload, release once this tab's data has loaded (below). The
-  // holder id lives in sessionStorage so it survives the reload — sessionStorage
-  // is per-tab, so the two /state tabs get distinct ids (unlike the shared
-  // localStorage that caused the profile race).
-  // ponytail: 15s expiry frees the lock if a holder never finishes (e.g. a
-  // hidden tab that won't repaint) — fine for the all-monitors-visible use case.
-  const LOCK_KEY = "gexsync-ticker-lock", LOCK_MS = 15000;
-  // Per-tab id. Keep it only across OUR ticker-reload (gexsyncReloading set, so
-  // the lock holder still matches after the reload); otherwise mint a fresh one.
-  // Duplicating a tab copies sessionStorage, so without this two tabs would share
-  // an id and both think they hold the lock — regenerating on any non-reload load
-  // gives duplicates distinct ids again.
-  const TAB = sessionStorage.gexsyncReloading === "1"
-    ? sessionStorage.gexsyncTab
-    : (sessionStorage.gexsyncTab = Math.random().toString(36).slice(2));
-  const lockFree = (l) => !l || !l.holder || l.holder === TAB || Date.now() > l.exp;
+  // Per-tab id for the group-count presence beacon + the chip. Regenerate on every
+  // load so duplicated tabs (which copy sessionStorage) get distinct ids.
+  const TAB = (sessionStorage.gexsyncTab = Math.random().toString(36).slice(2));
   function applyTicker(ticker) {
     if (!ticker || baseTicker() === ticker) return; // already on this ticker (ignore the es-future suffix)
-    applyingRemote = true; // hold off the poll while we queue the reload
-    pendingReload = true; // this tab is now part of the in-flight sync (keeps busy fresh)
-    const tryReload = () => get(LOCK_KEY, (r) => {
-      if (!lockFree(r[LOCK_KEY])) return void setTimeout(tryReload, 500); // another tab is reloading
-      send({ [LOCK_KEY]: { holder: TAB, exp: Date.now() + LOCK_MS } });
-      setTimeout(() => get(LOCK_KEY, (r2) => { // did we win the lock?
-        if (r2[LOCK_KEY]?.holder === TAB) reloadClean(ticker);
-        else setTimeout(tryReload, 300 + Math.random() * 400); // lost the race — back off, retry
-      }), 150);
-    });
-    tryReload();
+    applyingRemote = true; // suppress the poll re-broadcasting the value we're applying
+    // In-app hashchange (NO reload): GEXbot's SPA switches ticker AND renders the
+    // intraday price line live off the hash. Encodes THIS tab's own profile so
+    // profiles stay independent. (A full-page reload flakily skips the price-history
+    // fetch — hist/<ticker>/spot; the in-app hashchange fires it reliably.)
+    location.hash = `#${ticker}#${profileSegment()}`;
+    window.dispatchEvent(new HashChangeEvent("hashchange"));
+    setTimeout(() => { applyingRemote = false; }, 1500); // outlast the switch so we don't echo
   }
-  // After a ticker-mode reload the tab lands on the bare url holding the lock
-  // (sessionStorage flag). Wait until data has actually loaded (spot value
-  // populated), then release the lock so the next queued tab can reload. Waiting
-  // for real data — not just controls — avoids handing off mid-fetch. 10s cap so
-  // a tab that never loads can't hold the lock forever.
-  function releaseLockOnBoot() {
-    if (sessionStorage.gexsyncReloading !== "1") return;
-    const t0 = performance.now();
-    const wait = setInterval(() => {
-      const ready = /spot\s+[\d,]*[1-9][\d.,]*/i.test(document.body.innerText); // real data in
-      if (!ready && performance.now() - t0 < 10000) return;
-      clearInterval(wait);
-      sessionStorage.removeItem("gexsyncReloading");
-      get(LOCK_KEY, (r) => { // hand off to the next queued tab
-        if (r[LOCK_KEY]?.holder === TAB) send({ [LOCK_KEY]: { holder: null, exp: 0 } });
-      });
-    }, 300);
-  }
-  releaseLockOnBoot();
   let lastTicker = null;
   setInterval(() => {
     if (!onSyncPage()) return;
@@ -343,7 +289,6 @@
     if (t && t !== lastTicker) {
       lastTicker = t;
       send({ [tickerChan()]: { ticker: t, t: performance.now() } });
-      send({ [busyKey()]: { exp: Date.now() + 3000 } }); // seed the busy flag; followers extend it as they reload
     }
   }, 400);
 
@@ -402,39 +347,6 @@
       send({ [ES_CHAN()]: { es: on, t: performance.now() } });
       flashEsSync(on); // flash on the tab that toggled it, too
     }
-  }, 400);
-
-  // ---- loading overlay during a group ticker sync ----
-  // Followers reload one at a time (~seconds each), so block interaction on ALL
-  // tabs in the group until it settles — scoped by busyKey so the OTHER color
-  // group isn't blocked. A tab is "busy" while queued/reloading (pendingReload)
-  // or mid bare-reload (gexsyncReloading); busy tabs keep the flag fresh and
-  // everyone shows the overlay while it hasn't expired. It lapses on its own if
-  // a tab dies mid-sync, so the overlay can't get stuck.
-  let overlayEl = null, overlayMsg = null;
-  function setOverlay(on, ticker) {
-    if (!on) { if (overlayEl) overlayEl.style.display = "none"; return; }
-    if (!overlayEl) {
-      overlayEl = document.createElement("div");
-      overlayEl.id = "gexsync-ticker-overlay";
-      overlayEl.style.cssText = "position:fixed;inset:0;z-index:2147483000;display:flex;align-items:center;justify-content:center;background:rgba(8,8,14,.6);backdrop-filter:blur(2px);font-family:system-ui,-apple-system,sans-serif;color:#e7e9ea;";
-      overlayEl.innerHTML = `<div style="padding:20px 30px;border-radius:14px;background:rgba(20,18,32,.94);border:1px solid rgba(255,255,255,.14);box-shadow:0 24px 70px rgba(0,0,0,.6);text-align:center">
-        <div class="msg" style="font:600 15px system-ui"></div>
-        <div style="margin-top:8px;color:#9aa0aa;font-size:12px">tabs are updating — please wait</div></div>`;
-      (document.body || document.documentElement).appendChild(overlayEl);
-      overlayMsg = overlayEl.querySelector(".msg");
-    }
-    const g = GROUPS.find((x) => x.name === groupName()) || GROUPS[0];
-    overlayMsg.innerHTML = `syncing <span style="color:${g.color}">${g.name}</span> to ${ticker || "…"}`;
-    overlayEl.style.display = "flex";
-  }
-  setInterval(() => {
-    if (!alive() || !onSyncPage() || !tickerSync()) { setOverlay(false); return; } // orphaned/off-page/off-ticker: drop the overlay
-    if (pendingReload || sessionStorage.gexsyncReloading === "1") send({ [busyKey()]: { exp: Date.now() + 2500 } });
-    get([busyKey(), tickerChan()], (r) => {
-      const b = r[busyKey()];
-      setOverlay(!!b && Date.now() < b.exp, r[tickerChan()]?.ticker);
-    });
   }, 400);
 
   // ---- rate-limit toast: GEXbot answered 429 (see netwatch.js, MAIN world) ----
@@ -628,7 +540,6 @@
     const chip = document.getElementById("gexsync-mode-chip");
     if (chip) chip.style.display = on ? "flex" : "none";
     if (!on) {
-      setOverlay(false);
       if (toastEl) toastEl.style.display = "none";
       if (alive()) chrome.storage.local.remove("gexsync-tp:" + TAB); // un-count from the group
     }
