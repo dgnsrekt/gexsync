@@ -571,11 +571,17 @@
     if (!onSyncPage()) return;
     const tk = tickerValue();
     if (!tk) return;
+    // In es-future mode GEXbot renders the watermark as the full contract
+    // ("NDX⇒NQU6"), not the combobox value ("NDX⇒NQ") — but the contract STARTS
+    // WITH the combobox value, so match on that. Then re-append the profile onto
+    // the watermark's OWN first token so we keep the contract month intact
+    // (GEXbot never puts a space in it; our profile suffix is the only space).
     const wm = [...document.querySelectorAll("h6.MuiTypography-h6")]
-      .find((e) => { const t = e.textContent.trim(); return t === tk || t.startsWith(tk + " "); });
+      .find((e) => { const first = e.textContent.trim().split(/\s+/)[0]; return first === tk || first.startsWith(tk); });
     if (!wm) return;
-    // off → strip back to just the ticker; on → ticker + profile
-    const want = watermark ? `${tk} ${profileLabel().replace("90d", "90 days").toUpperCase()}` : tk;
+    const wmBase = wm.textContent.trim().split(/\s+/)[0]; // "NDX" | "NDX⇒NQU6"
+    // off → strip back to just the ticker/contract; on → + profile
+    const want = watermark ? `${wmBase} ${profileLabel().replace("90d", "90 days").toUpperCase()}` : wmBase;
     if (wm.textContent.trim() !== want) wm.textContent = want;
     // tint the watermark the group color in Ticker mode; GEXbot default otherwise
     wm.style.color = watermark && mode === "ticker" ? (GROUPS.find((g) => g.name === groupName()) || GROUPS[0]).color : "";
