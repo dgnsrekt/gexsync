@@ -218,8 +218,16 @@
   // the spot↔es toggle is synced separately (see below) as its own ticker-axis.
   const baseTicker = () => { const v = tickerValue(); return v ? (v.match(/^[A-Za-z0-9.]+/)?.[0] || v) : null; };
   const esFutureOn = () => { const v = tickerValue(); return v == null ? null : /⇒/.test(v); };
-  const esToggleBtn = (on) => [...document.querySelectorAll("button")]
-    .find((b) => b.textContent.trim().toLowerCase() === (on ? "es future" : "spot price")) || null;
+  // The toggle is "spot price" | "<product> future" — the future label varies by
+  // ticker (es / nq / rty / …), so don't hardcode "es future". The spot button is
+  // constant; the future button is its sibling whose label ends in "future".
+  const esToggleBtn = (on) => {
+    const spot = [...document.querySelectorAll("button")].find((b) => b.textContent.trim().toLowerCase() === "spot price");
+    if (!on) return spot || null;
+    if (!spot) return null;
+    return [...spot.parentElement.querySelectorAll("button")].find((b) => b !== spot && /future$/i.test(b.textContent.trim()))
+      || [...document.querySelectorAll("button")].find((b) => b !== spot && /future$/i.test(b.textContent.trim())) || null;
+  };
   // Ticker groups: scope ticker sync to same-color tabs, so e.g. a green group on
   // TSLA and a red group on NVDA don't touch each other. Every tab starts green;
   // change some to red (etc.) to split them off. The group lives in sessionStorage
@@ -345,6 +353,34 @@
   // toggle button: it updates the chart live (no reload) and each page (classic /
   // state stores it separately) flips its own button, so it's cross-page safe.
   const ES_CHAN = () => `${TICKER_KEY}-es:${groupName()}`;
+  // Brief sync flash so the spot↔future flip feels like the ticker-sync flow even
+  // though it applies live (no reload → nothing to wait on). Auto-dismisses; shown
+  // on every group tab (the one you toggled and the ones that follow).
+  let esFlashEl = null, esFlashTimer = null;
+  function flashEsSync(on) {
+    const g = GROUPS.find((x) => x.name === groupName()) || GROUPS[0];
+    const futLabel = (esToggleBtn(true)?.textContent.trim().toLowerCase()) || "es future";
+    const from = on ? "spot price" : futLabel, to = on ? futLabel : "spot price";
+    if (!esFlashEl) {
+      esFlashEl = document.createElement("div");
+      esFlashEl.id = "gexsync-es-overlay";
+      esFlashEl.style.cssText = "position:fixed;inset:0;z-index:2147483000;display:flex;align-items:center;justify-content:center;background:rgba(8,8,14,.5);backdrop-filter:blur(2px);font-family:system-ui,-apple-system,sans-serif;color:#e7e9ea;pointer-events:none;transition:opacity .2s ease;";
+      esFlashEl.innerHTML = `<div style="padding:18px 28px;border-radius:14px;background:rgba(20,18,32,.94);border:1px solid rgba(255,255,255,.14);box-shadow:0 24px 70px rgba(0,0,0,.6);text-align:center">
+        <div class="msg" style="font:600 15px system-ui"></div>
+        <div class="sub" style="margin-top:8px;color:#9aa0aa;font-size:12px"></div></div>`;
+      (document.body || document.documentElement).appendChild(esFlashEl);
+    }
+    esFlashEl.querySelector(".msg").innerHTML = `syncing <span style="color:${g.color}">${g.name}</span>`;
+    esFlashEl.querySelector(".sub").textContent = `${from} → ${to}`;
+    esFlashEl.style.display = "flex";
+    esFlashEl.style.opacity = "1";
+    clearTimeout(esFlashTimer);
+    esFlashTimer = setTimeout(() => {
+      if (!esFlashEl) return;
+      esFlashEl.style.opacity = "0";
+      setTimeout(() => { if (esFlashEl) esFlashEl.style.display = "none"; }, 220);
+    }, 1100);
+  }
   function applyEs(on) {
     const cur = esFutureOn();
     if (cur === null || cur === on) return; // this ticker has no es toggle, or already matched
@@ -353,6 +389,7 @@
     applyingRemote = true;
     b.click();
     setTimeout(() => { applyingRemote = false; }, 500); // outlast one poll tick so we don't echo
+    flashEsSync(on); // mirror the ticker-sync overlay so followers show the change
   }
   let lastEs = null;
   setInterval(() => {
@@ -363,6 +400,7 @@
     if (on !== null && on !== lastEs) {
       lastEs = on;
       send({ [ES_CHAN()]: { es: on, t: performance.now() } });
+      flashEsSync(on); // flash on the tab that toggled it, too
     }
   }, 400);
 
