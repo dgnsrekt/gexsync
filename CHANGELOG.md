@@ -4,6 +4,16 @@ All notable changes to GexSync are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and the project follows
 [semantic versioning](https://semver.org/).
 
+## [1.0.3] — 2026-07-20
+
+### Fixed
+- **Chart watermark now shows the profile on futures-converted tickers.** In
+  es-future mode GEXbot renders the watermark as the full contract (e.g.
+  `NDX⇒NQU6`), which didn't match the spot symbol, so the `LATEST` / `NEXT` /
+  `90 DAYS` tag was dropped. The matcher now handles the contract form and
+  appends the profile (`NDX⇒NQU6 NEXT`) without clobbering the contract month.
+  (Thanks to Moby16 for the report.)
+
 ## [1.0.2] — 2026-07-20
 
 ### Fixed
@@ -54,6 +64,7 @@ All notable changes to GexSync are documented here. The format is based on
   different dates, tickers, and profiles side by side.
 - Bundled README, LICENSE, and OKF knowledge base.
 
+[1.0.3]: https://github.com/dgnsrekt/gexsync/compare/v1.0.2...v1.0.3
 [1.0.2]: https://github.com/dgnsrekt/gexsync/compare/v1.0.1...v1.0.2
 [1.0.1]: https://github.com/dgnsrekt/gexsync/compare/v1.0...v1.0.1
 [1.0]: https://github.com/dgnsrekt/gexsync/releases/tag/v1.0
