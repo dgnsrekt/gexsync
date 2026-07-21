@@ -4,6 +4,25 @@ All notable changes to GexSync are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and the project follows
 [semantic versioning](https://semver.org/).
 
+## [1.1.0] — 2026-07-20
+
+### Changed
+- **Ticker sync is now instant.** GEXbot fixed the bug where an in-place ticker
+  change didn't draw the intraday price line, so Ticker mode no longer full-reloads
+  each tab. Followers switch via an in-app hash change and the chart — price line
+  and all — updates live with no reload. A group that used to take ~50 seconds to
+  cycle through, one tab reloading at a time, now updates in about a second, all at
+  once. This retires the reload lock, the per-tab reload serialization, and the
+  "tabs are updating — please wait" overlay.
+
+### Added
+- **Self-healing on stuck loads.** A fresh full-page load of a synced tab (F5 /
+  reopen) can occasionally leave GEXbot's chart blank — "No data to display", or
+  gex bars with no price line. Tabs now detect this on load and fix it in place: a
+  quick profile re-apply (escalating to a brief ticker bounce only if needed)
+  redraws the chart within a few seconds, keeping the tab's own ticker and profile.
+  No reload, no manual poke.
+
 ## [1.0.3] — 2026-07-20
 
 ### Fixed
@@ -64,6 +83,7 @@ All notable changes to GexSync are documented here. The format is based on
   different dates, tickers, and profiles side by side.
 - Bundled README, LICENSE, and OKF knowledge base.
 
+[1.1.0]: https://github.com/dgnsrekt/gexsync/compare/v1.0.3...v1.1.0
 [1.0.3]: https://github.com/dgnsrekt/gexsync/compare/v1.0.2...v1.0.3
 [1.0.2]: https://github.com/dgnsrekt/gexsync/compare/v1.0.1...v1.0.2
 [1.0.1]: https://github.com/dgnsrekt/gexsync/compare/v1.0...v1.0.1
