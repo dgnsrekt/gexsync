@@ -280,6 +280,43 @@
     window.dispatchEvent(new HashChangeEvent("hashchange"));
     setTimeout(() => { applyingRemote = false; }, 1500); // outlast the switch so we don't echo
   }
+
+  // ---- boot repair (stuck hash-URL loads) ----
+  // A fresh full-page load of a #TICKER#profile URL (F5 / reopen) flakily lands
+  // STUCK — GEXbot skips the data fetch and the chart shows "No data to display".
+  // Fix it IN-APP: no reload, no ticker flip, no profile collapse. A profile bounce
+  // (throwaway profile -> the tab's OWN, read from the hash) re-triggers a live
+  // load; "load history" is the fallback. Only fires on a stuck hash-URL boot —
+  // bare-url loads are reliable and the in-app sync never lands here. Detect via the
+  // "No data" text, which is robust at market open (a pixel count is not).
+  function repairBoot() {
+    const m = onSyncPage() && location.hash.match(/^#([A-Za-z0-9.]+)#(.+)$/); // #TICKER#profile
+    if (!m) return;
+    const ticker = m[1], intended = m[2];
+    const stuck = () => alive() && /No data to display/i.test(document.body.innerText);
+    let tries = 0;
+    const attempt = () => {
+      if (!stuck()) return; // loaded fine, or a prior try resolved it
+      if (++tries > 2) return; // give up — don't loop forever
+      if (tries === 1) { // profile bounce: throwaway -> intended, re-triggers a live fetch
+        applyingRemote = true; // don't let the bounce echo onto the sync bus
+        location.hash = `#${ticker}#${/^90d/.test(intended) ? "latest" : "90d"}`;
+        window.dispatchEvent(new HashChangeEvent("hashchange"));
+        setTimeout(() => {
+          location.hash = `#${ticker}#${intended}`; // back to THIS tab's own profile
+          window.dispatchEvent(new HashChangeEvent("hashchange"));
+          setTimeout(() => { applyingRemote = false; }, 1500);
+          setTimeout(attempt, 3000); // re-check; escalate to the fallback if still stuck
+        }, 1800);
+      } else { // fallback: click GEXbot's own "load history" (also revives a stuck chart)
+        [...document.querySelectorAll("button")].find((b) => /^load history$/i.test(b.textContent.trim()))?.click();
+        setTimeout(attempt, 3500);
+      }
+    };
+    setTimeout(attempt, 5000); // settle first — a normal load resolves in ~2-3s; still empty at 5s = stuck
+  }
+  repairBoot();
+
   let lastTicker = null;
   setInterval(() => {
     if (!onSyncPage()) return;
