@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "GexSync (replay)",
-  "version": "1.0.3",
+  "version": "1.1.0",
   "description": "Sync gex/options profile + replay transport across GEXbot tabs, tickers stay independent.",
   "permissions": ["storage"],
   "host_permissions": ["https://www.gexbot.com/*"],
