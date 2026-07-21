@@ -10,10 +10,11 @@ All notable changes to GexSync are documented here. The format is based on
 - **Ticker sync is now instant.** GEXbot fixed the bug where an in-place ticker
   change didn't draw the intraday price line, so Ticker mode no longer full-reloads
   each tab. Followers switch via an in-app hash change and the chart — price line
-  and all — updates live with no reload. A group that used to take ~50 seconds to
-  cycle through, one tab reloading at a time, now updates in about a second, all at
-  once. This retires the reload lock, the per-tab reload serialization, and the
-  "tabs are updating — please wait" overlay.
+  and all — updates live with no reload. A group that used to reload one tab at a
+  time now updates all at once and near-instantly — roughly 8× faster in testing
+  (exact numbers vary with tab count and time of day). This retires the reload
+  lock, the per-tab reload serialization, and the "tabs are updating — please
+  wait" overlay.
 
 ### Added
 - **Sync confirmation flash.** With the reload gone, a live ticker switch had no
