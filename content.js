@@ -283,37 +283,40 @@
 
   // ---- boot repair (stuck hash-URL loads) ----
   // A fresh full-page load of a #TICKER#profile URL (F5 / reopen) flakily lands
-  // STUCK — GEXbot skips the data fetch and the chart shows "No data to display".
-  // Fix it IN-APP: no reload, no ticker flip, no profile collapse. A profile bounce
-  // (throwaway profile -> the tab's OWN, read from the hash) re-triggers a live
-  // load; "load history" is the fallback. Only fires on a stuck hash-URL boot —
-  // bare-url loads are reliable and the in-app sync never lands here. Detect via the
-  // "No data" text, which is robust at market open (a pixel count is not).
+  // STUCK — GEXbot skips the intraday price-history fetch (EMPTY: no data at all;
+  // or PARTIAL: gex bars but no price line). Fix it IN-APP: no reload, no profile
+  // collapse. "Stuck" = netwatch never saw a successful hist/<ticker>/spot for this
+  // ticker (data-gxhist, set by netwatch.js) — robust at market open, unlike a
+  // pixel count. Repair by a PROFILE bounce (throwaway profile -> the tab's own,
+  // from the hash) which re-triggers a live fetch with no ticker flip and fixes the
+  // EMPTY case; escalate to a TICKER bounce (brief flip) which re-fires hist/spot
+  // and fixes a stubborn PARTIAL. NOT "load history" — that loads a specific DATE's
+  // replay data, not the live line. Only fires on a stuck hash-URL boot; bare-url
+  // loads are reliable and the in-app sync never lands here.
   function repairBoot() {
     const m = onSyncPage() && location.hash.match(/^#([A-Za-z0-9.]+)#(.+)$/); // #TICKER#profile
     if (!m) return;
     const ticker = m[1], intended = m[2];
-    const stuck = () => alive() && /No data to display/i.test(document.body.innerText);
+    const loaded = () => document.documentElement.getAttribute("data-gxhist") === ticker; // hist/spot got in
     let tries = 0;
     const attempt = () => {
-      if (!stuck()) return; // loaded fine, or a prior try resolved it
-      if (++tries > 2) return; // give up — don't loop forever
-      if (tries === 1) { // profile bounce: throwaway -> intended, re-triggers a live fetch
-        applyingRemote = true; // don't let the bounce echo onto the sync bus
-        location.hash = `#${ticker}#${/^90d/.test(intended) ? "latest" : "90d"}`;
+      if (!alive() || loaded()) return; // the price line's data is in
+      if (++tries > 3) return; // give up — don't loop forever
+      applyingRemote = true; // keep the bounce local — don't echo onto the sync bus
+      // tries 1-2: profile bounce (no ticker flip). tries 3: ticker bounce (brief
+      // flip) to force a fresh hist/spot when a profile bounce can't.
+      location.hash = tries <= 2
+        ? `#${ticker}#${/^90d/.test(intended) ? "latest" : "90d"}`
+        : `#${ticker === "SPY" ? "QQQ" : "SPY"}#${intended}`;
+      window.dispatchEvent(new HashChangeEvent("hashchange"));
+      setTimeout(() => {
+        location.hash = `#${ticker}#${intended}`; // back to THIS tab's own ticker + profile
         window.dispatchEvent(new HashChangeEvent("hashchange"));
-        setTimeout(() => {
-          location.hash = `#${ticker}#${intended}`; // back to THIS tab's own profile
-          window.dispatchEvent(new HashChangeEvent("hashchange"));
-          setTimeout(() => { applyingRemote = false; }, 1500);
-          setTimeout(attempt, 3000); // re-check; escalate to the fallback if still stuck
-        }, 1800);
-      } else { // fallback: click GEXbot's own "load history" (also revives a stuck chart)
-        [...document.querySelectorAll("button")].find((b) => /^load history$/i.test(b.textContent.trim()))?.click();
-        setTimeout(attempt, 3500);
-      }
+        setTimeout(() => { applyingRemote = false; }, 1500);
+        setTimeout(attempt, 3000); // re-check; escalate if still stuck
+      }, 1800);
     };
-    setTimeout(attempt, 5000); // settle first — a normal load resolves in ~2-3s; still empty at 5s = stuck
+    setTimeout(attempt, 5000); // settle first — a normal load fetches hist/spot in ~2-3s
   }
   repairBoot();
 
