@@ -283,21 +283,34 @@
 
   // ---- boot repair (stuck hash-URL loads) ----
   // A fresh full-page load of a #TICKER#profile URL (F5 / reopen) flakily lands
-  // STUCK — GEXbot skips the intraday price-history fetch (EMPTY: no data at all;
-  // or PARTIAL: gex bars but no price line). Fix it IN-APP: no reload, no profile
-  // collapse. "Stuck" = netwatch never saw a successful hist/<ticker>/spot for this
-  // ticker (data-gxhist, set by netwatch.js) — robust at market open, unlike a
-  // pixel count. Repair by a PROFILE bounce (throwaway profile -> the tab's own,
-  // from the hash) which re-triggers a live fetch with no ticker flip and fixes the
-  // EMPTY case; escalate to a TICKER bounce (brief flip) which re-fires hist/spot
-  // and fixes a stubborn PARTIAL. NOT "load history" — that loads a specific DATE's
-  // replay data, not the live line. Only fires on a stuck hash-URL boot; bare-url
-  // loads are reliable and the in-app sync never lands here.
+  // STUCK — GEXbot fails to RENDER the chart (EMPTY: "No data to display"; or
+  // PARTIAL: gex bars but no price line). It's a render failure, not a fetch one —
+  // hist/spot can return 200 and the chart still be blank — so we detect the CHART,
+  // not the network. EMPTY: the "No data" text (robust at market open). PARTIAL:
+  // the price line is missing — count distinct canvas rows carrying the cyan line
+  // (the wiggle spans many; a flat spot-marker/empty chart does not). Fix IN-APP:
+  // a PROFILE bounce (throwaway profile -> the tab's own, from the hash) re-triggers
+  // a live render with no ticker flip and fixes EMPTY; escalate to a TICKER bounce
+  // (brief flip) which re-fires hist/spot and fixes a stubborn PARTIAL. NOT "load
+  // history" — that loads a specific DATE's replay data, not the live line. Only
+  // fires on a stuck hash-URL boot; bare-url loads are reliable and the in-app sync
+  // never lands here. The repair is harmless on an already-good tab (it just
+  // re-renders), so an over-eager detection at the very open costs only a flicker.
   function repairBoot() {
     const m = onSyncPage() && location.hash.match(/^#([A-Za-z0-9.]+)#(.+)$/); // #TICKER#profile
     if (!m) return;
     const ticker = m[1], intended = m[2];
-    const loaded = () => document.documentElement.getAttribute("data-gxhist") === ticker; // hist/spot got in
+    const lineRows = () => { // distinct canvas rows carrying the cyan price line
+      const c = document.querySelector("canvas");
+      if (!c) return 0;
+      try {
+        const w = c.width, h = c.height, d = c.getContext("2d").getImageData(0, 0, w, h).data;
+        let rows = 0;
+        for (let y = 0; y < h; y++) { let n = 0; for (let x = 0; x < w; x++) { const p = (y * w + x) * 4; if (d[p + 3] > 60 && d[p] < 130 && d[p + 1] > 150 && d[p + 2] > 180) { if (++n > 15) { rows++; break; } } } }
+        return rows;
+      } catch (e) { return 99; } // can't read (tainted?) — assume fine, don't repair
+    };
+    const loaded = () => !/No data to display/i.test(document.body.innerText) && lineRows() >= 6; // chart actually drew the line
     let tries = 0;
     const attempt = () => {
       if (!alive() || loaded()) return; // the price line's data is in
