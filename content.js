@@ -554,8 +554,20 @@
     if (!wm) return;
     const wmBase = wm.textContent.trim().split(/\s+/)[0]; // "NDX" | "NDX⇒NQU6"
     // off → strip back to just the ticker/contract; on → + profile
-    const want = watermark ? `${wmBase} ${profileLabel().replace("90d", "90 days").toUpperCase()}` : wmBase;
+    const label = profileLabel();
+    const want = watermark ? `${wmBase} ${label.replace("90d", "90 days").toUpperCase()}` : wmBase;
     if (wm.textContent.trim() !== want) wm.textContent = want;
+    // "?" = no profile toggles on this page (settings/alerts). Native hover tip
+    // tells the user how to get back; cleared on any real profile.
+    const tip = watermark && label === "?"
+      ? "No chart profile here — this tab is on Settings/Alerts. Click the home (⌂) icon in the panel to return to the chart."
+      : "";
+    if (wm.title !== tip) wm.title = tip;
+    // The watermark is pointer-events:none (background overlay) so a native title
+    // never fires. Make it hoverable only while the tip is up — the ? state has no
+    // chart underneath to block.
+    const pe = tip ? "auto" : "";
+    if (wm.style.pointerEvents !== pe) wm.style.pointerEvents = pe;
     // tint the watermark the group color in Ticker mode; GEXbot default otherwise
     wm.style.color = watermark && mode === "ticker" ? (GROUPS.find((g) => g.name === groupName()) || GROUPS[0]).color : "";
   }
