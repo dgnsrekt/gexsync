@@ -16,7 +16,7 @@
     "run_at": "document_idle"
   }, {
     "matches": ["https://www.gexbot.com/state*", "https://www.gexbot.com/classic*"],
-    "js": ["netwatch.js"],
+    "js": ["netwatch.js", "replaydata.js"],
     "run_at": "document_start",
     "world": "MAIN"
   }],
