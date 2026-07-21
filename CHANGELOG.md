@@ -26,6 +26,10 @@ All notable changes to GexSync are documented here. The format is based on
   quick profile re-apply (escalating to a brief ticker bounce only if needed)
   redraws the chart within a few seconds, keeping the tab's own ticker and profile.
   No reload, no manual poke.
+- **Watermark hint on Settings/Alerts.** When a tab sits on Settings, Alerts, or
+  Alert History there's no chart profile, so the watermark reads `TICKER ?`.
+  Hovering the `?` now explains why and points to the panel's home icon to return
+  to the chart.
 
 ## [1.0.3] — 2026-07-20
 
