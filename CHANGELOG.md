@@ -16,6 +16,10 @@ All notable changes to GexSync are documented here. The format is based on
   "tabs are updating — please wait" overlay.
 
 ### Added
+- **Sync confirmation flash.** With the reload gone, a live ticker switch had no
+  feedback. A brief "syncing \<group\> to \<ticker\>" card now flashes on every
+  group tab (auto-dismisses, never blocks clicks) — the same lightweight indicator
+  the spot↔futures flip already uses.
 - **Self-healing on stuck loads.** A fresh full-page load of a synced tab (F5 /
   reopen) can occasionally leave GEXbot's chart blank — "No data to display", or
   gex bars with no price line. Tabs now detect this on load and fix it in place: a

@@ -278,6 +278,7 @@
     // fetch — hist/<ticker>/spot; the in-app hashchange fires it reliably.)
     location.hash = `#${ticker}#${profileSegment()}`;
     window.dispatchEvent(new HashChangeEvent("hashchange"));
+    flashSync(`to ${ticker}`); // brief non-blocking "syncing <group> to <ticker>"
     setTimeout(() => { applyingRemote = false; }, 1500); // outlast the switch so we don't echo
   }
 
@@ -342,6 +343,7 @@
     if (t && t !== lastTicker) {
       lastTicker = t;
       send({ [tickerChan()]: { ticker: t, t: performance.now() } });
+      flashSync(`to ${t}`); // flash on the tab that changed the ticker, too
     }
   }, 400);
 
@@ -354,30 +356,36 @@
   // Brief sync flash so the spot↔future flip feels like the ticker-sync flow even
   // though it applies live (no reload → nothing to wait on). Auto-dismisses; shown
   // on every group tab (the one you toggled and the ones that follow).
-  let esFlashEl = null, esFlashTimer = null;
-  function flashEsSync(on) {
+  // Brief, non-blocking "syncing <group> · <detail>" card, auto-dismisses (~1.1s).
+  // Shared by ticker sync and the spot↔future flip: a live sync has no reload to
+  // wait on, so this is just quick confirmation on every group tab.
+  // pointer-events:none — it never blocks interaction (unlike the old reload wait).
+  let flashEl = null, flashTimer = null;
+  function flashSync(detail) {
     const g = GROUPS.find((x) => x.name === groupName()) || GROUPS[0];
-    const futLabel = (esToggleBtn(true)?.textContent.trim().toLowerCase()) || "es future";
-    const from = on ? "spot price" : futLabel, to = on ? futLabel : "spot price";
-    if (!esFlashEl) {
-      esFlashEl = document.createElement("div");
-      esFlashEl.id = "gexsync-es-overlay";
-      esFlashEl.style.cssText = "position:fixed;inset:0;z-index:2147483000;display:flex;align-items:center;justify-content:center;background:rgba(8,8,14,.5);backdrop-filter:blur(2px);font-family:system-ui,-apple-system,sans-serif;color:#e7e9ea;pointer-events:none;transition:opacity .2s ease;";
-      esFlashEl.innerHTML = `<div style="padding:18px 28px;border-radius:14px;background:rgba(20,18,32,.94);border:1px solid rgba(255,255,255,.14);box-shadow:0 24px 70px rgba(0,0,0,.6);text-align:center">
+    if (!flashEl) {
+      flashEl = document.createElement("div");
+      flashEl.id = "gexsync-sync-flash";
+      flashEl.style.cssText = "position:fixed;inset:0;z-index:2147483000;display:flex;align-items:center;justify-content:center;background:rgba(8,8,14,.5);backdrop-filter:blur(2px);font-family:system-ui,-apple-system,sans-serif;color:#e7e9ea;pointer-events:none;transition:opacity .2s ease;";
+      flashEl.innerHTML = `<div style="padding:18px 28px;border-radius:14px;background:rgba(20,18,32,.94);border:1px solid rgba(255,255,255,.14);box-shadow:0 24px 70px rgba(0,0,0,.6);text-align:center">
         <div class="msg" style="font:600 15px system-ui"></div>
         <div class="sub" style="margin-top:8px;color:#9aa0aa;font-size:12px"></div></div>`;
-      (document.body || document.documentElement).appendChild(esFlashEl);
+      (document.body || document.documentElement).appendChild(flashEl);
     }
-    esFlashEl.querySelector(".msg").innerHTML = `syncing <span style="color:${g.color}">${g.name}</span>`;
-    esFlashEl.querySelector(".sub").textContent = `${from} → ${to}`;
-    esFlashEl.style.display = "flex";
-    esFlashEl.style.opacity = "1";
-    clearTimeout(esFlashTimer);
-    esFlashTimer = setTimeout(() => {
-      if (!esFlashEl) return;
-      esFlashEl.style.opacity = "0";
-      setTimeout(() => { if (esFlashEl) esFlashEl.style.display = "none"; }, 220);
+    flashEl.querySelector(".msg").innerHTML = `syncing <span style="color:${g.color}">${g.name}</span>`;
+    flashEl.querySelector(".sub").textContent = detail;
+    flashEl.style.display = "flex";
+    flashEl.style.opacity = "1";
+    clearTimeout(flashTimer);
+    flashTimer = setTimeout(() => {
+      if (!flashEl) return;
+      flashEl.style.opacity = "0";
+      setTimeout(() => { if (flashEl) flashEl.style.display = "none"; }, 220);
     }, 1100);
+  }
+  function flashEsSync(on) {
+    const futLabel = (esToggleBtn(true)?.textContent.trim().toLowerCase()) || "es future";
+    flashSync(on ? `spot price → ${futLabel}` : `${futLabel} → spot price`);
   }
   function applyEs(on) {
     const cur = esFutureOn();
