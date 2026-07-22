@@ -87,6 +87,15 @@
     <input type="checkbox" id="watermark"><span class="track"></span>
     <span>Add profile to chart watermark</span>
   </label>
+  <label class="row">
+    Remember chart zoom
+    <select id="zoomMode">
+      <option value="off">Off</option>
+      <option value="memory">Remember (per ticker)</option>
+      <option value="sync">Sync (across group)</option>
+    </select>
+  </label>
+  <div class="hint" style="margin-top:6px">Keeps your zoom per ticker through GEXbot's refresh. <b>Sync</b> also matches zoom live across same-color tabs.</div>
 
   <div class="label">Mode</div>
   <div class="seg" id="modeSeg" role="tablist">

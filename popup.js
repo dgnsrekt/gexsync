@@ -74,10 +74,12 @@ modeBtns.forEach((b) => b.addEventListener("click", () => selectMode(b.dataset.m
 
 const sel = document.getElementById("panelScope");
 const wm = document.getElementById("watermark");
-chrome.storage.local.get("gexsync-cfg", (r) => { sel.value = r["gexsync-cfg"]?.panelScope || "all"; wm.checked = r["gexsync-cfg"]?.watermark !== false; });
-const saveCfg = () => chrome.storage.local.get("gexsync-cfg", (r) => chrome.storage.local.set({ "gexsync-cfg": { ...(r["gexsync-cfg"] || {}), panelScope: sel.value, watermark: wm.checked } }));
+const zoomSel = document.getElementById("zoomMode");
+chrome.storage.local.get("gexsync-cfg", (r) => { sel.value = r["gexsync-cfg"]?.panelScope || "all"; wm.checked = r["gexsync-cfg"]?.watermark !== false; zoomSel.value = r["gexsync-cfg"]?.zoomMode || "off"; });
+const saveCfg = () => chrome.storage.local.get("gexsync-cfg", (r) => chrome.storage.local.set({ "gexsync-cfg": { ...(r["gexsync-cfg"] || {}), panelScope: sel.value, watermark: wm.checked, zoomMode: zoomSel.value } }));
 sel.addEventListener("change", saveCfg);
 wm.addEventListener("change", saveCfg);
+zoomSel.addEventListener("change", saveCfg);
 
 // Replay settings — merge on write to keep master.
 const track = document.getElementById("replayTrack");
@@ -93,7 +95,7 @@ const saveReplay = () => chrome.storage.local.get("replay-cfg", (r) =>
 
 // Lock every setting while a replay session is active; Mode stays the exit path.
 function applyLock() {
-  [sel, wm, track, dbg].forEach((el) => { el.disabled = sessionLocked; });
+  [sel, wm, zoomSel, track, dbg].forEach((el) => { el.disabled = sessionLocked; });
   document.getElementById("lockNote").hidden = !sessionLocked;
 }
 chrome.storage.onChanged.addListener((c, area) => {

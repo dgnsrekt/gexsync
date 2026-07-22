@@ -42,10 +42,12 @@
   const scopedKey = (base, scope) => (scope === "all" ? base : base + location.pathname);
   let panelScope = "all"; // config-driven, kept live via onChanged below
   let watermark = true; // append this tab's profile to the chart's ticker watermark
+  let zoomMode = "off"; // off | memory | sync — chart-zoom persistence (see zoom.js)
   const panelKey = () => scopedKey("gexsync-panel", panelScope);
   chrome.storage.local.get(CFG_KEY, (r) => {
     if (r[CFG_KEY]?.panelScope) panelScope = r[CFG_KEY].panelScope;
     watermark = r[CFG_KEY]?.watermark !== false; // default on
+    zoomMode = r[CFG_KEY]?.zoomMode || "off"; // default off (opt-in)
   });
 
   // Mode gates what syncs (one axis at a time; panel-collapse always syncs):
@@ -347,6 +349,32 @@
     }
   }, 400);
 
+  // ---- zoom memory (off | memory | sync) — the chart lives in zoom.js (MAIN world) ----
+  // Persist the chart's y-axis (price) zoom per ticker so GEXbot's ~5-min refresh no
+  // longer resets it and each ticker keeps its own fit; "sync" also propagates a zoom
+  // live across same-color group tabs. content.js owns storage; zoom.js drives the
+  // Chart.js instance through two hidden DOM nodes (__gxZoom / __gxZoomCmd).
+  const zoomKey = () => `gexsync-zoom:${groupName()}:${baseTicker()}`;
+  let zoomSeq = 0, zoomTicker = null;
+  const zoomCmd = () => { let n = document.getElementById("__gxZoomCmd"); if (!n) { n = document.createElement("div"); n.id = "__gxZoomCmd"; n.style.display = "none"; document.documentElement.appendChild(n); } return n; };
+  const writeDesired = (z) => { zoomCmd().textContent = (z && isFinite(z.yMin) && isFinite(z.yMax)) ? JSON.stringify({ yMin: z.yMin, yMax: z.yMax, seq: ++zoomSeq }) : ""; };
+  const pushSavedZoom = () => { // hand zoom.js the saved range for the current ticker
+    if (zoomMode === "off" || replayLocked || !onSyncPage() || !baseTicker()) return;
+    const k = zoomKey(); get(k, (r) => { if (alive()) writeDesired(r[k] || null); });
+  };
+  // capture: zoom.js reports the user changed the zoom → remember it for this ticker
+  window.addEventListener("gexsync-zoom", () => {
+    if (zoomMode === "off" || replayLocked || !onSyncPage() || !baseTicker()) return;
+    let z; try { z = JSON.parse(document.getElementById("__gxZoom").textContent); } catch (e) { return; }
+    if (z && isFinite(z.yMin) && isFinite(z.yMax)) { send({ [zoomKey()]: { yMin: z.yMin, yMax: z.yMax, t: Date.now() } }); writeDesired(z); }
+  });
+  // re-push the saved zoom whenever the ticker changes (any active mode)
+  setInterval(() => {
+    if (zoomMode === "off" || !onSyncPage()) return;
+    const bt = baseTicker();
+    if (bt && bt !== zoomTicker) { zoomTicker = bt; pushSavedZoom(); }
+  }, 400);
+
   // ---- spot ↔ es-future sync (Ticker mode; it's a ticker-axis view) ----
   // GEXbot has no dedicated key for it — the toggle just flips the ticker to
   // "SPX⇒ES". Sync it group-scoped like the ticker, but APPLY by clicking the
@@ -593,7 +621,7 @@
 
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area !== "local") return;
-    if (changes[CFG_KEY]?.newValue) { const c = changes[CFG_KEY].newValue; if (c.panelScope) panelScope = c.panelScope; watermark = c.watermark !== false; }
+    if (changes[CFG_KEY]?.newValue) { const c = changes[CFG_KEY].newValue; if (c.panelScope) panelScope = c.panelScope; watermark = c.watermark !== false; const pz = zoomMode; zoomMode = c.zoomMode || "off"; if (zoomMode !== pz) { if (zoomMode === "off") writeDesired(null); else pushSavedZoom(); } }
     if (changes[MODE_KEY]?.newValue) { mode = changes[MODE_KEY].newValue === "live" ? "profiles" : changes[MODE_KEY].newValue; renderChip(); }
     if (changes[SESSION_KEY]) { replayLocked = !!changes[SESSION_KEY].newValue && changes[SESSION_KEY].newValue.phase !== "idle"; renderChip(); }
     if (!onSyncPage()) return; // off /classic|/state (SPA nav): don't touch the page
@@ -602,6 +630,8 @@
     if (profileSync() && changes[OPTS_KEY]?.newValue) applyOpts(changes[OPTS_KEY].newValue.state);
     if (tickerSync() && changes[tickerChan()]?.newValue) applyTicker(changes[tickerChan()].newValue.ticker);
     if (tickerSync() && changes[ES_CHAN()]?.newValue) applyEs(changes[ES_CHAN()].newValue.es);
+    if (zoomMode === "sync" && !replayLocked && changes[zoomKey()]?.newValue) writeDesired(changes[zoomKey()].newValue); // live group zoom
+
   });
 
   // Show our UI only on /classic|/state. GEXbot is a SPA, so navigating to
