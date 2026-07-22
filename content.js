@@ -354,7 +354,7 @@
   // longer resets it and each ticker keeps its own fit; "sync" also propagates a zoom
   // live across same-color group tabs. content.js owns storage; zoom.js drives the
   // Chart.js instance through two hidden DOM nodes (__gxZoom / __gxZoomCmd).
-  const zoomKey = () => `gexsync-zoom:${groupName()}:${baseTicker()}`;
+  const zoomKey = () => `gexsync-zoom:${location.pathname.replace(/^\//, "")}:${groupName()}:${baseTicker()}`; // page-specific: state/classic keep independent zoom
   let zoomSeq = 0, zoomTicker = null;
   const zoomCmd = () => { let n = document.getElementById("__gxZoomCmd"); if (!n) { n = document.createElement("div"); n.id = "__gxZoomCmd"; n.style.display = "none"; document.documentElement.appendChild(n); } return n; };
   const writeDesired = (z) => { zoomCmd().textContent = (z && isFinite(z.yMin) && isFinite(z.yMax)) ? JSON.stringify({ yMin: z.yMin, yMax: z.yMax, seq: ++zoomSeq }) : ""; };
