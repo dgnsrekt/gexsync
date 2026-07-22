@@ -42,12 +42,12 @@
   const scopedKey = (base, scope) => (scope === "all" ? base : base + location.pathname);
   let panelScope = "all"; // config-driven, kept live via onChanged below
   let watermark = true; // append this tab's profile to the chart's ticker watermark
-  let zoomMode = "off"; // off | memory | sync — chart-zoom persistence (see zoom.js)
+  let zoomSync = false; // live chart-zoom sync + hold-through-refresh (see zoom.js); opt-in
   const panelKey = () => scopedKey("gexsync-panel", panelScope);
   chrome.storage.local.get(CFG_KEY, (r) => {
     if (r[CFG_KEY]?.panelScope) panelScope = r[CFG_KEY].panelScope;
     watermark = r[CFG_KEY]?.watermark !== false; // default on
-    zoomMode = r[CFG_KEY]?.zoomMode || "off"; // default off (opt-in)
+    zoomSync = r[CFG_KEY]?.zoomSync === true; // default off (opt-in)
   });
 
   // Mode gates what syncs (one axis at a time; panel-collapse always syncs):
@@ -349,33 +349,37 @@
     }
   }, 400);
 
-  // ---- zoom memory (off | memory | sync) — the chart lives in zoom.js (MAIN world) ----
-  // Persist the chart's y-axis (price) zoom per ticker so GEXbot's ~5-min refresh no
-  // longer resets it and each ticker keeps its own fit; "sync" also propagates a zoom
-  // live across same-color group tabs. content.js owns storage; zoom.js drives the
-  // Chart.js instance through two hidden DOM nodes (__gxZoom / __gxZoomCmd).
-  // Cross-page scope follows panelScope: "page" keeps state/classic zoom separate;
-  // "all" drops the page so state+classic (same group+ticker) share/sync together.
-  const zoomKey = () => { const pg = panelScope === "all" ? "" : location.pathname.replace(/^\//, "") + ":"; return `gexsync-zoom:${pg}${groupName()}:${baseTicker()}`; };
-  let zoomSeq = 0, zoomTicker = null;
-  const zoomCmd = () => { let n = document.getElementById("__gxZoomCmd"); if (!n) { n = document.createElement("div"); n.id = "__gxZoomCmd"; n.style.display = "none"; document.documentElement.appendChild(n); } return n; };
-  const writeDesired = (z) => { zoomCmd().textContent = (z && isFinite(z.yMin) && isFinite(z.yMax)) ? JSON.stringify({ yMin: z.yMin, yMax: z.yMax, seq: ++zoomSeq }) : ""; };
-  const pushSavedZoom = () => { // hand zoom.js the saved range for the current ticker
-    if (zoomMode === "off" || replayLocked || !onSyncPage() || !baseTicker()) return;
-    const k = zoomKey(); get(k, (r) => { if (alive()) writeDesired(r[k] || null); });
-  };
-  // capture: zoom.js reports the user changed the zoom → remember it for this ticker
+  // ---- zoom: Live sync (hold through refresh + match same-ticker tabs) + Save/Recall ----
+  // The chart lives in zoom.js (MAIN world); we bridge via hidden DOM nodes. Keys are
+  // ticker-scoped (no group); the page axis follows panelScope (cross-page scope):
+  // "all" → state+classic share; "page" → separate. liveKey = the held/synced range;
+  // savedKey = a Save/Recall snapshot slot.
+  const zScope = () => (panelScope === "all" ? "" : location.pathname.replace(/^\//, "") + ":");
+  const liveKey = () => `gexsync-zoom:${zScope()}${baseTicker()}`;
+  const savedKey = () => `gexsync-zoom-saved:${zScope()}${baseTicker()}`;
+  const RECALL_KEY = "gexsync-zoom-recall";
+  let applySeq = 0, zoomTicker = null;
+  const zNode = (id) => { let n = document.getElementById(id); if (!n) { n = document.createElement("div"); n.id = id; n.style.display = "none"; document.documentElement.appendChild(n); } return n; };
+  const readCurZoom = () => { try { const z = JSON.parse(document.getElementById("__gxZoom").textContent); return z && isFinite(z.yMin) && isFinite(z.yMax) ? z : null; } catch (e) { return null; } };
+  const writeHold = (z) => { zNode("__gxZoomHold").textContent = z && isFinite(z.yMin) && isFinite(z.yMax) ? JSON.stringify({ yMin: z.yMin, yMax: z.yMax }) : ""; };
+  const oneShot = (z) => { if (z && isFinite(z.yMin) && isFinite(z.yMax)) zNode("__gxZoomApply").textContent = JSON.stringify({ yMin: z.yMin, yMax: z.yMax, seq: ++applySeq }); };
+  const adoptLive = () => { if (!zoomSync || replayLocked || !onSyncPage() || !baseTicker()) return; const k = liveKey(); get(k, (r) => { if (alive()) writeHold(r[k] || null); }); };
+  // capture: the user changed the zoom → it becomes the live value for this ticker
   window.addEventListener("gexsync-zoom", () => {
-    if (zoomMode === "off" || replayLocked || !onSyncPage() || !baseTicker()) return;
-    let z; try { z = JSON.parse(document.getElementById("__gxZoom").textContent); } catch (e) { return; }
-    if (z && isFinite(z.yMin) && isFinite(z.yMax)) { send({ [zoomKey()]: { yMin: z.yMin, yMax: z.yMax, t: Date.now() } }); writeDesired(z); }
+    if (!zoomSync || replayLocked || !onSyncPage() || !baseTicker()) return;
+    const z = readCurZoom(); if (z) { send({ [liveKey()]: { yMin: z.yMin, yMax: z.yMax, t: Date.now() } }); writeHold(z); }
   });
-  // re-push the saved zoom whenever the ticker changes (any active mode)
-  setInterval(() => {
-    if (zoomMode === "off" || !onSyncPage()) return;
-    const bt = baseTicker();
-    if (bt && bt !== zoomTicker) { zoomTicker = bt; pushSavedZoom(); }
-  }, 400);
+  // adopt the live value on ticker switch
+  setInterval(() => { if (!zoomSync || !onSyncPage()) return; const bt = baseTicker(); if (bt && bt !== zoomTicker) { zoomTicker = bt; adoptLive(); } }, 400);
+  // Recall (broadcast from popup): apply the saved range. With sync on it becomes the
+  // live value (holds + propagates); with sync off it's a one-shot snap.
+  function recallZoom() {
+    if (replayLocked || !onSyncPage() || !baseTicker()) return;
+    const k = savedKey(); get(k, (r) => { const z = r[k]; if (!z || !alive()) return;
+      if (zoomSync) { send({ [liveKey()]: { yMin: z.yMin, yMax: z.yMax, t: Date.now() } }); writeHold(z); }
+      else oneShot(z);
+    });
+  }
 
   // ---- spot ↔ es-future sync (Ticker mode; it's a ticker-axis view) ----
   // GEXbot has no dedicated key for it — the toggle just flips the ticker to
@@ -620,11 +624,12 @@
   }
   chrome.runtime.onMessage.addListener((msg, _s, reply) => {
     if (msg === "getState") reply(getState());
+    else if (msg === "getZoom") { const z = onSyncPage() && baseTicker() ? readCurZoom() : null; reply(z ? { key: savedKey(), ticker: baseTicker(), yMin: z.yMin, yMax: z.yMax } : null); }
   });
 
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area !== "local") return;
-    if (changes[CFG_KEY]?.newValue) { const c = changes[CFG_KEY].newValue; const pScope = panelScope; if (c.panelScope) panelScope = c.panelScope; watermark = c.watermark !== false; const pz = zoomMode; zoomMode = c.zoomMode || "off"; if (zoomMode === "off") writeDesired(null); else if (zoomMode !== pz || panelScope !== pScope) pushSavedZoom(); }
+    if (changes[CFG_KEY]?.newValue) { const c = changes[CFG_KEY].newValue; const pScope = panelScope; if (c.panelScope) panelScope = c.panelScope; watermark = c.watermark !== false; const pSync = zoomSync; zoomSync = c.zoomSync === true; if (!zoomSync) writeHold(null); else if (!pSync || panelScope !== pScope) adoptLive(); }
     if (changes[MODE_KEY]?.newValue) { mode = changes[MODE_KEY].newValue === "live" ? "profiles" : changes[MODE_KEY].newValue; renderChip(); }
     if (changes[SESSION_KEY]) { replayLocked = !!changes[SESSION_KEY].newValue && changes[SESSION_KEY].newValue.phase !== "idle"; renderChip(); }
     if (!onSyncPage()) return; // off /classic|/state (SPA nav): don't touch the page
@@ -633,7 +638,8 @@
     if (profileSync() && changes[OPTS_KEY]?.newValue) applyOpts(changes[OPTS_KEY].newValue.state);
     if (tickerSync() && changes[tickerChan()]?.newValue) applyTicker(changes[tickerChan()].newValue.ticker);
     if (tickerSync() && changes[ES_CHAN()]?.newValue) applyEs(changes[ES_CHAN()].newValue.es);
-    if (zoomMode === "sync" && !replayLocked && changes[zoomKey()]?.newValue) writeDesired(changes[zoomKey()].newValue); // live group zoom
+    if (zoomSync && !replayLocked && changes[liveKey()]?.newValue) writeHold(changes[liveKey()].newValue); // live zoom sync from a peer tab
+    if (changes[RECALL_KEY]) recallZoom(); // Save/Recall broadcast from the popup
 
   });
 

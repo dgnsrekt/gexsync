@@ -1,26 +1,24 @@
 // ponytail: MAIN-world zoom bridge. GEXbot's chart is Chart.js + chartjs-plugin-zoom
 // on a <canvas>; the live instance lives in React props, invisible to the isolated
-// content script. This finds it and (a) publishes the user's zoom so content.js can
-// remember it per ticker, and (b) keeps the chart at content.js's "desired" range —
-// re-asserting it after GEXbot's ~5-min refresh resets the view, while yielding to
-// the user whenever they're actively zooming. No storage, no app logic.
+// content script. This finds it and bridges it to content.js through hidden DOM
+// nodes: publishes the current y-range (for reads/Save), HOLDS a desired range
+// through refreshes (live sync), and does one-shot APPLYs (Recall). No storage.
 (() => {
   if (window.__gexsyncZoom) return;
   window.__gexsyncZoom = 1;
 
-  const STATE_ID = "__gxZoom";   // MAIN → isolated: the user's latest zoom
-  const CMD_ID = "__gxZoomCmd";  // isolated → MAIN: the desired zoom to hold
+  const CUR_ID = "__gxZoom";       // MAIN → isolated: the chart's current y-range (fresh each tick)
+  const HOLD_ID = "__gxZoomHold";  // isolated → MAIN: a range to hold through refreshes (live sync)
+  const APPLY_ID = "__gxZoomApply";// isolated → MAIN: {..,seq} — apply once, don't hold (Recall)
   const node = (id) => { let n = document.getElementById(id); if (!n) { n = document.createElement("div"); n.id = id; n.style.display = "none"; (document.documentElement || document).appendChild(n); } return n; };
   const fiberOf = (el) => { for (const k in el) if (k.startsWith("__reactFiber$")) return el[k]; return null; };
 
   // Locate the Chart.js instance by SHAPE (component is minified) — an object with a
-  // y-scale and the chartjs-plugin-zoom API. Cached; re-found when the chart rebuilds.
+  // y-scale and the chartjs-plugin-zoom API.
   const isChart = (v) => v && typeof v === "object" && v.scales && v.scales.y && typeof v.zoomScale === "function" && typeof v.update === "function";
   // cap high: GEXbot's classic chart component holds the instance past hook #110.
   const hooks = (f) => { const o = []; let h = f && f.memoizedState, i = 0; while (h && typeof h === "object" && i < 400 && ("next" in h || "memoizedState" in h)) { o.push(h.memoizedState); h = h.next; i++; } return o; };
-  // Always resolve the LIVE instance fresh — GEXbot may recreate the chart on a
-  // refresh, and a stale cached (destroyed) instance would silently no-op. The walk
-  // is cheap (~2k fibers) and callers only invoke it when there's a zoom to enforce.
+  // Always resolve the LIVE instance fresh — GEXbot may recreate the chart on refresh.
   function findChart() {
     const cv = document.querySelector("canvas");
     let top = cv && fiberOf(cv); if (!top) return null; while (top.return) top = top.return;
@@ -35,19 +33,20 @@
   }
 
   let applying = false, lastInput = 0;
+  const set = (chart, d) => { applying = true; try { chart.zoomScale("y", { min: d.yMin, max: d.yMax }, "none"); chart.update("none"); } catch (e) {} setTimeout(() => { applying = false; }, 50); };
   const onCanvas = (e) => e.target && e.target.tagName === "CANVAS";
   ["wheel", "pointerdown", "pointermove", "pointerup", "dblclick"].forEach((t) =>
     document.addEventListener(t, (e) => { if (onCanvas(e)) lastInput = performance.now(); }, true));
 
-  // Capture: after the user finishes a wheel/drag/reset on the canvas, publish the
-  // resulting y-range so content.js can remember it. Debounced; skipped while WE apply.
+  // Capture: after the user finishes a wheel/drag on the canvas, publish the range
+  // and signal content.js (for live-sync propagation). Skipped while WE apply.
   let capTimer = 0;
   const scheduleCapture = (e) => {
     if (!onCanvas(e)) return;
     clearTimeout(capTimer);
     capTimer = setTimeout(() => {
       if (applying) return; const c = findChart(); if (!c) return;
-      node(STATE_ID).textContent = JSON.stringify({ yMin: c.scales.y.min, yMax: c.scales.y.max });
+      node(CUR_ID).textContent = JSON.stringify({ yMin: c.scales.y.min, yMax: c.scales.y.max });
       window.dispatchEvent(new CustomEvent("gexsync-zoom"));
     }, 350);
   };
@@ -55,27 +54,36 @@
   document.addEventListener("pointerup", scheduleCapture, true);
   document.addEventListener("dblclick", scheduleCapture, true);
 
-  // Assert: hold the chart at content.js's desired range. Idempotent when already
-  // there; fixes it after a refresh reset. Never fights an actively-zooming user.
-  let lastMin = null, lastMax = null;
+  let lastMin = null, lastMax = null, lastApplySeq = null;
   function tick() {
-    const cmd = document.getElementById(CMD_ID); if (!cmd || !cmd.textContent) return; // nothing to enforce → skip the walk
-    if (performance.now() - lastInput < 900) return; // user is interacting — don't fight
-    let d; try { d = JSON.parse(cmd.textContent); } catch (e) { return; }
-    if (!d || !isFinite(d.yMin) || !isFinite(d.yMax)) return;
     const chart = findChart(); if (!chart) return;
-    const y = chart.scales.y, tol = (Math.abs(d.yMax - d.yMin) || 1) * 0.005;
-    // Wait for GEXbot to stop moving the range (its load/refresh re-fits it a few
-    // times) before snapping — otherwise we flicker-fight it. Act only once the
-    // range has held steady for a tick, then apply once.
+    const y = chart.scales.y;
+    // publish current range so content.js can read/Save it any time
+    const cur = JSON.stringify({ yMin: y.min, yMax: y.max });
+    const cn = node(CUR_ID); if (cn.textContent !== cur) cn.textContent = cur;
+
+    // one-shot apply (Recall) — apply once when seq changes, then leave it be
+    const ap = document.getElementById(APPLY_ID);
+    if (ap && ap.textContent) {
+      let a; try { a = JSON.parse(ap.textContent); } catch (e) { a = null; }
+      if (a && a.seq !== lastApplySeq && isFinite(a.yMin) && isFinite(a.yMax)) {
+        lastApplySeq = a.seq;
+        if (performance.now() - lastInput > 300) { set(chart, a); lastMin = a.yMin; lastMax = a.yMax; return; }
+      }
+    }
+
+    // hold (live sync) — keep the chart at the held range through refreshes, but
+    // wait for GEXbot to stop re-fitting (stability gate) and yield to the user.
+    const hn = document.getElementById(HOLD_ID);
+    if (!hn || !hn.textContent) { lastMin = y.min; lastMax = y.max; return; }
+    if (performance.now() - lastInput < 900) { lastMin = y.min; lastMax = y.max; return; }
+    let d; try { d = JSON.parse(hn.textContent); } catch (e) { return; }
+    if (!d || !isFinite(d.yMin) || !isFinite(d.yMax)) return;
+    const tol = (Math.abs(d.yMax - d.yMin) || 1) * 0.005;
     const stable = lastMin != null && Math.abs(y.min - lastMin) <= tol && Math.abs(y.max - lastMax) <= tol;
     lastMin = y.min; lastMax = y.max;
-    if (!stable) return;
-    if (Math.abs(y.min - d.yMin) > tol || Math.abs(y.max - d.yMax) > tol) {
-      applying = true;
-      try { chart.zoomScale("y", { min: d.yMin, max: d.yMax }, "none"); chart.update("none"); } catch (e) {}
-      setTimeout(() => { applying = false; }, 50);
-      lastMin = d.yMin; lastMax = d.yMax; // reflect our own set so next tick reads as stable
+    if (stable && (Math.abs(y.min - d.yMin) > tol || Math.abs(y.max - d.yMax) > tol)) {
+      set(chart, d); lastMin = d.yMin; lastMax = d.yMax;
     }
   }
   setInterval(tick, 400);
