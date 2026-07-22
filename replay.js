@@ -27,6 +27,15 @@
   const HEARTBEAT_MS = 2000;// master re-broadcasts time this often while playing
   let seekSeq = 0, lastSeekSent = 0;
   let timeMap = null, mapMax = -1, building = false, calibrating = false; // index↔time map
+  // index→epoch timestamps for the loaded replay, published by replaydata.js (MAIN
+  // world) into a shared DOM node. When present, buildMap uses it directly — no
+  // slider scrub, no redraw, so no per-tab freeze and no calibration lock needed.
+  let tsArr = null;
+  function readReplayTS() {
+    try { const n = document.getElementById("__gxReplayTS"); if (!n || !n.textContent) return null; const a = JSON.parse(n.textContent); return Array.isArray(a) && a.length > 2 ? a : null; } catch (e) { return null; }
+  }
+  tsArr = readReplayTS(); // may already be published (reader runs at document_start)
+  window.addEventListener("gexsync-replaymap", () => { tsArr = readReplayTS(); mapMax = -1; if (active()) maybeBuildMap(); });
   let scrubUntil = 0; // suppress live-position updates while dragging the mini scrubber
   const PAGE = location.pathname;           // "/state" | "/classic" (at load)
   let mode = "live";
@@ -118,9 +127,35 @@
   // ---- index↔time map: sample the slider once so we can seek to any
   // timestamp instantly + exactly, even during play (cerberus-style). ----
   const MAP_N = 44;
+  // Instant map from the in-page timestamps (replaydata.js). tod = epoch − K,
+  // where K (midnight-of-session epoch) is anchored off ONE real DOM time read at
+  // the current slider index — no timezone/DST math, no slider movement. Returns
+  // true if it built a usable map. Cheap + side-effect-free → runs in every tab at
+  // once with zero render contention.
+  function buildMapInstant(max) {
+    const el = slider();
+    if (!el) return false;
+    const ts = tsArr && tsArr.length === max + 1 ? tsArr : (tsArr = readReplayTS());
+    if (!ts || ts.length !== max + 1) return false;
+    const i0 = +el.value, todRef = readTod();
+    if (todRef == null || ts[i0] == null) return false;
+    const K = ts[i0] - todRef; // epoch of session midnight (both advance 1s/1s)
+    const map = [];
+    for (let i = 0; i <= max; i++) { const tod = ts[i] - K; if (!map.length || tod > map[map.length - 1].tod) map.push({ i, tod }); }
+    const span = map.length ? map[map.length - 1].tod - map[0].tod : 0;
+    timeMap = map.length >= 2 && span > 300 ? map : null;
+    return timeMap != null;
+  }
   async function buildMap(max) {
     const el = slider();
     if (!el) return;
+    // Data present → build instantly and NEVER scrub (matches maybeBuildMap's
+    // lock-skip). If the one-shot anchor read fails this tick, bail; the periodic
+    // retry rebuilds once the time readout is available.
+    const ts = tsArr && tsArr.length === max + 1 ? tsArr : (tsArr = readReplayTS());
+    if (ts && ts.length === max + 1) { buildMapInstant(max); return; }
+    // Fallback: reverse-engineer the map by scrubbing the slider (the original
+    // method) when the in-page data channel isn't available.
     calibrating = true;
     const savedIdx = +el.value, wasPlaying = isPlaying();
     if (wasPlaying) transportBtn()?.click(); // pause during calibration
@@ -170,10 +205,14 @@
     // recalibration that never stabilizes and hangs the session at "N/M". After a
     // few rebuilds, give up and accept the last map so the group can finish loading.
     if (recalCount >= 4) { liveGiveUp = true; beat(); return; }
-    if (!(await acquireCalLock())) return;
+    // Instant path needs no cross-tab serialization (no redraws) — only the scrub
+    // fallback holds the calibration lock.
+    const ts = tsArr && tsArr.length === max + 1 ? tsArr : (tsArr = readReplayTS());
+    const instant = !!ts && ts.length === max + 1;
+    if (!instant && !(await acquireCalLock())) return;
     mapMax = max;
     building = true;
-    try { await buildMap(max); } finally { building = false; await releaseCalLock(); }
+    try { await buildMap(max); } finally { building = false; if (!instant) await releaseCalLock(); }
     if (timeMap) recalCount++; // if max keeps changing (live data) we'll hit the cap
     if (!timeMap && buildTries++ < 3) mapMax = -1; // self-heal: retry a few times
     beat(); // publish readiness now — don't wait for the 3s heartbeat to flip the group ready

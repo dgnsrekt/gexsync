@@ -4,6 +4,22 @@ All notable changes to GexSync are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and the project follows
 [semantic versioning](https://semver.org/).
 
+## [1.2.0] — 2026-07-21
+
+### Changed
+- **Replay loads near-instantly and calibrates in parallel.** Joining a replay
+  session used to make each tab reverse-engineer its time map by scrubbing the
+  slider dozens of times — a redraw-heavy step that had to run one tab at a time
+  (a shared lock) to avoid freezing the browser, so a group loaded slowly, pane by
+  pane. GexSync now reads GEXbot's already-loaded replay data directly and builds
+  each tab's time map from it instantly — no scrubbing, no redraws, no cross-tab
+  lock. Every pane is ready the moment its history arrives, all at once, and the
+  map is exact to the second so seeks and follow land dead-on. (The old scrub
+  method stays as an automatic fallback.)
+- **Panel-collapse now defaults to "All tabs."** A fresh install previously
+  defaulted the panel-collapse scope to "By page"; it now defaults to "All tabs"
+  (existing settings are unchanged).
+
 ## [1.1.0] — 2026-07-20
 
 ### Changed
@@ -92,6 +108,7 @@ All notable changes to GexSync are documented here. The format is based on
   different dates, tickers, and profiles side by side.
 - Bundled README, LICENSE, and OKF knowledge base.
 
+[1.2.0]: https://github.com/dgnsrekt/gexsync/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/dgnsrekt/gexsync/compare/v1.0.3...v1.1.0
 [1.0.3]: https://github.com/dgnsrekt/gexsync/compare/v1.0.2...v1.0.3
 [1.0.2]: https://github.com/dgnsrekt/gexsync/compare/v1.0.1...v1.0.2
