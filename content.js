@@ -361,6 +361,7 @@
   let applySeq = 0, zoomTicker = null;
   const zNode = (id) => { let n = document.getElementById(id); if (!n) { n = document.createElement("div"); n.id = id; n.style.display = "none"; document.documentElement.appendChild(n); } return n; };
   const readCurZoom = () => { try { const z = JSON.parse(document.getElementById("__gxZoom").textContent); return z && isFinite(z.yMin) && isFinite(z.yMax) ? z : null; } catch (e) { return null; } };
+  const zoomBusy = () => { try { return (JSON.parse(document.getElementById("__gxZoom").textContent).busyUntil || 0) > Date.now(); } catch (e) { return false; } }; // user actively zooming this tab → it's the authority
   const writeHold = (z) => { zNode("__gxZoomHold").textContent = z && isFinite(z.yMin) && isFinite(z.yMax) ? JSON.stringify({ yMin: z.yMin, yMax: z.yMax }) : ""; };
   const oneShot = (z) => { if (z && isFinite(z.yMin) && isFinite(z.yMax)) zNode("__gxZoomApply").textContent = JSON.stringify({ yMin: z.yMin, yMax: z.yMax, seq: ++applySeq }); };
   const adoptLive = () => { if (!zoomSync || replayLocked || !onSyncPage() || !baseTicker()) return; const k = liveKey(); get(k, (r) => { if (alive()) writeHold(r[k] || null); }); };
@@ -638,7 +639,7 @@
     if (profileSync() && changes[OPTS_KEY]?.newValue) applyOpts(changes[OPTS_KEY].newValue.state);
     if (tickerSync() && changes[tickerChan()]?.newValue) applyTicker(changes[tickerChan()].newValue.ticker);
     if (tickerSync() && changes[ES_CHAN()]?.newValue) applyEs(changes[ES_CHAN()].newValue.es);
-    if (zoomSync && !replayLocked && changes[liveKey()]?.newValue) writeHold(changes[liveKey()].newValue); // live zoom sync from a peer tab
+    if (zoomSync && !replayLocked && !zoomBusy() && changes[liveKey()]?.newValue) writeHold(changes[liveKey()].newValue); // live sync from a peer — but never override a tab you're actively zooming
     if (changes[RECALL_KEY]) recallZoom(); // Save/Recall broadcast from the popup
 
   });

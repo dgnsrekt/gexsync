@@ -32,11 +32,13 @@
     return null;
   }
 
-  let applying = false, lastInput = 0;
+  let applying = false, lastInput = 0, lastInputWall = 0;
+  const BUSY_MS = 1200; // while the user is zooming THIS tab, it's the authority
   const set = (chart, d) => { applying = true; try { chart.zoomScale("y", { min: d.yMin, max: d.yMax }, "none"); chart.update("none"); } catch (e) {} setTimeout(() => { applying = false; }, 50); };
+  const publish = (yMin, yMax) => JSON.stringify({ yMin, yMax, busyUntil: lastInputWall + BUSY_MS });
   const onCanvas = (e) => e.target && e.target.tagName === "CANVAS";
   ["wheel", "pointerdown", "pointermove", "pointerup", "dblclick"].forEach((t) =>
-    document.addEventListener(t, (e) => { if (onCanvas(e)) lastInput = performance.now(); }, true));
+    document.addEventListener(t, (e) => { if (onCanvas(e)) { lastInput = performance.now(); lastInputWall = Date.now(); } }, true));
 
   // Capture: after the user finishes a wheel/drag on the canvas, publish the range
   // and signal content.js (for live-sync propagation). Skipped while WE apply.
@@ -46,7 +48,7 @@
     clearTimeout(capTimer);
     capTimer = setTimeout(() => {
       if (applying) return; const c = findChart(); if (!c) return;
-      node(CUR_ID).textContent = JSON.stringify({ yMin: c.scales.y.min, yMax: c.scales.y.max });
+      node(CUR_ID).textContent = publish(c.scales.y.min, c.scales.y.max);
       window.dispatchEvent(new CustomEvent("gexsync-zoom"));
     }, 350);
   };
@@ -58,8 +60,8 @@
   function tick() {
     const chart = findChart(); if (!chart) return;
     const y = chart.scales.y;
-    // publish current range so content.js can read/Save it any time
-    const cur = JSON.stringify({ yMin: y.min, yMax: y.max });
+    // publish current range (+ busy window) so content.js can read/Save it any time
+    const cur = publish(y.min, y.max);
     const cn = node(CUR_ID); if (cn.textContent !== cur) cn.textContent = cur;
 
     // one-shot apply (Recall) — apply once when seq changes, then leave it be
