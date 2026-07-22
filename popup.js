@@ -119,7 +119,7 @@ async function stateSnapshot() {
     `GexSync ${v} — state snapshot`,
     ``,
     `Mode: ${curMode}`,
-    `Panel-collapse sync: ${sel.value}`,
+    `Cross-page scope: ${sel.value}`,
     `Watermark: ${wm.checked ? "on" : "off"}`,
     `Zoom: ${zoomSel.value}`,
     `Replay session: ${sessTxt}`,
