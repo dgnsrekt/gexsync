@@ -16,7 +16,8 @@
   // Locate the Chart.js instance by SHAPE (component is minified) — an object with a
   // y-scale and the chartjs-plugin-zoom API. Cached; re-found when the chart rebuilds.
   const isChart = (v) => v && typeof v === "object" && v.scales && v.scales.y && typeof v.zoomScale === "function" && typeof v.update === "function";
-  const hooks = (f) => { const o = []; let h = f && f.memoizedState, i = 0; while (h && typeof h === "object" && i < 80 && ("next" in h || "memoizedState" in h)) { o.push(h.memoizedState); h = h.next; i++; } return o; };
+  // cap high: GEXbot's classic chart component holds the instance past hook #110.
+  const hooks = (f) => { const o = []; let h = f && f.memoizedState, i = 0; while (h && typeof h === "object" && i < 400 && ("next" in h || "memoizedState" in h)) { o.push(h.memoizedState); h = h.next; i++; } return o; };
   // Always resolve the LIVE instance fresh — GEXbot may recreate the chart on a
   // refresh, and a stale cached (destroyed) instance would silently no-op. The walk
   // is cheap (~2k fibers) and callers only invoke it when there's a zoom to enforce.
@@ -56,6 +57,7 @@
 
   // Assert: hold the chart at content.js's desired range. Idempotent when already
   // there; fixes it after a refresh reset. Never fights an actively-zooming user.
+  let lastMin = null, lastMax = null;
   function tick() {
     const cmd = document.getElementById(CMD_ID); if (!cmd || !cmd.textContent) return; // nothing to enforce → skip the walk
     if (performance.now() - lastInput < 900) return; // user is interacting — don't fight
@@ -63,10 +65,17 @@
     if (!d || !isFinite(d.yMin) || !isFinite(d.yMax)) return;
     const chart = findChart(); if (!chart) return;
     const y = chart.scales.y, tol = (Math.abs(d.yMax - d.yMin) || 1) * 0.005;
+    // Wait for GEXbot to stop moving the range (its load/refresh re-fits it a few
+    // times) before snapping — otherwise we flicker-fight it. Act only once the
+    // range has held steady for a tick, then apply once.
+    const stable = lastMin != null && Math.abs(y.min - lastMin) <= tol && Math.abs(y.max - lastMax) <= tol;
+    lastMin = y.min; lastMax = y.max;
+    if (!stable) return;
     if (Math.abs(y.min - d.yMin) > tol || Math.abs(y.max - d.yMax) > tol) {
       applying = true;
       try { chart.zoomScale("y", { min: d.yMin, max: d.yMax }, "none"); chart.update("none"); } catch (e) {}
       setTimeout(() => { applying = false; }, 50);
+      lastMin = d.yMin; lastMax = d.yMax; // reflect our own set so next tick reads as stable
     }
   }
   setInterval(tick, 400);
