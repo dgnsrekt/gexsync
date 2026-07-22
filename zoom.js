@@ -17,17 +17,17 @@
   // y-scale and the chartjs-plugin-zoom API. Cached; re-found when the chart rebuilds.
   const isChart = (v) => v && typeof v === "object" && v.scales && v.scales.y && typeof v.zoomScale === "function" && typeof v.update === "function";
   const hooks = (f) => { const o = []; let h = f && f.memoizedState, i = 0; while (h && typeof h === "object" && i < 80 && ("next" in h || "memoizedState" in h)) { o.push(h.memoizedState); h = h.next; i++; } return o; };
-  let cached = null;
+  // Always resolve the LIVE instance fresh — GEXbot may recreate the chart on a
+  // refresh, and a stale cached (destroyed) instance would silently no-op. The walk
+  // is cheap (~2k fibers) and callers only invoke it when there's a zoom to enforce.
   function findChart() {
-    if (cached && isChart(cached) && cached.canvas && cached.canvas.isConnected) return cached;
-    cached = null;
     const cv = document.querySelector("canvas");
     let top = cv && fiberOf(cv); if (!top) return null; while (top.return) top = top.return;
     const stack = [top], seen = new Set(); let v = 0;
     while (stack.length && v++ < 40000) {
       const n = stack.pop(); if (!n || seen.has(n)) continue; seen.add(n);
-      for (const h of (typeof n.type === "function" ? hooks(n) : [])) { let c = h; if (c && typeof c === "object" && "current" in c) c = c.current; if (isChart(c)) { cached = c; return c; } if (isChart(h)) { cached = h; return h; } }
-      const p = n.memoizedProps; if (p && typeof p === "object") for (const k in p) { let x; try { x = p[k]; } catch (e) { continue; } if (isChart(x)) { cached = x; return x; } }
+      for (const h of (typeof n.type === "function" ? hooks(n) : [])) { let c = h; if (c && typeof c === "object" && "current" in c) c = c.current; if (isChart(c)) return c; if (isChart(h)) return h; }
+      const p = n.memoizedProps; if (p && typeof p === "object") for (const k in p) { let x; try { x = p[k]; } catch (e) { continue; } if (isChart(x)) return x; }
       if (n.child) stack.push(n.child); if (n.sibling) stack.push(n.sibling);
     }
     return null;
@@ -57,11 +57,11 @@
   // Assert: hold the chart at content.js's desired range. Idempotent when already
   // there; fixes it after a refresh reset. Never fights an actively-zooming user.
   function tick() {
-    const chart = findChart(); if (!chart) return;
-    if (performance.now() - lastInput < 900) return;
-    const cmd = document.getElementById(CMD_ID); if (!cmd || !cmd.textContent) return;
+    const cmd = document.getElementById(CMD_ID); if (!cmd || !cmd.textContent) return; // nothing to enforce → skip the walk
+    if (performance.now() - lastInput < 900) return; // user is interacting — don't fight
     let d; try { d = JSON.parse(cmd.textContent); } catch (e) { return; }
     if (!d || !isFinite(d.yMin) || !isFinite(d.yMax)) return;
+    const chart = findChart(); if (!chart) return;
     const y = chart.scales.y, tol = (Math.abs(d.yMax - d.yMin) || 1) * 0.005;
     if (Math.abs(y.min - d.yMin) > tol || Math.abs(y.max - d.yMax) > tol) {
       applying = true;
