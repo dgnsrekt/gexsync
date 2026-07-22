@@ -366,10 +366,13 @@
   const writeHold = (z) => { zNode("__gxZoomHold").textContent = z && isFinite(z.yMin) && isFinite(z.yMax) ? JSON.stringify({ yMin: z.yMin, yMax: z.yMax }) : ""; };
   const oneShot = (z) => { if (z && isFinite(z.yMin) && isFinite(z.yMax)) zNode("__gxZoomApply").textContent = JSON.stringify({ yMin: z.yMin, yMax: z.yMax, seq: ++applySeq }); };
   const adoptLive = () => { if (!zoomSync || replayLocked || !onSyncPage() || !baseTicker()) return; const k = liveKey(); get(k, (r) => { if (alive()) writeHold(r[k] || null); }); };
-  // ---- EXPERIMENT (zoom-hud): the live-zoom state machine TAKES OVER the pill's
-  // leading section (the loop-glyph circle + "mode: …" label). idle → grab ("master",
-  // mint) → settle ("setting…", the loop glyph spins for the beat before it takes) →
-  // took ("synced →", pop) → back to mode. A peer push shows "← synced". Cosmetic.
+  // ---- live-zoom state indicator: the state machine takes over the pill's leading
+  // section (the loop-glyph circle + "mode: …" label). idle → grab ("master", mint)
+  // → settle ("setting…", the loop glyph spins for the beat before it takes) → took
+  // ("synced →", pop) → back to mode. A peer push shows "← synced". Cosmetic.
+  // ponytail: known snag — the indicator can hang on "setting…" if the capture event
+  // doesn't fire; double-clicking the chart resets its zoom and clears it. Deeper fix
+  // + a debug-record session are noted for the next release (see the vault).
   const ZHUD = (() => {
     const C = { mint: T.mint, azure: T.azure, amber: T.amber, muted: T.muted };
     const LBL = { profiles: "Profiles", ticker: "Ticker", replay: "Replay" };

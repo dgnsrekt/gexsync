@@ -4,6 +4,29 @@ All notable changes to GexSync are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and the project follows
 [semantic versioning](https://semver.org/).
 
+## [1.3.0] — 2026-07-22
+
+### Added
+- **Live zoom sync.** Turn it on (popup) and same-ticker charts stay zoom-matched
+  in real time — zoom one, the rest follow — and each chart **holds its zoom
+  through GEXbot's ~5-minute refresh** (works even on a single tab). Ticker-scoped;
+  the tab under your mouse is the authority, so your adjustment always wins. This
+  answers the two most-asked GEXbot requests: "remember my zoom per ticker" and
+  "stop the refresh from resetting it." *(If the pill's state indicator ever hangs
+  on "setting…", double-click the chart to reset its zoom.)*
+- **Save / Recall zoom layout.** One click snapshots every open ticker's current
+  zoom; one click restores them all. Works with or without Live sync.
+- **Live-zoom state on the mode pill.** With Live sync on, the pill's leading loop
+  glyph reacts to your gesture — *master* → *setting…* (the glyph spins) → *synced →*
+  — and shows *← synced* when a peer's zoom arrives.
+- **Copy full state.** A ⧉ copy button on the *Current state* section puts a
+  complete snapshot (settings, mode, per-tab roster incl. color group) on the
+  clipboard.
+
+### Changed
+- **"Panel-collapse sync" is now "Cross-page scope."** It governs whether state and
+  classic count as one pool or two — for panel-collapse **and** live zoom sync.
+
 ## [1.2.0] — 2026-07-21
 
 ### Changed
@@ -108,6 +131,7 @@ All notable changes to GexSync are documented here. The format is based on
   different dates, tickers, and profiles side by side.
 - Bundled README, LICENSE, and OKF knowledge base.
 
+[1.3.0]: https://github.com/dgnsrekt/gexsync/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/dgnsrekt/gexsync/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/dgnsrekt/gexsync/compare/v1.0.3...v1.1.0
 [1.0.3]: https://github.com/dgnsrekt/gexsync/compare/v1.0.2...v1.0.3
