@@ -366,40 +366,32 @@
   const writeHold = (z) => { zNode("__gxZoomHold").textContent = z && isFinite(z.yMin) && isFinite(z.yMax) ? JSON.stringify({ yMin: z.yMin, yMax: z.yMax }) : ""; };
   const oneShot = (z) => { if (z && isFinite(z.yMin) && isFinite(z.yMax)) zNode("__gxZoomApply").textContent = JSON.stringify({ yMin: z.yMin, yMax: z.yMax, seq: ++applySeq }); };
   const adoptLive = () => { if (!zoomSync || replayLocked || !onSyncPage() || !baseTicker()) return; const k = liveKey(); get(k, (r) => { if (alive()) writeHold(r[k] || null); }); };
-  // ---- EXPERIMENT (zoom-hud): a segment INSIDE the mode pill showing the live-zoom
-  // state machine. idle → grab (you're master, mouse on this chart) → settle (let go,
-  // a bar drains for the beat before it takes) → took (pop, synced out); a peer push
-  // shows "← synced". Only present while Live zoom sync is on. Cosmetic.
+  // ---- EXPERIMENT (zoom-hud): the live-zoom state machine TAKES OVER the pill's
+  // leading section (the loop-glyph circle + "mode: …" label). idle → grab ("master",
+  // mint) → settle ("setting…", the loop glyph spins for the beat before it takes) →
+  // took ("synced →", pop) → back to mode. A peer push shows "← synced". Cosmetic.
   const ZHUD = (() => {
     const C = { mint: T.mint, azure: T.azure, amber: T.amber, muted: T.muted };
-    let seg, dotEl, lblEl, barEl, state = "idle", decayT = 0, stopT = 0;
-    const build = () => {
-      if (seg) return true;
-      const chip = document.getElementById("gexsync-mode-chip");
-      if (!chip) return false;
-      seg = document.createElement("span");
-      seg.id = "gexsync-zoom-seg";
-      seg.style.cssText = `display:none;align-items:center;gap:8px;padding:6px 13px;border-left:1px solid rgba(255,255,255,.12);border-radius:0 9999px 9999px 0;white-space:nowrap;font:500 12px ${T.mono};letter-spacing:.3px;transition:background .18s;`;
-      seg.innerHTML = `<span class="d" style="width:8px;height:8px;border-radius:50%;background:${C.muted};transform-origin:center;transition:background .15s,box-shadow .15s,transform .12s;flex:0 0 auto"></span><span class="l" style="min-width:66px">sync ready</span><span class="b" style="width:34px;height:4px;border-radius:2px;background:rgba(255,255,255,.14);overflow:hidden;flex:0 0 auto"><i style="display:block;height:100%;width:0;background:${C.amber}"></i></span>`;
-      chip.appendChild(seg);
-      dotEl = seg.querySelector(".d"); lblEl = seg.querySelector(".l"); barEl = seg.querySelector(".b > i");
-      return true;
-    };
-    const pop = () => { if (!dotEl) return; dotEl.style.transform = "scale(1.7)"; setTimeout(() => { if (dotEl) dotEl.style.transform = "scale(1)"; }, 120); };
+    const LBL = { profiles: "Profiles", ticker: "Ticker", replay: "Replay" };
+    let state = "idle", decayT = 0, stopT = 0, spin = null;
+    const mark = () => document.getElementById("gexsync-chip-mark");
+    const modeEl = () => document.getElementById("gexsync-chip-mode");
+    const svg = () => { const m = mark(); return m && m.querySelector("svg"); };
+    const stopSpin = () => { if (spin) { try { spin.cancel(); } catch (e) {} spin = null; } };
+    const pop = () => { const s = svg(); if (s) s.animate([{ transform: "scale(1)" }, { transform: "scale(1.55)" }, { transform: "scale(1)" }], { duration: 260, easing: "ease-out" }); };
+    const spinOnce = () => { const s = svg(); if (!s) return; stopSpin(); spin = s.animate([{ transform: "rotate(0)" }, { transform: "rotate(360deg)" }], { duration: 520, easing: "linear" }); spin.onfinish = () => { spin = null; }; };
+    const put = (m, md, label, c) => { m.style.color = c; md.textContent = label; md.style.color = c; };
     const paint = (s) => {
-      if (!build()) return;
+      const m = mark(), md = modeEl(); if (!m || !md) return;
       state = s; clearTimeout(decayT);
-      const dot = (c, glow) => { dotEl.style.background = c; dotEl.style.boxShadow = glow ? "0 0 8px " + c : "none"; };
-      barEl.style.transition = "none"; barEl.style.width = "0";
-      const L = (t, c, bg) => { lblEl.textContent = t; lblEl.style.color = c; seg.style.background = bg || "transparent"; };
-      if (s === "idle") { dot(C.muted, false); L("sync ready", C.muted); }
-      else if (s === "grab") { dot(C.mint, true); L("master", C.mint, "rgba(22,224,163,.10)"); pop(); }
-      else if (s === "settle") { dot(C.amber, true); L("setting…", C.amber, "rgba(255,180,84,.10)"); barEl.style.width = "100%"; void barEl.offsetWidth; barEl.style.transition = "width .24s linear"; barEl.style.width = "0"; }
-      else if (s === "took") { dot(C.mint, true); L("synced →", C.mint, "rgba(22,224,163,.15)"); pop(); decayT = setTimeout(() => paint("idle"), 850); }
-      else if (s === "follow") { dot(C.azure, true); L("← synced", C.azure, "rgba(74,163,255,.13)"); pop(); decayT = setTimeout(() => paint("idle"), 850); }
+      if (s === "idle") { stopSpin(); m.style.color = C.muted; md.style.color = ""; md.textContent = `mode: ${LBL[mode] || "Profiles"}${replayLocked ? " 🔒" : ""}`; }
+      else if (s === "grab") { stopSpin(); put(m, md, "master", C.mint); pop(); }
+      else if (s === "settle") { put(m, md, "setting…", C.amber); spinOnce(); }
+      else if (s === "took") { stopSpin(); put(m, md, "synced →", C.mint); pop(); decayT = setTimeout(() => paint("idle"), 850); }
+      else if (s === "follow") { stopSpin(); put(m, md, "← synced", C.azure); pop(); decayT = setTimeout(() => paint("idle"), 850); }
     };
     return {
-      show: (on) => { if (!build()) { if (on) setTimeout(() => ZHUD.show(on), 300); return; } seg.style.display = on ? "flex" : "none"; if (!on) paint("idle"); },
+      show: (on) => { if (!on) paint("idle"); },
       grab: () => { if (state !== "grab") paint("grab"); clearTimeout(stopT); stopT = setTimeout(() => paint("settle"), 150); },
       took: () => { clearTimeout(stopT); paint("took"); },
       follow: () => { if (state === "grab" || state === "settle") return; paint("follow"); },
@@ -407,7 +399,7 @@
   })();
   const zHudOn = () => ZHUD.show(zoomSync && onSyncPage());
   ["wheel", "pointerdown", "pointermove"].forEach((t) =>
-    document.addEventListener(t, (e) => { if (zoomSync && e.target && e.target.tagName === "CANVAS" && (t !== "pointermove" || e.buttons)) ZHUD.grab(); }, true));
+    document.addEventListener(t, (e) => { if (zoomSync && !replayLocked && onSyncPage() && e.target && e.target.tagName === "CANVAS" && (t !== "pointermove" || e.buttons)) ZHUD.grab(); }, true));
 
   // capture: the user changed the zoom → it becomes the live value for this ticker
   window.addEventListener("gexsync-zoom", () => {
@@ -527,11 +519,14 @@
     // brand mark glyph (the sync loop) at the far left, muted so it reads as
     // identity, not status
     const markSeg = document.createElement("span");
-    markSeg.style.cssText = `display:flex;align-items:center;padding:6px 3px 6px 13px;color:${T.muted};`;
-    markSeg.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4.5v5h5"/></svg>`;
+    markSeg.id = "gexsync-chip-mark";
+    markSeg.style.cssText = `display:flex;align-items:center;padding:6px 3px 6px 13px;color:${T.muted};transition:color .16s;`;
+    markSeg.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="transform-box:fill-box;transform-origin:center"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4.5v5h5"/></svg>`;
 
     const modeSeg = document.createElement("span");
-    modeSeg.style.cssText = "display:flex;align-items:center;gap:7px;padding:6px 13px 6px 7px;cursor:pointer;";
+    modeSeg.id = "gexsync-chip-mode";
+    // min-width holds "mode: Profiles" so the zoom takeover labels don't jitter the pill
+    modeSeg.style.cssText = "display:flex;align-items:center;gap:7px;padding:6px 13px 6px 7px;cursor:pointer;box-sizing:border-box;min-width:118px;transition:color .16s;";
     modeSeg.title = "GexSync mode — click to cycle (Profiles / Ticker / Replay)";
     modeSeg.addEventListener("click", () => { if (replayLocked) return; send({ [MODE_KEY]: MODES[(MODES.indexOf(mode) + 1) % MODES.length] }); });
 
