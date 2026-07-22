@@ -42,10 +42,13 @@
   const scopedKey = (base, scope) => (scope === "all" ? base : base + location.pathname);
   let panelScope = "all"; // config-driven, kept live via onChanged below
   let watermark = true; // append this tab's profile to the chart's ticker watermark
+  let zoomSync = false; // live chart-zoom sync + hold-through-refresh (see zoom.js); opt-in
   const panelKey = () => scopedKey("gexsync-panel", panelScope);
   chrome.storage.local.get(CFG_KEY, (r) => {
     if (r[CFG_KEY]?.panelScope) panelScope = r[CFG_KEY].panelScope;
     watermark = r[CFG_KEY]?.watermark !== false; // default on
+    zoomSync = r[CFG_KEY]?.zoomSync === true; // default off (opt-in)
+    zHudOn();
   });
 
   // Mode gates what syncs (one axis at a time; panel-collapse always syncs):
@@ -347,6 +350,77 @@
     }
   }, 400);
 
+  // ---- zoom: Live sync (hold through refresh + match same-ticker tabs) + Save/Recall ----
+  // The chart lives in zoom.js (MAIN world); we bridge via hidden DOM nodes. Keys are
+  // ticker-scoped (no group); the page axis follows panelScope (cross-page scope):
+  // "all" → state+classic share; "page" → separate. liveKey = the held/synced range;
+  // savedKey = a Save/Recall snapshot slot.
+  const zScope = () => (panelScope === "all" ? "" : location.pathname.replace(/^\//, "") + ":");
+  const liveKey = () => `gexsync-zoom:${zScope()}${baseTicker()}`;
+  const savedKey = () => `gexsync-zoom-saved:${zScope()}${baseTicker()}`;
+  const RECALL_KEY = "gexsync-zoom-recall";
+  let applySeq = 0, zoomTicker = null;
+  const zNode = (id) => { let n = document.getElementById(id); if (!n) { n = document.createElement("div"); n.id = id; n.style.display = "none"; document.documentElement.appendChild(n); } return n; };
+  const readCurZoom = () => { try { const z = JSON.parse(document.getElementById("__gxZoom").textContent); return z && isFinite(z.yMin) && isFinite(z.yMax) ? z : null; } catch (e) { return null; } };
+  const zoomBusy = () => { try { return (JSON.parse(document.getElementById("__gxZoom").textContent).busyUntil || 0) > Date.now(); } catch (e) { return false; } }; // user actively zooming this tab → it's the authority
+  const writeHold = (z) => { zNode("__gxZoomHold").textContent = z && isFinite(z.yMin) && isFinite(z.yMax) ? JSON.stringify({ yMin: z.yMin, yMax: z.yMax }) : ""; };
+  const oneShot = (z) => { if (z && isFinite(z.yMin) && isFinite(z.yMax)) zNode("__gxZoomApply").textContent = JSON.stringify({ yMin: z.yMin, yMax: z.yMax, seq: ++applySeq }); };
+  const adoptLive = () => { if (!zoomSync || replayLocked || !onSyncPage() || !baseTicker()) return; const k = liveKey(); get(k, (r) => { if (alive()) writeHold(r[k] || null); }); };
+  // ---- live-zoom state indicator: the state machine takes over the pill's leading
+  // section (the loop-glyph circle + "mode: …" label). idle → grab ("master", mint)
+  // → settle ("setting…", the loop glyph spins for the beat before it takes) → took
+  // ("synced →", pop) → back to mode. A peer push shows "← synced". Cosmetic.
+  // ponytail: known snag — the indicator can hang on "setting…" if the capture event
+  // doesn't fire; double-clicking the chart resets its zoom and clears it. Deeper fix
+  // + a debug-record session are noted for the next release (see the vault).
+  const ZHUD = (() => {
+    const C = { mint: T.mint, azure: T.azure, amber: T.amber, muted: T.muted };
+    const LBL = { profiles: "Profiles", ticker: "Ticker", replay: "Replay" };
+    let state = "idle", decayT = 0, stopT = 0, spin = null;
+    const mark = () => document.getElementById("gexsync-chip-mark");
+    const modeEl = () => document.getElementById("gexsync-chip-mode");
+    const svg = () => { const m = mark(); return m && m.querySelector("svg"); };
+    const stopSpin = () => { if (spin) { try { spin.cancel(); } catch (e) {} spin = null; } };
+    const pop = () => { const s = svg(); if (s) s.animate([{ transform: "scale(1)" }, { transform: "scale(1.55)" }, { transform: "scale(1)" }], { duration: 260, easing: "ease-out" }); };
+    const spinOnce = () => { const s = svg(); if (!s) return; stopSpin(); spin = s.animate([{ transform: "rotate(0)" }, { transform: "rotate(360deg)" }], { duration: 520, easing: "linear" }); spin.onfinish = () => { spin = null; }; };
+    const put = (m, md, label, c) => { m.style.color = c; md.textContent = label; md.style.color = c; };
+    const paint = (s) => {
+      const m = mark(), md = modeEl(); if (!m || !md) return;
+      state = s; clearTimeout(decayT);
+      if (s === "idle") { stopSpin(); m.style.color = C.muted; md.style.color = ""; md.textContent = `mode: ${LBL[mode] || "Profiles"}${replayLocked ? " 🔒" : ""}`; }
+      else if (s === "grab") { stopSpin(); put(m, md, "master", C.mint); pop(); }
+      else if (s === "settle") { put(m, md, "setting…", C.amber); spinOnce(); }
+      else if (s === "took") { stopSpin(); put(m, md, "synced →", C.mint); pop(); decayT = setTimeout(() => paint("idle"), 850); }
+      else if (s === "follow") { stopSpin(); put(m, md, "← synced", C.azure); pop(); decayT = setTimeout(() => paint("idle"), 850); }
+    };
+    return {
+      show: (on) => { if (!on) paint("idle"); },
+      grab: () => { if (state !== "grab") paint("grab"); clearTimeout(stopT); stopT = setTimeout(() => paint("settle"), 150); },
+      took: () => { clearTimeout(stopT); paint("took"); },
+      follow: () => { if (state === "grab" || state === "settle") return; paint("follow"); },
+    };
+  })();
+  const zHudOn = () => ZHUD.show(zoomSync && onSyncPage());
+  ["wheel", "pointerdown", "pointermove"].forEach((t) =>
+    document.addEventListener(t, (e) => { if (zoomSync && !replayLocked && onSyncPage() && e.target && e.target.tagName === "CANVAS" && (t !== "pointermove" || e.buttons)) ZHUD.grab(); }, true));
+
+  // capture: the user changed the zoom → it becomes the live value for this ticker
+  window.addEventListener("gexsync-zoom", () => {
+    if (!zoomSync || replayLocked || !onSyncPage() || !baseTicker()) return;
+    const z = readCurZoom(); if (z) { send({ [liveKey()]: { yMin: z.yMin, yMax: z.yMax, t: Date.now() } }); writeHold(z); ZHUD.took(); }
+  });
+  // adopt the live value on ticker switch
+  setInterval(() => { if (!zoomSync || !onSyncPage()) return; const bt = baseTicker(); if (bt && bt !== zoomTicker) { zoomTicker = bt; adoptLive(); } }, 400);
+  // Recall (broadcast from popup): apply the saved range. With sync on it becomes the
+  // live value (holds + propagates); with sync off it's a one-shot snap.
+  function recallZoom() {
+    if (replayLocked || !onSyncPage() || !baseTicker()) return;
+    const k = savedKey(); get(k, (r) => { const z = r[k]; if (!z || !alive()) return;
+      if (zoomSync) { send({ [liveKey()]: { yMin: z.yMin, yMax: z.yMax, t: Date.now() } }); writeHold(z); }
+      else oneShot(z);
+    });
+  }
+
   // ---- spot ↔ es-future sync (Ticker mode; it's a ticker-axis view) ----
   // GEXbot has no dedicated key for it — the toggle just flips the ticker to
   // "SPX⇒ES". Sync it group-scoped like the ticker, but APPLY by clicking the
@@ -448,11 +522,14 @@
     // brand mark glyph (the sync loop) at the far left, muted so it reads as
     // identity, not status
     const markSeg = document.createElement("span");
-    markSeg.style.cssText = `display:flex;align-items:center;padding:6px 3px 6px 13px;color:${T.muted};`;
-    markSeg.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4.5v5h5"/></svg>`;
+    markSeg.id = "gexsync-chip-mark";
+    markSeg.style.cssText = `display:flex;align-items:center;padding:6px 3px 6px 13px;color:${T.muted};transition:color .16s;`;
+    markSeg.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="transform-box:fill-box;transform-origin:center"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4.5v5h5"/></svg>`;
 
     const modeSeg = document.createElement("span");
-    modeSeg.style.cssText = "display:flex;align-items:center;gap:7px;padding:6px 13px 6px 7px;cursor:pointer;";
+    modeSeg.id = "gexsync-chip-mode";
+    // min-width holds "mode: Profiles" so the zoom takeover labels don't jitter the pill
+    modeSeg.style.cssText = "display:flex;align-items:center;gap:7px;padding:6px 13px 6px 7px;cursor:pointer;box-sizing:border-box;min-width:118px;transition:color .16s;";
     modeSeg.title = "GexSync mode — click to cycle (Profiles / Ticker / Replay)";
     modeSeg.addEventListener("click", () => { if (replayLocked) return; send({ [MODE_KEY]: MODES[(MODES.indexOf(mode) + 1) % MODES.length] }); });
 
@@ -580,6 +657,7 @@
     return {
       id: TAB.slice(0, 3).toUpperCase(), // same short id shown in the pill
       page: location.pathname.replace(/^\//, ""), // "state" | "classic"
+      group: groupName(), // color group (for the copyable state snapshot)
       ticker: tickerValue(),
       gex: selectedKeyword(gex),
       options: selectedKeyword(options),
@@ -589,11 +667,12 @@
   }
   chrome.runtime.onMessage.addListener((msg, _s, reply) => {
     if (msg === "getState") reply(getState());
+    else if (msg === "getZoom") { const z = onSyncPage() && baseTicker() ? readCurZoom() : null; reply(z ? { key: savedKey(), ticker: baseTicker(), yMin: z.yMin, yMax: z.yMax } : null); }
   });
 
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area !== "local") return;
-    if (changes[CFG_KEY]?.newValue) { const c = changes[CFG_KEY].newValue; if (c.panelScope) panelScope = c.panelScope; watermark = c.watermark !== false; }
+    if (changes[CFG_KEY]?.newValue) { const c = changes[CFG_KEY].newValue; const pScope = panelScope; if (c.panelScope) panelScope = c.panelScope; watermark = c.watermark !== false; const pSync = zoomSync; zoomSync = c.zoomSync === true; if (!zoomSync) writeHold(null); else if (!pSync || panelScope !== pScope) adoptLive(); zHudOn(); }
     if (changes[MODE_KEY]?.newValue) { mode = changes[MODE_KEY].newValue === "live" ? "profiles" : changes[MODE_KEY].newValue; renderChip(); }
     if (changes[SESSION_KEY]) { replayLocked = !!changes[SESSION_KEY].newValue && changes[SESSION_KEY].newValue.phase !== "idle"; renderChip(); }
     if (!onSyncPage()) return; // off /classic|/state (SPA nav): don't touch the page
@@ -602,6 +681,9 @@
     if (profileSync() && changes[OPTS_KEY]?.newValue) applyOpts(changes[OPTS_KEY].newValue.state);
     if (tickerSync() && changes[tickerChan()]?.newValue) applyTicker(changes[tickerChan()].newValue.ticker);
     if (tickerSync() && changes[ES_CHAN()]?.newValue) applyEs(changes[ES_CHAN()].newValue.es);
+    if (zoomSync && !replayLocked && !zoomBusy() && changes[liveKey()]?.newValue) { writeHold(changes[liveKey()].newValue); ZHUD.follow(); } // live sync from a peer — but never override a tab you're actively zooming
+    if (changes[RECALL_KEY]) recallZoom(); // Save/Recall broadcast from the popup
+
   });
 
   // Show our UI only on /classic|/state. GEXbot is a SPA, so navigating to
@@ -616,6 +698,7 @@
       if (toastEl) toastEl.style.display = "none";
       if (alive()) chrome.storage.local.remove("gexsync-tp:" + TAB); // un-count from the group
     }
+    zHudOn(); // experiment: hide/show the zoom HUD with the page
   }
 
   // SPA renders late and swaps elements; keep polling (cheap) so group observers

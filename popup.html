@@ -58,9 +58,27 @@
   #count b { color: var(--ink); font-weight: 600; }
   #tabs {
     margin-top: 10px; padding: 10px 12px; border-radius: 10px; background: var(--raised); border: 1px solid var(--line);
-    font: 11.5px/1.7 var(--mono); white-space: pre; color: var(--ink); overflow-x: auto;
+    font: 11.5px/1.7 var(--mono); white-space: pre; color: var(--ink); overflow-x: auto; cursor: pointer;
   }
   #tabs .muted { color: var(--muted); }
+  #copyState {
+    margin-left: auto; padding: 3px 9px; border-radius: 7px; cursor: pointer;
+    background: var(--raised); border: 1px solid var(--line); color: var(--muted);
+    font: 600 10px/1 var(--mono); letter-spacing: .06em; text-transform: uppercase; transition: color .14s, border-color .14s;
+  }
+  #copyState:hover { color: var(--ink); border-color: var(--mint); }
+  #copyState.done { color: var(--mint); border-color: var(--mint); }
+
+  /* Save / Recall */
+  .btnrow { display: flex; gap: 8px; margin-top: 6px; }
+  .btn {
+    flex: 1; padding: 9px 4px; border-radius: 9px; cursor: pointer;
+    background: var(--raised); border: 1px solid var(--line); color: var(--ink);
+    font: 600 12.5px var(--ui); transition: border-color .14s, color .14s;
+  }
+  .btn:hover:not(:disabled) { border-color: var(--mint); }
+  .btn:disabled { opacity: .45; cursor: default; }
+  .btn.done { border-color: var(--mint); color: var(--mint); }
 </style>
 <body>
   <div class="head">
@@ -77,16 +95,29 @@
 
   <div class="label">Global settings</div>
   <label class="row">
-    Panel-collapse sync (all modes)
+    Cross-page scope
     <select id="panelScope">
-      <option value="all">All tabs</option>
+      <option value="all">All tabs (state + classic together)</option>
       <option value="page">By page (state / classic separate)</option>
     </select>
   </label>
+  <div class="hint" style="margin-top:6px">Treats state &amp; classic as one pool or two — governs panel-collapse sync and live zoom sync.</div>
   <label class="switch">
     <input type="checkbox" id="watermark"><span class="track"></span>
     <span>Add profile to chart watermark</span>
   </label>
+  <label class="switch">
+    <input type="checkbox" id="zoomSync"><span class="track"></span>
+    <span>Live zoom sync</span>
+  </label>
+  <div class="hint" style="margin-top:6px">Same-ticker charts stay zoom-matched and hold through GEXbot's refresh. Off → charts zoom independently. <span style="color:var(--muted)">Stuck? Double-click a chart to reset its zoom.</span></div>
+
+  <div class="label">Zoom layout</div>
+  <div class="btnrow">
+    <button id="zoomSave" class="btn" title="Snapshot every open ticker's current zoom">⭳ Save</button>
+    <button id="zoomRecall" class="btn" title="Restore the saved zoom for every ticker">⭱ Recall</button>
+  </div>
+  <div id="zoomLayoutStatus" class="hint" style="margin-top:6px">No saved layout yet</div>
 
   <div class="label">Mode</div>
   <div class="seg" id="modeSeg" role="tablist">
@@ -120,8 +151,10 @@
   </div>
 
   <hr>
-  <div class="label">Current state</div>
+  <div class="label" style="display:flex;align-items:center">Current state
+    <button id="copyState" title="Copy the full plugin state (settings + tabs) to the clipboard">⧉ copy</button>
+  </div>
   <div id="count">counting…</div>
-  <div id="tabs"></div>
+  <div id="tabs" title="Click to copy the full plugin state"></div>
   <script src="popup.js"></script>
 </body>

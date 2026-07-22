@@ -18,8 +18,8 @@ chrome.tabs.query({ url: "https://www.gexbot.com/*" }, async (tabs) => {
     // fixed-width columns so the id/ticker/page/profile line up in the mono list
     const pad = (s, n) => String(s ?? "?").padEnd(n); // ticker≤4, page "classic"=7, profile "latest"=6
     // title is "TICKER - page - profile"; id unknown until the script responds
-    if (!st) { const [ticker, page] = t.title.split(" - "); return `${pad("#?", 4)} · ${pad(ticker, 4)} · ${pad(page, 7)} · (reload tab)`; }
-    const cols = `${pad("#" + (st.id || "?"), 4)} · ${pad(st.ticker, 4)} · ${pad(st.page, 7)} · ${pad(st.gex || "", 6)}`;
+    if (!st) { const [ticker, page] = t.title.split(" - "); return `${pad("#?", 4)} · ${pad("?", 6)} · ${pad(ticker, 4)} · ${pad(page, 7)} · (reload tab)`; }
+    const cols = `${pad("#" + (st.id || "?"), 4)} · ${pad(st.group || "?", 6)} · ${pad(st.ticker, 4)} · ${pad(st.page, 7)} · ${pad(st.gex || "", 6)}`;
     const extra = [];
     if (st.options) extra.push(`opt:${st.options}`);
     if (st.greeks.length) extra.push(st.greeks.join("+"));
@@ -74,10 +74,12 @@ modeBtns.forEach((b) => b.addEventListener("click", () => selectMode(b.dataset.m
 
 const sel = document.getElementById("panelScope");
 const wm = document.getElementById("watermark");
-chrome.storage.local.get("gexsync-cfg", (r) => { sel.value = r["gexsync-cfg"]?.panelScope || "all"; wm.checked = r["gexsync-cfg"]?.watermark !== false; });
-const saveCfg = () => chrome.storage.local.get("gexsync-cfg", (r) => chrome.storage.local.set({ "gexsync-cfg": { ...(r["gexsync-cfg"] || {}), panelScope: sel.value, watermark: wm.checked } }));
+const zoomSyncEl = document.getElementById("zoomSync");
+chrome.storage.local.get("gexsync-cfg", (r) => { sel.value = r["gexsync-cfg"]?.panelScope || "all"; wm.checked = r["gexsync-cfg"]?.watermark !== false; zoomSyncEl.checked = r["gexsync-cfg"]?.zoomSync === true; });
+const saveCfg = () => chrome.storage.local.get("gexsync-cfg", (r) => chrome.storage.local.set({ "gexsync-cfg": { ...(r["gexsync-cfg"] || {}), panelScope: sel.value, watermark: wm.checked, zoomSync: zoomSyncEl.checked } }));
 sel.addEventListener("change", saveCfg);
 wm.addEventListener("change", saveCfg);
+zoomSyncEl.addEventListener("change", saveCfg);
 
 // Replay settings — merge on write to keep master.
 const track = document.getElementById("replayTrack");
@@ -93,11 +95,90 @@ const saveReplay = () => chrome.storage.local.get("replay-cfg", (r) =>
 
 // Lock every setting while a replay session is active; Mode stays the exit path.
 function applyLock() {
-  [sel, wm, track, dbg].forEach((el) => { el.disabled = sessionLocked; });
+  [sel, wm, zoomSyncEl, track, dbg].forEach((el) => { el.disabled = sessionLocked; });
   document.getElementById("lockNote").hidden = !sessionLocked;
+  renderZoomStatus(); // save/recall follow the lock too
 }
 chrome.storage.onChanged.addListener((c, area) => {
   if (area !== "local" || !c[SESSION_KEY]) return;
   sessionLocked = !!c[SESSION_KEY].newValue && c[SESSION_KEY].newValue.phase !== "idle";
   applyLock();
+});
+
+// One-click copy of the full plugin state (settings + tab roster) so it can be
+// pasted verbatim. Click the "copy" chip or the roster box.
+const copyBtn = document.getElementById("copyState");
+async function stateSnapshot() {
+  const v = chrome.runtime.getManifest().version;
+  const sess = await new Promise((r) => chrome.storage.local.get(SESSION_KEY, (x) => r(x[SESSION_KEY])));
+  const sessTxt = sess && sess.phase !== "idle"
+    ? `${sess.phase} · master ${sess.master ? "#" + String(sess.master).slice(0, 3).toUpperCase() : "none"} · ${(sess.clients || []).length} client(s)`
+    : "idle";
+  const rows = [...document.querySelectorAll("#tabs > div")].map((d) => d.textContent);
+  const count = (document.getElementById("count").textContent || "").replace(/\s+/g, " ").trim();
+  return [
+    `GexSync ${v} — state snapshot`,
+    ``,
+    `Mode: ${curMode}`,
+    `Cross-page scope: ${sel.value}`,
+    `Watermark: ${wm.checked ? "on" : "off"}`,
+    `Live zoom sync: ${zoomSyncEl.checked ? "on" : "off"}`,
+    `Zoom layout: ${layoutMeta && layoutMeta.count ? layoutMeta.count + " ticker(s) saved · " + ago(layoutMeta.t) : "none"}`,
+    `Replay session: ${sessTxt}`,
+    `Replay play-tracking: ${track.value === "heartbeat" ? "heartbeat" : "on pause"}${dbg.checked ? " · debug" : ""}`,
+    ``,
+    `Tabs — ${count}`,
+    `(columns: #id · group · ticker · page · profile · extras)`,
+    ...(rows.length ? rows : ["(no gexbot tabs)"]),
+  ].join("\n");
+}
+async function copyState() {
+  const text = await stateSnapshot();
+  try { await navigator.clipboard.writeText(text); }
+  catch (e) { const ta = document.createElement("textarea"); ta.value = text; document.body.appendChild(ta); ta.select(); try { document.execCommand("copy"); } catch (_) {} ta.remove(); }
+  copyBtn.textContent = "copied ✓"; copyBtn.classList.add("done");
+  setTimeout(() => { copyBtn.textContent = "⧉ copy"; copyBtn.classList.remove("done"); }, 1400);
+}
+copyBtn.addEventListener("click", copyState);
+document.getElementById("tabs").addEventListener("click", copyState);
+
+// ---- Zoom layout: Save snapshots every open ticker's current zoom into one slot;
+// Recall broadcasts a restore. Orthogonal to Live zoom sync (composes with it). ----
+const zoomSaveBtn = document.getElementById("zoomSave");
+const zoomRecallBtn = document.getElementById("zoomRecall");
+const zoomStatus = document.getElementById("zoomLayoutStatus");
+let layoutMeta = null;
+const ago = (t) => { const s = Math.max(0, Math.round((Date.now() - t) / 1000)); if (s < 45) return "just now"; const m = Math.round(s / 60); return m < 60 ? `${m}m ago` : `${Math.round(m / 60)}h ago`; };
+function renderZoomStatus() {
+  zoomStatus.textContent = layoutMeta && layoutMeta.count
+    ? `Saved ${layoutMeta.count} ticker${layoutMeta.count === 1 ? "" : "s"} · ${ago(layoutMeta.t)}`
+    : "No saved layout yet";
+  zoomSaveBtn.disabled = sessionLocked;
+  zoomRecallBtn.disabled = sessionLocked || !(layoutMeta && layoutMeta.count);
+}
+chrome.storage.local.get("gexsync-zoom-layout", (r) => { layoutMeta = r["gexsync-zoom-layout"] || null; renderZoomStatus(); });
+async function saveLayout() {
+  const tabs = await new Promise((r) => chrome.tabs.query({ url: "https://www.gexbot.com/*" }, r));
+  const gex = tabs.filter((t) => /\/(state|classic)/.test(t.url));
+  const zs = await Promise.all(gex.map((t) => new Promise((r) => chrome.tabs.sendMessage(t.id, "getZoom", (z) => r(chrome.runtime.lastError ? null : z)))));
+  const all = await new Promise((r) => chrome.storage.local.get(null, r));
+  const stale = Object.keys(all).filter((k) => k.startsWith("gexsync-zoom-saved:"));
+  const put = {}, seen = new Set();
+  zs.filter((z) => z && z.key).forEach((z) => { if (!seen.has(z.key)) { seen.add(z.key); put[z.key] = { yMin: z.yMin, yMax: z.yMax }; } });
+  if (stale.length) await new Promise((r) => chrome.storage.local.remove(stale, r));
+  layoutMeta = { t: Date.now(), count: seen.size };
+  await new Promise((r) => chrome.storage.local.set({ ...put, "gexsync-zoom-layout": layoutMeta }, r));
+  renderZoomStatus();
+  return seen.size;
+}
+zoomSaveBtn.addEventListener("click", async () => {
+  const n = await saveLayout();
+  zoomSaveBtn.textContent = n ? "Saved ✓" : "no charts";
+  if (n) zoomSaveBtn.classList.add("done");
+  setTimeout(() => { zoomSaveBtn.textContent = "⭳ Save"; zoomSaveBtn.classList.remove("done"); }, 1400);
+});
+zoomRecallBtn.addEventListener("click", () => {
+  chrome.storage.local.set({ "gexsync-zoom-recall": { t: Date.now() } });
+  zoomRecallBtn.textContent = "Recalled ✓"; zoomRecallBtn.classList.add("done");
+  setTimeout(() => { zoomRecallBtn.textContent = "⭱ Recall"; zoomRecallBtn.classList.remove("done"); }, 1400);
 });
