@@ -40,7 +40,7 @@
 
   // Channel scope: "page" appends pathname (state/classic separate); "all" shares.
   const scopedKey = (base, scope) => (scope === "all" ? base : base + location.pathname);
-  let panelScope = "page"; // config-driven, kept live via onChanged below
+  let panelScope = "all"; // config-driven, kept live via onChanged below
   let watermark = true; // append this tab's profile to the chart's ticker watermark
   const panelKey = () => scopedKey("gexsync-panel", panelScope);
   chrome.storage.local.get(CFG_KEY, (r) => {

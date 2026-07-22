@@ -74,7 +74,7 @@ modeBtns.forEach((b) => b.addEventListener("click", () => selectMode(b.dataset.m
 
 const sel = document.getElementById("panelScope");
 const wm = document.getElementById("watermark");
-chrome.storage.local.get("gexsync-cfg", (r) => { sel.value = r["gexsync-cfg"]?.panelScope || "page"; wm.checked = r["gexsync-cfg"]?.watermark !== false; });
+chrome.storage.local.get("gexsync-cfg", (r) => { sel.value = r["gexsync-cfg"]?.panelScope || "all"; wm.checked = r["gexsync-cfg"]?.watermark !== false; });
 const saveCfg = () => chrome.storage.local.get("gexsync-cfg", (r) => chrome.storage.local.set({ "gexsync-cfg": { ...(r["gexsync-cfg"] || {}), panelScope: sel.value, watermark: wm.checked } }));
 sel.addEventListener("change", saveCfg);
 wm.addEventListener("change", saveCfg);
