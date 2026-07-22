@@ -354,7 +354,9 @@
   // longer resets it and each ticker keeps its own fit; "sync" also propagates a zoom
   // live across same-color group tabs. content.js owns storage; zoom.js drives the
   // Chart.js instance through two hidden DOM nodes (__gxZoom / __gxZoomCmd).
-  const zoomKey = () => `gexsync-zoom:${location.pathname.replace(/^\//, "")}:${groupName()}:${baseTicker()}`; // page-specific: state/classic keep independent zoom
+  // Cross-page scope follows panelScope: "page" keeps state/classic zoom separate;
+  // "all" drops the page so state+classic (same group+ticker) share/sync together.
+  const zoomKey = () => { const pg = panelScope === "all" ? "" : location.pathname.replace(/^\//, "") + ":"; return `gexsync-zoom:${pg}${groupName()}:${baseTicker()}`; };
   let zoomSeq = 0, zoomTicker = null;
   const zoomCmd = () => { let n = document.getElementById("__gxZoomCmd"); if (!n) { n = document.createElement("div"); n.id = "__gxZoomCmd"; n.style.display = "none"; document.documentElement.appendChild(n); } return n; };
   const writeDesired = (z) => { zoomCmd().textContent = (z && isFinite(z.yMin) && isFinite(z.yMax)) ? JSON.stringify({ yMin: z.yMin, yMax: z.yMax, seq: ++zoomSeq }) : ""; };
@@ -622,7 +624,7 @@
 
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area !== "local") return;
-    if (changes[CFG_KEY]?.newValue) { const c = changes[CFG_KEY].newValue; if (c.panelScope) panelScope = c.panelScope; watermark = c.watermark !== false; const pz = zoomMode; zoomMode = c.zoomMode || "off"; if (zoomMode !== pz) { if (zoomMode === "off") writeDesired(null); else pushSavedZoom(); } }
+    if (changes[CFG_KEY]?.newValue) { const c = changes[CFG_KEY].newValue; const pScope = panelScope; if (c.panelScope) panelScope = c.panelScope; watermark = c.watermark !== false; const pz = zoomMode; zoomMode = c.zoomMode || "off"; if (zoomMode === "off") writeDesired(null); else if (zoomMode !== pz || panelScope !== pScope) pushSavedZoom(); }
     if (changes[MODE_KEY]?.newValue) { mode = changes[MODE_KEY].newValue === "live" ? "profiles" : changes[MODE_KEY].newValue; renderChip(); }
     if (changes[SESSION_KEY]) { replayLocked = !!changes[SESSION_KEY].newValue && changes[SESSION_KEY].newValue.phase !== "idle"; renderChip(); }
     if (!onSyncPage()) return; // off /classic|/state (SPA nav): don't touch the page
