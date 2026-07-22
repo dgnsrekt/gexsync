@@ -48,6 +48,7 @@
     if (r[CFG_KEY]?.panelScope) panelScope = r[CFG_KEY].panelScope;
     watermark = r[CFG_KEY]?.watermark !== false; // default on
     zoomSync = r[CFG_KEY]?.zoomSync === true; // default off (opt-in)
+    zHudOn();
   });
 
   // Mode gates what syncs (one axis at a time; panel-collapse always syncs):
@@ -365,10 +366,49 @@
   const writeHold = (z) => { zNode("__gxZoomHold").textContent = z && isFinite(z.yMin) && isFinite(z.yMax) ? JSON.stringify({ yMin: z.yMin, yMax: z.yMax }) : ""; };
   const oneShot = (z) => { if (z && isFinite(z.yMin) && isFinite(z.yMax)) zNode("__gxZoomApply").textContent = JSON.stringify({ yMin: z.yMin, yMax: z.yMax, seq: ++applySeq }); };
   const adoptLive = () => { if (!zoomSync || replayLocked || !onSyncPage() || !baseTicker()) return; const k = liveKey(); get(k, (r) => { if (alive()) writeHold(r[k] || null); }); };
+  // ---- EXPERIMENT (zoom-hud): game-feel HUD showing the live-zoom state machine ----
+  // idle → grab (you're the master, mouse on this chart) → settle (let go, a bar
+  // drains for the ~beat before it takes) → took (pop, it synced out). A peer push
+  // shows a "follow" pulse. Purely cosmetic; reads the same signals the sync uses.
+  const ZHUD = (() => {
+    const C = { mint: "#16E0A3", azure: "#4AA3FF", amber: "#FFB454", muted: "#9AA0AA" };
+    let el, dotEl, lblEl, barEl, state = "idle", decayT = 0, stopT = 0;
+    const build = () => {
+      if (el) return;
+      el = document.createElement("div");
+      el.id = "gexsync-zoom-hud";
+      el.style.cssText = "position:fixed;left:14px;bottom:52px;z-index:2147482400;display:none;align-items:center;gap:9px;padding:6px 13px;border-radius:9999px;background:rgba(22,20,31,.92);border:1px solid rgba(255,255,255,.12);backdrop-filter:blur(9px);-webkit-backdrop-filter:blur(9px);font:600 11px/1 'JetBrains Mono',ui-monospace,monospace;color:#E7E9EA;box-shadow:0 8px 26px rgba(0,0,0,.5);transition:border-color .18s,box-shadow .18s,transform .1s;will-change:transform;";
+      el.innerHTML = "<span class='d' style=\"width:9px;height:9px;border-radius:50%;background:" + C.muted + ";transition:background .15s,box-shadow .15s\"></span><span class='l' style='letter-spacing:.04em;min-width:76px'>sync ready</span><span class='b' style='width:46px;height:4px;border-radius:2px;background:rgba(255,255,255,.12);overflow:hidden'><i style='display:block;height:100%;width:0'></i></span>";
+      document.documentElement.appendChild(el);
+      dotEl = el.querySelector(".d"); lblEl = el.querySelector(".l"); barEl = el.querySelector(".b > i");
+    };
+    const pop = () => { if (!el) return; el.style.transform = "scale(1.09)"; setTimeout(() => { if (el) el.style.transform = "scale(1)"; }, 110); };
+    const paint = (s) => {
+      build(); state = s; clearTimeout(decayT);
+      const dot = (c, glow) => { dotEl.style.background = c; dotEl.style.boxShadow = glow ? "0 0 9px " + c : "none"; };
+      const ring = (c) => { el.style.borderColor = c || "rgba(255,255,255,.12)"; el.style.boxShadow = c ? "0 8px 26px rgba(0,0,0,.5),0 0 15px " + c + "66" : "0 8px 26px rgba(0,0,0,.5)"; };
+      barEl.style.transition = "none"; barEl.style.width = "0"; barEl.style.background = C.amber;
+      if (s === "idle") { dot(C.muted, false); lblEl.textContent = "sync ready"; lblEl.style.color = C.muted; ring(null); }
+      else if (s === "grab") { dot(C.mint, true); lblEl.textContent = "you're master"; lblEl.style.color = "#E7E9EA"; ring(C.mint); pop(); }
+      else if (s === "settle") { dot(C.amber, true); lblEl.textContent = "setting…"; lblEl.style.color = C.amber; ring(C.amber); barEl.style.width = "100%"; void barEl.offsetWidth; barEl.style.transition = "width .24s linear"; barEl.style.width = "0"; }
+      else if (s === "took") { dot(C.mint, true); lblEl.textContent = "synced →"; lblEl.style.color = C.mint; ring(C.mint); pop(); decayT = setTimeout(() => paint("idle"), 850); }
+      else if (s === "follow") { dot(C.azure, true); lblEl.textContent = "← synced"; lblEl.style.color = C.azure; ring(C.azure); pop(); decayT = setTimeout(() => paint("idle"), 850); }
+    };
+    return {
+      show: (on) => { build(); el.style.display = on ? "flex" : "none"; if (!on) paint("idle"); },
+      grab: () => { if (state !== "grab") paint("grab"); clearTimeout(stopT); stopT = setTimeout(() => paint("settle"), 150); },
+      took: () => { clearTimeout(stopT); paint("took"); },
+      follow: () => { if (state === "grab" || state === "settle") return; paint("follow"); },
+    };
+  })();
+  const zHudOn = () => ZHUD.show(zoomSync && onSyncPage());
+  ["wheel", "pointerdown", "pointermove"].forEach((t) =>
+    document.addEventListener(t, (e) => { if (zoomSync && e.target && e.target.tagName === "CANVAS" && (t !== "pointermove" || e.buttons)) ZHUD.grab(); }, true));
+
   // capture: the user changed the zoom → it becomes the live value for this ticker
   window.addEventListener("gexsync-zoom", () => {
     if (!zoomSync || replayLocked || !onSyncPage() || !baseTicker()) return;
-    const z = readCurZoom(); if (z) { send({ [liveKey()]: { yMin: z.yMin, yMax: z.yMax, t: Date.now() } }); writeHold(z); }
+    const z = readCurZoom(); if (z) { send({ [liveKey()]: { yMin: z.yMin, yMax: z.yMax, t: Date.now() } }); writeHold(z); ZHUD.took(); }
   });
   // adopt the live value on ticker switch
   setInterval(() => { if (!zoomSync || !onSyncPage()) return; const bt = baseTicker(); if (bt && bt !== zoomTicker) { zoomTicker = bt; adoptLive(); } }, 400);
@@ -630,7 +670,7 @@
 
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area !== "local") return;
-    if (changes[CFG_KEY]?.newValue) { const c = changes[CFG_KEY].newValue; const pScope = panelScope; if (c.panelScope) panelScope = c.panelScope; watermark = c.watermark !== false; const pSync = zoomSync; zoomSync = c.zoomSync === true; if (!zoomSync) writeHold(null); else if (!pSync || panelScope !== pScope) adoptLive(); }
+    if (changes[CFG_KEY]?.newValue) { const c = changes[CFG_KEY].newValue; const pScope = panelScope; if (c.panelScope) panelScope = c.panelScope; watermark = c.watermark !== false; const pSync = zoomSync; zoomSync = c.zoomSync === true; if (!zoomSync) writeHold(null); else if (!pSync || panelScope !== pScope) adoptLive(); zHudOn(); }
     if (changes[MODE_KEY]?.newValue) { mode = changes[MODE_KEY].newValue === "live" ? "profiles" : changes[MODE_KEY].newValue; renderChip(); }
     if (changes[SESSION_KEY]) { replayLocked = !!changes[SESSION_KEY].newValue && changes[SESSION_KEY].newValue.phase !== "idle"; renderChip(); }
     if (!onSyncPage()) return; // off /classic|/state (SPA nav): don't touch the page
@@ -639,7 +679,7 @@
     if (profileSync() && changes[OPTS_KEY]?.newValue) applyOpts(changes[OPTS_KEY].newValue.state);
     if (tickerSync() && changes[tickerChan()]?.newValue) applyTicker(changes[tickerChan()].newValue.ticker);
     if (tickerSync() && changes[ES_CHAN()]?.newValue) applyEs(changes[ES_CHAN()].newValue.es);
-    if (zoomSync && !replayLocked && !zoomBusy() && changes[liveKey()]?.newValue) writeHold(changes[liveKey()].newValue); // live sync from a peer — but never override a tab you're actively zooming
+    if (zoomSync && !replayLocked && !zoomBusy() && changes[liveKey()]?.newValue) { writeHold(changes[liveKey()].newValue); ZHUD.follow(); } // live sync from a peer — but never override a tab you're actively zooming
     if (changes[RECALL_KEY]) recallZoom(); // Save/Recall broadcast from the popup
 
   });
@@ -656,6 +696,7 @@
       if (toastEl) toastEl.style.display = "none";
       if (alive()) chrome.storage.local.remove("gexsync-tp:" + TAB); // un-count from the group
     }
+    zHudOn(); // experiment: hide/show the zoom HUD with the page
   }
 
   // SPA renders late and swaps elements; keep polling (cheap) so group observers
