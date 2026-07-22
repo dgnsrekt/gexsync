@@ -18,8 +18,8 @@ chrome.tabs.query({ url: "https://www.gexbot.com/*" }, async (tabs) => {
     // fixed-width columns so the id/ticker/page/profile line up in the mono list
     const pad = (s, n) => String(s ?? "?").padEnd(n); // ticker≤4, page "classic"=7, profile "latest"=6
     // title is "TICKER - page - profile"; id unknown until the script responds
-    if (!st) { const [ticker, page] = t.title.split(" - "); return `${pad("#?", 4)} · ${pad(ticker, 4)} · ${pad(page, 7)} · (reload tab)`; }
-    const cols = `${pad("#" + (st.id || "?"), 4)} · ${pad(st.ticker, 4)} · ${pad(st.page, 7)} · ${pad(st.gex || "", 6)}`;
+    if (!st) { const [ticker, page] = t.title.split(" - "); return `${pad("#?", 4)} · ${pad("?", 6)} · ${pad(ticker, 4)} · ${pad(page, 7)} · (reload tab)`; }
+    const cols = `${pad("#" + (st.id || "?"), 4)} · ${pad(st.group || "?", 6)} · ${pad(st.ticker, 4)} · ${pad(st.page, 7)} · ${pad(st.gex || "", 6)}`;
     const extra = [];
     if (st.options) extra.push(`opt:${st.options}`);
     if (st.greeks.length) extra.push(st.greeks.join("+"));
@@ -103,3 +103,39 @@ chrome.storage.onChanged.addListener((c, area) => {
   sessionLocked = !!c[SESSION_KEY].newValue && c[SESSION_KEY].newValue.phase !== "idle";
   applyLock();
 });
+
+// One-click copy of the full plugin state (settings + tab roster) so it can be
+// pasted verbatim. Click the "copy" chip or the roster box.
+const copyBtn = document.getElementById("copyState");
+async function stateSnapshot() {
+  const v = chrome.runtime.getManifest().version;
+  const sess = await new Promise((r) => chrome.storage.local.get(SESSION_KEY, (x) => r(x[SESSION_KEY])));
+  const sessTxt = sess && sess.phase !== "idle"
+    ? `${sess.phase} · master ${sess.master ? "#" + String(sess.master).slice(0, 3).toUpperCase() : "none"} · ${(sess.clients || []).length} client(s)`
+    : "idle";
+  const rows = [...document.querySelectorAll("#tabs > div")].map((d) => d.textContent);
+  const count = (document.getElementById("count").textContent || "").replace(/\s+/g, " ").trim();
+  return [
+    `GexSync ${v} — state snapshot`,
+    ``,
+    `Mode: ${curMode}`,
+    `Panel-collapse sync: ${sel.value}`,
+    `Watermark: ${wm.checked ? "on" : "off"}`,
+    `Zoom: ${zoomSel.value}`,
+    `Replay session: ${sessTxt}`,
+    `Replay play-tracking: ${track.value === "heartbeat" ? "heartbeat" : "on pause"}${dbg.checked ? " · debug" : ""}`,
+    ``,
+    `Tabs — ${count}`,
+    `(columns: #id · group · ticker · page · profile · extras)`,
+    ...(rows.length ? rows : ["(no gexbot tabs)"]),
+  ].join("\n");
+}
+async function copyState() {
+  const text = await stateSnapshot();
+  try { await navigator.clipboard.writeText(text); }
+  catch (e) { const ta = document.createElement("textarea"); ta.value = text; document.body.appendChild(ta); ta.select(); try { document.execCommand("copy"); } catch (_) {} ta.remove(); }
+  copyBtn.textContent = "copied ✓"; copyBtn.classList.add("done");
+  setTimeout(() => { copyBtn.textContent = "⧉ copy"; copyBtn.classList.remove("done"); }, 1400);
+}
+copyBtn.addEventListener("click", copyState);
+document.getElementById("tabs").addEventListener("click", copyState);

@@ -608,6 +608,7 @@
     return {
       id: TAB.slice(0, 3).toUpperCase(), // same short id shown in the pill
       page: location.pathname.replace(/^\//, ""), // "state" | "classic"
+      group: groupName(), // color group (for the copyable state snapshot)
       ticker: tickerValue(),
       gex: selectedKeyword(gex),
       options: selectedKeyword(options),

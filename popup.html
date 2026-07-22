@@ -58,9 +58,16 @@
   #count b { color: var(--ink); font-weight: 600; }
   #tabs {
     margin-top: 10px; padding: 10px 12px; border-radius: 10px; background: var(--raised); border: 1px solid var(--line);
-    font: 11.5px/1.7 var(--mono); white-space: pre; color: var(--ink); overflow-x: auto;
+    font: 11.5px/1.7 var(--mono); white-space: pre; color: var(--ink); overflow-x: auto; cursor: pointer;
   }
   #tabs .muted { color: var(--muted); }
+  #copyState {
+    margin-left: auto; padding: 3px 9px; border-radius: 7px; cursor: pointer;
+    background: var(--raised); border: 1px solid var(--line); color: var(--muted);
+    font: 600 10px/1 var(--mono); letter-spacing: .06em; text-transform: uppercase; transition: color .14s, border-color .14s;
+  }
+  #copyState:hover { color: var(--ink); border-color: var(--mint); }
+  #copyState.done { color: var(--mint); border-color: var(--mint); }
 </style>
 <body>
   <div class="head">
@@ -129,8 +136,10 @@
   </div>
 
   <hr>
-  <div class="label">Current state</div>
+  <div class="label" style="display:flex;align-items:center">Current state
+    <button id="copyState" title="Copy the full plugin state (settings + tabs) to the clipboard">⧉ copy</button>
+  </div>
   <div id="count">counting…</div>
-  <div id="tabs"></div>
+  <div id="tabs" title="Click to copy the full plugin state"></div>
   <script src="popup.js"></script>
 </body>
