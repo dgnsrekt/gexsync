@@ -366,36 +366,40 @@
   const writeHold = (z) => { zNode("__gxZoomHold").textContent = z && isFinite(z.yMin) && isFinite(z.yMax) ? JSON.stringify({ yMin: z.yMin, yMax: z.yMax }) : ""; };
   const oneShot = (z) => { if (z && isFinite(z.yMin) && isFinite(z.yMax)) zNode("__gxZoomApply").textContent = JSON.stringify({ yMin: z.yMin, yMax: z.yMax, seq: ++applySeq }); };
   const adoptLive = () => { if (!zoomSync || replayLocked || !onSyncPage() || !baseTicker()) return; const k = liveKey(); get(k, (r) => { if (alive()) writeHold(r[k] || null); }); };
-  // ---- EXPERIMENT (zoom-hud): game-feel HUD showing the live-zoom state machine ----
-  // idle → grab (you're the master, mouse on this chart) → settle (let go, a bar
-  // drains for the ~beat before it takes) → took (pop, it synced out). A peer push
-  // shows a "follow" pulse. Purely cosmetic; reads the same signals the sync uses.
+  // ---- EXPERIMENT (zoom-hud): a segment INSIDE the mode pill showing the live-zoom
+  // state machine. idle → grab (you're master, mouse on this chart) → settle (let go,
+  // a bar drains for the beat before it takes) → took (pop, synced out); a peer push
+  // shows "← synced". Only present while Live zoom sync is on. Cosmetic.
   const ZHUD = (() => {
-    const C = { mint: "#16E0A3", azure: "#4AA3FF", amber: "#FFB454", muted: "#9AA0AA" };
-    let el, dotEl, lblEl, barEl, state = "idle", decayT = 0, stopT = 0;
+    const C = { mint: T.mint, azure: T.azure, amber: T.amber, muted: T.muted };
+    let seg, dotEl, lblEl, barEl, state = "idle", decayT = 0, stopT = 0;
     const build = () => {
-      if (el) return;
-      el = document.createElement("div");
-      el.id = "gexsync-zoom-hud";
-      el.style.cssText = "position:fixed;left:14px;bottom:52px;z-index:2147482400;display:none;align-items:center;gap:9px;padding:6px 13px;border-radius:9999px;background:rgba(22,20,31,.92);border:1px solid rgba(255,255,255,.12);backdrop-filter:blur(9px);-webkit-backdrop-filter:blur(9px);font:600 11px/1 'JetBrains Mono',ui-monospace,monospace;color:#E7E9EA;box-shadow:0 8px 26px rgba(0,0,0,.5);transition:border-color .18s,box-shadow .18s,transform .1s;will-change:transform;";
-      el.innerHTML = "<span class='d' style=\"width:9px;height:9px;border-radius:50%;background:" + C.muted + ";transition:background .15s,box-shadow .15s\"></span><span class='l' style='letter-spacing:.04em;min-width:76px'>sync ready</span><span class='b' style='width:46px;height:4px;border-radius:2px;background:rgba(255,255,255,.12);overflow:hidden'><i style='display:block;height:100%;width:0'></i></span>";
-      document.documentElement.appendChild(el);
-      dotEl = el.querySelector(".d"); lblEl = el.querySelector(".l"); barEl = el.querySelector(".b > i");
+      if (seg) return true;
+      const chip = document.getElementById("gexsync-mode-chip");
+      if (!chip) return false;
+      seg = document.createElement("span");
+      seg.id = "gexsync-zoom-seg";
+      seg.style.cssText = `display:none;align-items:center;gap:8px;padding:6px 13px;border-left:1px solid rgba(255,255,255,.12);border-radius:0 9999px 9999px 0;white-space:nowrap;font:500 12px ${T.mono};letter-spacing:.3px;transition:background .18s;`;
+      seg.innerHTML = `<span class="d" style="width:8px;height:8px;border-radius:50%;background:${C.muted};transform-origin:center;transition:background .15s,box-shadow .15s,transform .12s;flex:0 0 auto"></span><span class="l" style="min-width:66px">sync ready</span><span class="b" style="width:34px;height:4px;border-radius:2px;background:rgba(255,255,255,.14);overflow:hidden;flex:0 0 auto"><i style="display:block;height:100%;width:0;background:${C.amber}"></i></span>`;
+      chip.appendChild(seg);
+      dotEl = seg.querySelector(".d"); lblEl = seg.querySelector(".l"); barEl = seg.querySelector(".b > i");
+      return true;
     };
-    const pop = () => { if (!el) return; el.style.transform = "scale(1.09)"; setTimeout(() => { if (el) el.style.transform = "scale(1)"; }, 110); };
+    const pop = () => { if (!dotEl) return; dotEl.style.transform = "scale(1.7)"; setTimeout(() => { if (dotEl) dotEl.style.transform = "scale(1)"; }, 120); };
     const paint = (s) => {
-      build(); state = s; clearTimeout(decayT);
-      const dot = (c, glow) => { dotEl.style.background = c; dotEl.style.boxShadow = glow ? "0 0 9px " + c : "none"; };
-      const ring = (c) => { el.style.borderColor = c || "rgba(255,255,255,.12)"; el.style.boxShadow = c ? "0 8px 26px rgba(0,0,0,.5),0 0 15px " + c + "66" : "0 8px 26px rgba(0,0,0,.5)"; };
-      barEl.style.transition = "none"; barEl.style.width = "0"; barEl.style.background = C.amber;
-      if (s === "idle") { dot(C.muted, false); lblEl.textContent = "sync ready"; lblEl.style.color = C.muted; ring(null); }
-      else if (s === "grab") { dot(C.mint, true); lblEl.textContent = "you're master"; lblEl.style.color = "#E7E9EA"; ring(C.mint); pop(); }
-      else if (s === "settle") { dot(C.amber, true); lblEl.textContent = "setting…"; lblEl.style.color = C.amber; ring(C.amber); barEl.style.width = "100%"; void barEl.offsetWidth; barEl.style.transition = "width .24s linear"; barEl.style.width = "0"; }
-      else if (s === "took") { dot(C.mint, true); lblEl.textContent = "synced →"; lblEl.style.color = C.mint; ring(C.mint); pop(); decayT = setTimeout(() => paint("idle"), 850); }
-      else if (s === "follow") { dot(C.azure, true); lblEl.textContent = "← synced"; lblEl.style.color = C.azure; ring(C.azure); pop(); decayT = setTimeout(() => paint("idle"), 850); }
+      if (!build()) return;
+      state = s; clearTimeout(decayT);
+      const dot = (c, glow) => { dotEl.style.background = c; dotEl.style.boxShadow = glow ? "0 0 8px " + c : "none"; };
+      barEl.style.transition = "none"; barEl.style.width = "0";
+      const L = (t, c, bg) => { lblEl.textContent = t; lblEl.style.color = c; seg.style.background = bg || "transparent"; };
+      if (s === "idle") { dot(C.muted, false); L("sync ready", C.muted); }
+      else if (s === "grab") { dot(C.mint, true); L("master", C.mint, "rgba(22,224,163,.10)"); pop(); }
+      else if (s === "settle") { dot(C.amber, true); L("setting…", C.amber, "rgba(255,180,84,.10)"); barEl.style.width = "100%"; void barEl.offsetWidth; barEl.style.transition = "width .24s linear"; barEl.style.width = "0"; }
+      else if (s === "took") { dot(C.mint, true); L("synced →", C.mint, "rgba(22,224,163,.15)"); pop(); decayT = setTimeout(() => paint("idle"), 850); }
+      else if (s === "follow") { dot(C.azure, true); L("← synced", C.azure, "rgba(74,163,255,.13)"); pop(); decayT = setTimeout(() => paint("idle"), 850); }
     };
     return {
-      show: (on) => { build(); el.style.display = on ? "flex" : "none"; if (!on) paint("idle"); },
+      show: (on) => { if (!build()) { if (on) setTimeout(() => ZHUD.show(on), 300); return; } seg.style.display = on ? "flex" : "none"; if (!on) paint("idle"); },
       grab: () => { if (state !== "grab") paint("grab"); clearTimeout(stopT); stopT = setTimeout(() => paint("settle"), 150); },
       took: () => { clearTimeout(stopT); paint("took"); },
       follow: () => { if (state === "grab" || state === "settle") return; paint("follow"); },
