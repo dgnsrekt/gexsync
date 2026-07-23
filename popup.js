@@ -97,7 +97,11 @@ const saveReplay = () => chrome.storage.local.get("replay-cfg", (r) =>
 
 // Lock every setting while a replay session is active; Mode stays the exit path.
 function applyLock() {
-  [sel, wm, zoomSyncEl, groupShotEl, track, dbg].forEach((el) => { el.disabled = sessionLocked; });
+  // Lock only what would reshape a running replay session: Cross-page scope and
+  // Play tracking. Everything else stays usable mid-replay — watermark, group
+  // screenshot, the master/client Debug readout, and Live zoom sync (which now works
+  // during replay; toggling it off clears the hold and frees the chart).
+  [sel, track].forEach((el) => { el.disabled = sessionLocked; });
   document.getElementById("lockNote").hidden = !sessionLocked;
   renderZoomStatus(); // save/recall follow the lock too
 }

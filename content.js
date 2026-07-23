@@ -367,7 +367,7 @@
   const zoomBusy = () => { try { return (JSON.parse(document.getElementById("__gxZoom").textContent).busyUntil || 0) > Date.now(); } catch (e) { return false; } }; // user actively zooming this tab → it's the authority
   const writeHold = (z) => { zNode("__gxZoomHold").textContent = z && isFinite(z.yMin) && isFinite(z.yMax) ? JSON.stringify({ yMin: z.yMin, yMax: z.yMax }) : ""; };
   const oneShot = (z) => { if (z && isFinite(z.yMin) && isFinite(z.yMax)) zNode("__gxZoomApply").textContent = JSON.stringify({ yMin: z.yMin, yMax: z.yMax, seq: ++applySeq }); };
-  const adoptLive = () => { if (!zoomSync || replayLocked || !onSyncPage() || !baseTicker()) return; const k = liveKey(); get(k, (r) => { if (alive()) writeHold(r[k] || null); }); };
+  const adoptLive = () => { if (!zoomSync || !onSyncPage() || !baseTicker()) return; const k = liveKey(); get(k, (r) => { if (alive()) writeHold(r[k] || null); }); };
   // ---- live-zoom state indicator: the state machine takes over the pill's leading
   // section (the loop-glyph circle + "mode: …" label). idle → grab ("master", mint)
   // → settle ("setting…", the loop glyph spins for the beat before it takes) → took
@@ -404,11 +404,11 @@
   })();
   const zHudOn = () => ZHUD.show(zoomSync && onSyncPage());
   ["wheel", "pointerdown", "pointermove"].forEach((t) =>
-    document.addEventListener(t, (e) => { if (zoomSync && !replayLocked && onSyncPage() && e.target && e.target.tagName === "CANVAS" && (t !== "pointermove" || e.buttons)) ZHUD.grab(); }, true));
+    document.addEventListener(t, (e) => { if (zoomSync && onSyncPage() && e.target && e.target.tagName === "CANVAS" && (t !== "pointermove" || e.buttons)) ZHUD.grab(); }, true));
 
   // capture: the user changed the zoom → it becomes the live value for this ticker
   window.addEventListener("gexsync-zoom", () => {
-    if (!zoomSync || replayLocked || !onSyncPage() || !baseTicker()) return;
+    if (!zoomSync || !onSyncPage() || !baseTicker()) return;
     const z = readCurZoom(); if (z) { send({ [liveKey()]: { yMin: z.yMin, yMax: z.yMax, t: Date.now() } }); writeHold(z); ZHUD.took(); }
   });
   // adopt the live value on ticker switch
@@ -868,7 +868,7 @@
     if (profileSync() && changes[OPTS_KEY]?.newValue) applyOpts(changes[OPTS_KEY].newValue.state);
     if (tickerSync() && changes[tickerChan()]?.newValue) applyTicker(changes[tickerChan()].newValue.ticker);
     if (tickerSync() && changes[ES_CHAN()]?.newValue) applyEs(changes[ES_CHAN()].newValue.es);
-    if (zoomSync && !replayLocked && !zoomBusy() && changes[liveKey()]?.newValue) { writeHold(changes[liveKey()].newValue); ZHUD.follow(); } // live sync from a peer — but never override a tab you're actively zooming
+    if (zoomSync && !zoomBusy() && changes[liveKey()]?.newValue) { writeHold(changes[liveKey()].newValue); ZHUD.follow(); } // live sync from a peer (incl. during replay) — but never override a tab you're actively zooming
     if (changes[RECALL_KEY]) recallZoom(); // Save/Recall broadcast from the popup
     if (groupShot && changes[SHOOT_REQ]?.newValue) respondShot(changes[SHOOT_REQ].newValue.seq); // every pane captures itself
   });
