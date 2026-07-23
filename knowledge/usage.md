@@ -1,9 +1,9 @@
 ---
 type: Guide
 title: Using GexSync
-description: How the Profiles, Ticker, and Replay modes work, plus panel-collapse sync and the popup settings.
-tags: [usage, profiles, ticker, replay, settings]
-timestamp: 2026-07-17T00:00:00Z
+description: How the Profiles, Ticker, and Replay modes work, plus live zoom sync, panel-collapse sync, and the popup settings.
+tags: [usage, profiles, ticker, replay, zoom, settings]
+timestamp: 2026-07-22T00:00:00Z
 ---
 
 # Using GexSync
@@ -48,11 +48,30 @@ replay bar, to unlock them.
 
 ## Global settings
 
-* **Panel-collapse sync** — keeps side panels expanded/collapsed together.
-  Scope it *By page* (state and classic tracked separately) or *All tabs*. Works
-  in every mode.
+* **Cross-page scope** — whether `state` and `classic` tabs count as one pool or
+  two. *All tabs* treats them together; *By page* keeps them separate. It governs
+  both **panel-collapse sync** (side panels expand/collapse together) and **live
+  zoom sync** (below). Works in every mode.
 * **Add profile to chart watermark** — stamps the active profile name into the
   chart watermark so screenshots are self-labeling.
+* **Live zoom sync** — when on, charts on the **same ticker** stay zoom-matched in
+  real time (zoom or pan one, the rest follow) and each holds its zoom through
+  GEXbot's periodic chart refresh — even on a single tab. Sync is keyed to the
+  ticker, not the color group; the tab under your mouse is the authority, so your
+  adjustment always wins. The pill's leading indicator reacts as you go
+  (*master → setting… → synced →*). Off, each chart uses GEXbot's own zoom
+  independently. *If a chart's zoom indicator ever snags, double-click the chart to
+  reset it.*
+* **Save / Recall zoom layout** — **Save** snapshots every open ticker's current
+  zoom into one slot; **Recall** restores them all in one click. Works with or
+  without live zoom sync.
+
+## Current state
+
+The popup's **Current state** section lists every participating tab
+(`#id · group · ticker · page · profile`). Its **⧉ copy** button (or clicking the
+list) puts a full plain-text snapshot — global settings, mode, and the whole tab
+roster — on your clipboard, handy for sharing your setup or reporting an issue.
 
 See [overview](overview.md) for the big picture and [safety](safety.md) for what
 the extension can access while doing all this.

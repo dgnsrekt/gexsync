@@ -3,7 +3,7 @@ type: Explanation
 title: Is GexSync safe?
 description: The permissions GexSync requests, its lack of external network access, the data it stores locally, and how to audit it yourself.
 tags: [safety, privacy, permissions, security, audit]
-timestamp: 2026-07-17T00:00:00Z
+timestamp: 2026-07-22T00:00:00Z
 ---
 
 # Is GexSync safe?
@@ -42,21 +42,30 @@ about 30 lines.
 
 Everything lives in `chrome.storage.local`, inside your browser, and never
 leaves it. The keys are the sync state: current mode, per-page profile and
-options selections, the shared ticker, panel-collapse state, and the active
-replay-session metadata (`gexsync*` and `replay*` keys). Uninstalling the
-extension removes them.
+options selections, the shared ticker, panel-collapse state, saved chart-zoom
+values and layouts, and the active replay-session metadata (`gexsync*` and
+`replay*` keys). Uninstalling the extension removes them.
 
 ## What it reads from the page
 
 To sync, it reads the GEXbot UI: profile toggles, the ticker input, options
 switches, the panel chevron, and replay controls (slider, play/pause, speed,
 date, time-of-day). It watches clicks and DOM changes and mirrors them to other
-tabs. It does not read HTTP response bodies or alter your GEXbot data.
+tabs.
+
+For replay and zoom, two small page-context helpers (`replaydata.js`, `zoom.js`)
+also read data GEXbot has **already loaded into the page** — the replay time-map
+and the chart's current zoom — so playback can align by time-of-day and your zoom
+can be restored after GEXbot's refresh. This reads the parsed data already sitting
+in GEXbot's own page objects, not raw HTTP responses, and it never alters or
+transmits your GEXbot data.
 
 ## How to audit it yourself
 
 * `manifest.json` — confirm the permissions and host matches above.
 * `netwatch.js` — confirm it only observes and dispatches a local event.
+* `replaydata.js` and `zoom.js` — the two page-context helpers; confirm they only
+  read in-page data and hand it to the extension, with no network calls.
 * `content.js` and `replay.js` — the sync logic; search for any `fetch(` /
   `XMLHttpRequest` that targets a non-gexbot URL (there are none).
 

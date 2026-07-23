@@ -8,5 +8,5 @@ it is safe.
 
 * [Overview](overview.md) - what GexSync is and the three sync modes at a glance
 * [Install](install.md) - load the unpacked extension into Chrome, update it, troubleshoot it
-* [Usage](usage.md) - Profiles, Ticker, and Replay modes plus panel sync and popup settings
+* [Usage](usage.md) - Profiles, Ticker, and Replay modes, live zoom sync, panel sync, and popup settings
 * [Safety](safety.md) - permissions, network behavior, stored data, and how to audit it yourself
