@@ -3,7 +3,7 @@ type: Guide
 title: Using GexSync
 description: How the Profiles, Ticker, and Replay modes work, plus live zoom sync, panel-collapse sync, and the popup settings.
 tags: [usage, profiles, ticker, replay, zoom, settings]
-timestamp: 2026-07-22T00:00:00Z
+timestamp: 2026-07-23T00:00:00Z
 ---
 
 # Using GexSync
@@ -65,6 +65,16 @@ replay bar, to unlock them.
 * **Save / Recall zoom layout** — **Save** snapshots every open ticker's current
   zoom into one slot; **Recall** restores them all in one click. Works with or
   without live zoom sync.
+* **Group screenshot** — when on, it changes what GEXbot's chart **camera** button
+  does: instead of shooting one chart, clicking it captures **every synced pane at
+  once** and downloads a single ZIP to `Downloads/gexsync/`. Inside: `grid.png`
+  (all panes stitched into one image, each captioned with its ticker/page/profile
+  and the date/time of the data shown), the individual pane images, and a
+  `manifest.json` describing each. Crucially, each pane records the **data's**
+  date/time — in live that's the latest point, in replay it's whatever that tab is
+  parked on — so a shot taken today of a replay from last week is labeled with last
+  week's timestamps. Panels briefly collapse so each chart is captured full-width.
+  Off, the camera works as GEXbot's normal single-shot menu.
 
 ## Current state
 

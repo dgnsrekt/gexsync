@@ -3,7 +3,7 @@ type: Explanation
 title: Is GexSync safe?
 description: The permissions GexSync requests, its lack of external network access, the data it stores locally, and how to audit it yourself.
 tags: [safety, privacy, permissions, security, audit]
-timestamp: 2026-07-22T00:00:00Z
+timestamp: 2026-07-23T00:00:00Z
 ---
 
 # Is GexSync safe?
@@ -16,8 +16,15 @@ no build step, so what's in the repo is exactly what runs.
 
 From `manifest.json`, GexSync asks for the minimum it needs:
 
-* `permissions: ["storage"]` — access to `chrome.storage.local`, used purely as
-  a message bus so tabs can see each other's synced state.
+* `permissions: ["storage", "downloads"]`
+  * `storage` — access to `chrome.storage.local`, used purely as a message bus so
+    tabs can see each other's synced state.
+  * `downloads` — used **only** by the Group Shot feature, and only when *you*
+    click a chart's camera with that toggle on: it saves the ZIP GexSync built
+    into a `Downloads/gexsync/` subfolder. (A plain link download can't create a
+    subfolder, so a tiny background worker hands the finished file to
+    `chrome.downloads`.) It never reads your download history and never downloads
+    anything you didn't trigger.
 * `host_permissions: ["https://www.gexbot.com/*"]` — it can only run on GEXbot.
   It has no access to any other website, your browsing history, cookies, or
   other tabs.
@@ -60,12 +67,21 @@ can be restored after GEXbot's refresh. This reads the parsed data already sitti
 in GEXbot's own page objects, not raw HTTP responses, and it never alters or
 transmits your GEXbot data.
 
+For **Group Shot**, a third page-context helper (`shot.js`) captures the chart's
+own `<canvas>` to an image when you click the camera, and the extension reads the
+date/time GEXbot already shows on screen. Everything — the per-pane images, the
+stitched grid, and the manifest — is assembled **in your browser** and saved to
+your Downloads; nothing is uploaded.
+
 ## How to audit it yourself
 
 * `manifest.json` — confirm the permissions and host matches above.
 * `netwatch.js` — confirm it only observes and dispatches a local event.
-* `replaydata.js` and `zoom.js` — the two page-context helpers; confirm they only
-  read in-page data and hand it to the extension, with no network calls.
+* `replaydata.js`, `zoom.js`, and `shot.js` — the page-context helpers; confirm
+  they only read in-page data / capture the chart canvas and hand it to the
+  extension, with no network calls.
+* `background.js` — the service worker; confirm its only job is handing a
+  GexSync-built file to `chrome.downloads` (no network, no other API).
 * `content.js` and `replay.js` — the sync logic; search for any `fetch(` /
   `XMLHttpRequest` that targets a non-gexbot URL (there are none).
 

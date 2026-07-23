@@ -3,7 +3,7 @@ type: Overview
 title: What GexSync is
 description: A Manifest V3 Chrome extension that syncs GEXbot trading tabs across profiles, tickers, or historical replay.
 tags: [overview, gexbot, chrome-extension, mv3]
-timestamp: 2026-07-22T00:00:00Z
+timestamp: 2026-07-23T00:00:00Z
 ---
 
 # What GexSync is
@@ -29,12 +29,14 @@ Exactly one mode syncs at a time; you switch between them from the popup.
   others follow it, aligned by time-of-day, so you can compare the same
   instrument across dates or different instruments on the same date.
 
-Two cross-cutting features work alongside whichever mode is active: **panel-collapse
-sync** (expanding/collapsing side panels together) and **live zoom sync** (charts on
+Cross-cutting features work alongside whichever mode is active: **panel-collapse
+sync** (expanding/collapsing side panels together), **live zoom sync** (charts on
 the same ticker stay zoom-matched in real time and hold their zoom through GEXbot's
-periodic refresh; a Save/Recall pair snapshots and restores your zoom layout). A
-single **Cross-page scope** setting decides whether `state` and `classic` tabs are
-treated as one pool or kept separate for both.
+periodic refresh; a Save/Recall pair snapshots and restores your zoom layout), and
+**Group Shot** (one click on a chart's camera captures every synced pane into a
+single ZIP — a stitched grid, the individual images, and a manifest that records
+the data date/time each pane is showing). A single **Cross-page scope** setting
+decides whether `state` and `classic` tabs are treated as one pool or kept separate.
 
 See [usage](usage.md) for how to drive each mode, [install](install.md) to set
 it up, and [safety](safety.md) for what it can and cannot access.

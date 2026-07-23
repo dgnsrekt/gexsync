@@ -59,14 +59,21 @@ Full walkthrough, updating, and troubleshooting: [`knowledge/install.md`](knowle
 - **Ticker** — syncs the ticker across state + classic tabs (with color groups); profiles stay independent.
 - **Replay** — synchronized historical playback; one tab is master, the rest follow by time-of-day.
 
+Plus **Group Shot** — one click on a chart's camera captures every synced pane into
+a single ZIP (a stitched grid + each image + a manifest with the data date/time each
+pane is showing).
+
 Details for every mode and setting: [`knowledge/usage.md`](knowledge/usage.md).
 
 ## Is it safe?
 
 Short version: yes, and you can check for yourself.
 
-- It requests only the `storage` permission and only runs on `https://www.gexbot.com/*`.
-- It makes **no external network requests** — all syncing happens locally through `chrome.storage.local`.
+- It requests only `storage` and `downloads`, and only runs on `https://www.gexbot.com/*`.
+  `downloads` is used solely by Group Shot — when you click a chart's camera — to
+  save its ZIP into a `Downloads/gexsync/` folder.
+- It makes **no external network requests** — all syncing happens locally through
+  `chrome.storage.local`, and Group Shot builds its images and ZIP in your browser.
 - Fonts are bundled in the repo; there is no build step, so every line is plain, readable source.
 
 Full breakdown of permissions and how to audit it: [`knowledge/safety.md`](knowledge/safety.md).

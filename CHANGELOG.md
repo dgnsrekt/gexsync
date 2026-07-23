@@ -4,6 +4,25 @@ All notable changes to GexSync are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and the project follows
 [semantic versioning](https://semver.org/).
 
+## [1.4.0] — 2026-07-23
+
+### Added
+- **Group Shot.** Turn on *Group screenshot* (popup) and a chart's **camera** button
+  captures **every synced pane at once** instead of one chart, downloading a single
+  ZIP to `Downloads/gexsync/`. Inside: `grid.png` (all panes stitched into one
+  captioned image), the individual pane images, and a `manifest.json`. Each pane
+  records the **data's** date/time — the latest point in live, the parked point in
+  replay — so a shot taken today of last week's replay is labeled with last week's
+  timestamps. Panels briefly collapse so each chart captures full-width. Off, the
+  camera behaves as GEXbot's normal single-shot menu.
+
+### Changed
+- **New permission: `downloads`.** Used only by Group Shot, and only when you click
+  the camera, to save its ZIP into a `Downloads/gexsync/` subfolder (a plain link
+  download can't create one). GexSync still makes **no network requests** — the
+  images and ZIP are built entirely in your browser. See
+  [`knowledge/safety.md`](knowledge/safety.md).
+
 ## [1.3.0] — 2026-07-22
 
 ### Added
@@ -131,6 +150,7 @@ All notable changes to GexSync are documented here. The format is based on
   different dates, tickers, and profiles side by side.
 - Bundled README, LICENSE, and OKF knowledge base.
 
+[1.4.0]: https://github.com/dgnsrekt/gexsync/compare/v1.3.0...v1.4.0
 [1.3.0]: https://github.com/dgnsrekt/gexsync/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/dgnsrekt/gexsync/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/dgnsrekt/gexsync/compare/v1.0.3...v1.1.0
