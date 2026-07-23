@@ -4,22 +4,22 @@
 <link rel="stylesheet" href="theme.css">
 <style>
   * { box-sizing: border-box; }
-  body { margin: 0; min-width: 340px; padding: 16px; background: var(--void); color: var(--ink); font: 13px/1.45 var(--ui); }
+  body { margin: 0; min-width: 384px; padding: 10px 14px; background: var(--void); color: var(--ink); font: 13px/1.4 var(--ui); }
 
   /* header */
-  .head { display: flex; align-items: center; gap: 11px; margin-bottom: 6px; }
-  .wordmark { font: 700 21px/1 var(--display); letter-spacing: -.01em; }
+  .head { display: flex; align-items: center; gap: 11px; margin-bottom: 4px; }
+  .wordmark { font: 700 20px/1 var(--display); letter-spacing: -.01em; }
   .wordmark .s { color: var(--mint); }
   .tag { margin-left: auto; font: 500 10px/1 var(--mono); letter-spacing: .12em; color: var(--muted); text-transform: uppercase; }
 
   /* section labels */
-  .label { font: 500 10px/1 var(--mono); letter-spacing: .14em; text-transform: uppercase; color: var(--muted); margin: 18px 0 8px; }
-  .hint { color: var(--muted); font-size: 11.5px; margin-top: 4px; }
+  .label { font: 500 10px/1 var(--mono); letter-spacing: .14em; text-transform: uppercase; color: var(--muted); margin: 8px 0 5px; }
+  .hint { color: var(--muted); font-size: 11px; line-height: 1.35; margin-top: 3px; }
 
   /* fields */
-  label.row { display: block; margin-top: 10px; }
+  label.row { display: block; margin-top: 7px; }
   select {
-    width: 100%; margin-top: 5px; padding: 8px 10px; border-radius: 9px; cursor: pointer;
+    width: 100%; margin-top: 4px; padding: 7px 10px; border-radius: 9px; cursor: pointer;
     background: var(--raised); color: var(--ink); border: 1px solid var(--line); font: 13px var(--ui);
     -webkit-appearance: none; appearance: none;
     background-image: linear-gradient(45deg, transparent 50%, var(--muted) 50%), linear-gradient(135deg, var(--muted) 50%, transparent 50%);
@@ -28,7 +28,7 @@
   select:focus { outline: none; border-color: var(--mint); }
 
   /* toggle switch */
-  .switch { display: flex; align-items: center; gap: 10px; margin-top: 12px; cursor: pointer; user-select: none; }
+  .switch { display: flex; align-items: center; gap: 10px; margin-top: 8px; cursor: pointer; user-select: none; }
   .switch input { position: absolute; opacity: 0; pointer-events: none; }
   .track { flex: 0 0 auto; width: 38px; height: 22px; border-radius: 9999px; background: var(--raised); border: 1px solid var(--line); position: relative; transition: background .15s, border-color .15s; }
   .track::after { content: ""; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%; background: var(--muted); transition: transform .16s, background .16s; }
@@ -36,9 +36,9 @@
   .switch input:checked + .track::after { transform: translateX(16px); background: var(--mint); }
 
   /* segmented mode control */
-  .seg { display: flex; gap: 3px; margin-top: 6px; padding: 3px; border-radius: 11px; background: var(--raised); border: 1px solid var(--line); }
+  .seg { display: flex; gap: 3px; margin-top: 5px; padding: 3px; border-radius: 11px; background: var(--raised); border: 1px solid var(--line); }
   .seg-btn {
-    flex: 1; padding: 8px 4px; border: none; border-radius: 8px; cursor: pointer;
+    flex: 1; padding: 7px 4px; border: none; border-radius: 8px; cursor: pointer;
     background: transparent; color: var(--muted); font: 600 12.5px var(--ui); transition: background .14s, color .14s;
   }
   .seg-btn:hover { color: var(--ink); }
@@ -47,18 +47,18 @@
 
   /* locked note */
   #lockNote {
-    margin-top: 12px; padding: 10px 12px; border-radius: 10px; font-size: 12px; line-height: 1.4;
+    margin-top: 9px; padding: 8px 11px; border-radius: 10px; font-size: 12px; line-height: 1.35;
     background: color-mix(in srgb, var(--amber) 14%, transparent); border: 1px solid color-mix(in srgb, var(--amber) 45%, transparent); color: var(--amber);
   }
 
-  hr { border: none; border-top: 1px solid var(--line); margin: 16px 0; }
+  hr { border: none; border-top: 1px solid var(--line); margin: 8px 0; }
 
   /* current state */
   #count { color: var(--muted); font-size: 12px; }
   #count b { color: var(--ink); font-weight: 600; }
   #tabs {
-    margin-top: 10px; padding: 10px 12px; border-radius: 10px; background: var(--raised); border: 1px solid var(--line);
-    font: 11.5px/1.7 var(--mono); white-space: pre; color: var(--ink); overflow-x: auto; cursor: pointer;
+    margin-top: 8px; padding: 8px 11px; border-radius: 10px; background: var(--raised); border: 1px solid var(--line);
+    font: 11.5px/1.55 var(--mono); white-space: pre; color: var(--ink); overflow-x: auto; cursor: pointer;
   }
   #tabs .muted { color: var(--muted); }
   #copyState {
@@ -70,15 +70,31 @@
   #copyState.done { color: var(--mint); border-color: var(--mint); }
 
   /* Save / Recall */
-  .btnrow { display: flex; gap: 8px; margin-top: 6px; }
+  .btnrow { display: flex; gap: 8px; margin-top: 5px; }
   .btn {
-    flex: 1; padding: 9px 4px; border-radius: 9px; cursor: pointer;
+    flex: 1; padding: 8px 4px; border-radius: 9px; cursor: pointer;
     background: var(--raised); border: 1px solid var(--line); color: var(--ink);
     font: 600 12.5px var(--ui); transition: border-color .14s, color .14s;
   }
   .btn:hover:not(:disabled) { border-color: var(--mint); }
   .btn:disabled { opacity: .45; cursor: default; }
   .btn.done { border-color: var(--mint); color: var(--mint); }
+
+  /* collapsible Current state — styled like the dropdowns so it reads as expandable */
+  #stateWrap { margin-top: 8px; }
+  #stateWrap > summary {
+    display: flex; align-items: center; gap: 8px; list-style: none; cursor: pointer;
+    padding: 6px 11px; border-radius: 9px; background: var(--raised); border: 1px solid var(--line);
+    transition: border-color .14s;
+  }
+  #stateWrap > summary::-webkit-details-marker { display: none; }
+  #stateWrap > summary:hover { border-color: var(--mint); }
+  .ss-label { font: 500 10px/1 var(--mono); letter-spacing: .14em; text-transform: uppercase; color: var(--muted); }
+  #stateWrap > summary:hover .ss-label { color: var(--ink); }
+  .ss-caret { color: var(--muted); font-size: 10px; transition: transform .16s; }
+  #stateWrap > summary:hover .ss-caret { color: var(--mint); }
+  #stateWrap[open] > summary .ss-caret { transform: rotate(180deg); }
+  #stateWrap[open] > summary { border-color: var(--line-strong); border-bottom-left-radius: 0; border-bottom-right-radius: 0; }
 </style>
 <body>
   <div class="head">
@@ -101,7 +117,7 @@
       <option value="page">By page (state / classic separate)</option>
     </select>
   </label>
-  <div class="hint" style="margin-top:6px">Treats state &amp; classic as one pool or two — governs panel-collapse sync and live zoom sync.</div>
+  <div class="hint" style="margin-top:5px">Treats state &amp; classic as one pool or two — governs panel-collapse sync and live zoom sync.</div>
   <label class="switch">
     <input type="checkbox" id="watermark"><span class="track"></span>
     <span>Add profile to chart watermark</span>
@@ -110,14 +126,20 @@
     <input type="checkbox" id="zoomSync"><span class="track"></span>
     <span>Live zoom sync</span>
   </label>
-  <div class="hint" style="margin-top:6px">Same-ticker charts stay zoom-matched and hold through GEXbot's refresh. Off → charts zoom independently. <span style="color:var(--muted)">Stuck? Double-click a chart to reset its zoom.</span></div>
+  <div class="hint" style="margin-top:5px">Same-ticker charts stay zoom-matched through GEXbot's refresh. Stuck? Double-click a chart to reset its zoom.</div>
 
   <div class="label">Zoom layout</div>
   <div class="btnrow">
     <button id="zoomSave" class="btn" title="Snapshot every open ticker's current zoom">⭳ Save</button>
     <button id="zoomRecall" class="btn" title="Restore the saved zoom for every ticker">⭱ Recall</button>
   </div>
-  <div id="zoomLayoutStatus" class="hint" style="margin-top:6px">No saved layout yet</div>
+  <div id="zoomLayoutStatus" class="hint" style="margin-top:5px">No saved layout yet</div>
+
+  <label class="switch">
+    <input type="checkbox" id="groupShot"><span class="track"></span>
+    <span>Group screenshot</span>
+  </label>
+  <div class="hint" style="margin-top:5px">Camera captures every synced pane → one ZIP (grid + panes + a manifest with each pane's data time). Off → GEXbot's single-shot menu.</div>
 
   <div class="label">Mode</div>
   <div class="seg" id="modeSeg" role="tablist">
@@ -127,16 +149,9 @@
   </div>
   <div id="lockNote" hidden>🔒 Replay session active — settings are locked. Switch Mode off Replay (or hit Exit in the replay bar) to end it.</div>
 
-  <div data-mode="profiles">
-    <div class="hint" style="margin-top:12px">GEX and options profiles sync by page. Tickers stay independent.</div>
-  </div>
-
-  <div data-mode="ticker" hidden>
-    <div class="hint" style="margin-top:12px">Tickers sync across state and classic tabs in the same color group. Profiles stay independent.</div>
-  </div>
-
+  <div data-mode="profiles" hidden></div>
+  <div data-mode="ticker" hidden></div>
   <div data-mode="replay" hidden>
-    <div class="hint" style="margin-top:12px">Set each tab's ticker + date + load history; pick a master, others join as clients (aligned by time-of-day).</div>
     <label class="row">
       Play tracking
       <select id="replayTrack">
@@ -150,11 +165,14 @@
     </label>
   </div>
 
-  <hr>
-  <div class="label" style="display:flex;align-items:center">Current state
-    <button id="copyState" title="Copy the full plugin state (settings + tabs) to the clipboard">⧉ copy</button>
-  </div>
-  <div id="count">counting…</div>
-  <div id="tabs" title="Click to copy the full plugin state"></div>
+  <details id="stateWrap">
+    <summary>
+      <span class="ss-label">Current state · tabs</span>
+      <button id="copyState" title="Copy the full plugin state (settings + tabs) to the clipboard">⧉ copy</button>
+      <span class="ss-caret" aria-hidden="true">▾</span>
+    </summary>
+    <div id="count" style="margin-top:9px">counting…</div>
+    <div id="tabs" title="Click to copy the full plugin state"></div>
+  </details>
   <script src="popup.js"></script>
 </body>

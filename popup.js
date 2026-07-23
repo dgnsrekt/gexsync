@@ -75,11 +75,13 @@ modeBtns.forEach((b) => b.addEventListener("click", () => selectMode(b.dataset.m
 const sel = document.getElementById("panelScope");
 const wm = document.getElementById("watermark");
 const zoomSyncEl = document.getElementById("zoomSync");
-chrome.storage.local.get("gexsync-cfg", (r) => { sel.value = r["gexsync-cfg"]?.panelScope || "all"; wm.checked = r["gexsync-cfg"]?.watermark !== false; zoomSyncEl.checked = r["gexsync-cfg"]?.zoomSync === true; });
-const saveCfg = () => chrome.storage.local.get("gexsync-cfg", (r) => chrome.storage.local.set({ "gexsync-cfg": { ...(r["gexsync-cfg"] || {}), panelScope: sel.value, watermark: wm.checked, zoomSync: zoomSyncEl.checked } }));
+const groupShotEl = document.getElementById("groupShot");
+chrome.storage.local.get("gexsync-cfg", (r) => { sel.value = r["gexsync-cfg"]?.panelScope || "all"; wm.checked = r["gexsync-cfg"]?.watermark !== false; zoomSyncEl.checked = r["gexsync-cfg"]?.zoomSync === true; groupShotEl.checked = r["gexsync-cfg"]?.groupShot === true; });
+const saveCfg = () => chrome.storage.local.get("gexsync-cfg", (r) => chrome.storage.local.set({ "gexsync-cfg": { ...(r["gexsync-cfg"] || {}), panelScope: sel.value, watermark: wm.checked, zoomSync: zoomSyncEl.checked, groupShot: groupShotEl.checked } }));
 sel.addEventListener("change", saveCfg);
 wm.addEventListener("change", saveCfg);
 zoomSyncEl.addEventListener("change", saveCfg);
+groupShotEl.addEventListener("change", saveCfg);
 
 // Replay settings — merge on write to keep master.
 const track = document.getElementById("replayTrack");
@@ -95,7 +97,7 @@ const saveReplay = () => chrome.storage.local.get("replay-cfg", (r) =>
 
 // Lock every setting while a replay session is active; Mode stays the exit path.
 function applyLock() {
-  [sel, wm, zoomSyncEl, track, dbg].forEach((el) => { el.disabled = sessionLocked; });
+  [sel, wm, zoomSyncEl, groupShotEl, track, dbg].forEach((el) => { el.disabled = sessionLocked; });
   document.getElementById("lockNote").hidden = !sessionLocked;
   renderZoomStatus(); // save/recall follow the lock too
 }
@@ -123,6 +125,7 @@ async function stateSnapshot() {
     `Cross-page scope: ${sel.value}`,
     `Watermark: ${wm.checked ? "on" : "off"}`,
     `Live zoom sync: ${zoomSyncEl.checked ? "on" : "off"}`,
+    `Group screenshot: ${groupShotEl.checked ? "on" : "off"}`,
     `Zoom layout: ${layoutMeta && layoutMeta.count ? layoutMeta.count + " ticker(s) saved · " + ago(layoutMeta.t) : "none"}`,
     `Replay session: ${sessTxt}`,
     `Replay play-tracking: ${track.value === "heartbeat" ? "heartbeat" : "on pause"}${dbg.checked ? " · debug" : ""}`,
@@ -139,7 +142,7 @@ async function copyState() {
   copyBtn.textContent = "copied ✓"; copyBtn.classList.add("done");
   setTimeout(() => { copyBtn.textContent = "⧉ copy"; copyBtn.classList.remove("done"); }, 1400);
 }
-copyBtn.addEventListener("click", copyState);
+copyBtn.addEventListener("click", (e) => { e.stopPropagation(); copyState(); }); // don't toggle the <details>
 document.getElementById("tabs").addEventListener("click", copyState);
 
 // ---- Zoom layout: Save snapshots every open ticker's current zoom into one slot;

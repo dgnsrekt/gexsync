@@ -43,11 +43,13 @@
   let panelScope = "all"; // config-driven, kept live via onChanged below
   let watermark = true; // append this tab's profile to the chart's ticker watermark
   let zoomSync = false; // live chart-zoom sync + hold-through-refresh (see zoom.js); opt-in
+  let groupShot = false; // camera captures ALL synced panes → one ZIP (see shot.js); opt-in
   const panelKey = () => scopedKey("gexsync-panel", panelScope);
   chrome.storage.local.get(CFG_KEY, (r) => {
     if (r[CFG_KEY]?.panelScope) panelScope = r[CFG_KEY].panelScope;
     watermark = r[CFG_KEY]?.watermark !== false; // default on
     zoomSync = r[CFG_KEY]?.zoomSync === true; // default off (opt-in)
+    groupShot = r[CFG_KEY]?.groupShot === true; // default off (opt-in)
     zHudOn();
   });
 
@@ -421,6 +423,191 @@
     });
   }
 
+  // ---- Group Shot (opt-in): the pane camera captures EVERY synced pane and
+  // downloads one ZIP — grid.png (stitched + captioned), a PNG/JPEG per pane, and
+  // manifest.json. Each pane records the DATA datetime it's showing (live = latest,
+  // replay = the parked point), not the wall clock. Fan-in over storage; the click
+  // is a real gesture, so THIS tab builds and downloads the ZIP (no service worker).
+  const SHOOT_REQ = "gexsync-shoot-req";
+  const SHOT_PREFIX = "gexsync-shot:";
+  const safe = (s) => String(s == null ? "x" : s).replace(/[^A-Za-z0-9._-]+/g, "_");
+  // The shown DATA time comes from GEXbot's visible "update" panel (date + time).
+  // We must read the DOM, NOT the in-page props: in replay every prop timestamp
+  // (arr[i], unix_timestamp, data.timestamp) is TODAY-anchored — only the panel shows
+  // the real historical date. GEXbot renders ET; convert to epoch DST-correctly.
+  const tzOffset = (utcMs) => { // ms offset of America/New_York from UTC at that instant
+    const p = new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", hour12: false, year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit" }).formatToParts(new Date(utcMs));
+    const o = {}; for (const x of p) o[x.type] = x.value; const h = o.hour === "24" ? 0 : +o.hour;
+    return Date.UTC(o.year, o.month - 1, o.day, h, +o.minute, +o.second) - utcMs;
+  };
+  function etToEpoch(dateStr, timeStr) {
+    try {
+      const [mo, da, yr] = dateStr.split("/").map(Number);
+      const m = timeStr.match(/(\d{1,2}):(\d{2}):(\d{2})\s*([AP])/i); let h = (+m[1]) % 12; if (/p/i.test(m[4])) h += 12;
+      const wall = Date.UTC(yr, mo - 1, da, h, +m[2], +m[3]), ms = wall - tzOffset(wall);
+      return { epoch: Math.round(ms / 1000), iso: new Date(ms).toISOString() };
+    } catch (e) { return { epoch: null, iso: null }; }
+  }
+  function readDomDataTime() {
+    const t = document.body ? document.body.innerText : "";
+    const dm = t.match(/\b\d{1,2}\/\d{2}\/\d{4}\b/), tm = t.match(/\b\d{1,2}:\d{2}:\d{2}\s*[AP]M\b/i); // date has year; profile "(07/20)" doesn't
+    if (!dm || !tm) return null;
+    return { ...etToEpoch(dm[0], tm[0]), displayET: `${dm[0]}, ${tm[0].toUpperCase()} ET` };
+  }
+  // Drive shot.js (MAIN world): write the request node, await its response event.
+  function localShot() {
+    return new Promise((resolve) => {
+      const seq = Date.now() + ":" + Math.random().toString(36).slice(2, 6);
+      let done = false;
+      const finish = (v) => { if (done) return; done = true; window.removeEventListener("gexsync-shot", onShot); resolve(v); };
+      const onShot = () => { try { const r = JSON.parse(document.getElementById("__gxShotRes").textContent); if (r && r.seq === seq) finish(r); } catch (e) {} };
+      window.addEventListener("gexsync-shot", onShot);
+      zNode("__gxShotReq").textContent = JSON.stringify({ seq });
+      setTimeout(() => finish(null), 2000);
+    });
+  }
+  // A broadcast landed → capture THIS pane and publish {png, meta} for the initiator.
+  async function respondShot(seq) {
+    if (!onSyncPage()) return;
+    const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+    // The shown date lives in the settings panel, so read it while the panel is OPEN.
+    // Expand if the user had it collapsed, read date/time, THEN collapse for a
+    // full-width shot (an open panel squeezes the canvas in a split pane). Panel
+    // toggles are suppressed from panel-sync by applyPanel's applyingRemote guard.
+    if (panelCollapsed() === true) { applyPanel(false); await sleep(300); }
+    const dataTime = readDomDataTime();
+    if (panelCollapsed() === false) { applyPanel(true); await sleep(450); } // collapse + let Chart.js resize
+    const shot = await localShot();
+    const st = getState();
+    send({ [SHOT_PREFIX + st.id]: { seq, png: shot && shot.png, meta: { ...st, dataTime, zoom: readCurZoom() } } });
+  }
+
+  const fileNameFor = (m) => `${safe(m.ticker)}-${safe(m.page)}-${safe(m.gex || m.options)}-${m.id}.jpg`;
+  const loadImg = (src) => new Promise((res, rej) => { const im = new Image(); im.onload = () => res(im); im.onerror = rej; im.src = src; });
+  async function stitch(shots) {
+    const imgs = await Promise.all(shots.map((s) => loadImg(s.png).catch(() => null)));
+    const pairs = shots.map((s, i) => ({ s, im: imgs[i] })).filter((p) => p.im);
+    if (!pairs.length) return null;
+    const cols = Math.ceil(Math.sqrt(pairs.length)), rows = Math.ceil(pairs.length / cols);
+    const cw = Math.max(...pairs.map((p) => p.im.width)), ch = Math.max(...pairs.map((p) => p.im.height));
+    const cap = 52, pad = 14;
+    const cvs = document.createElement("canvas");
+    cvs.width = cols * cw + (cols + 1) * pad;
+    cvs.height = rows * (ch + cap) + (rows + 1) * pad;
+    const ctx = cvs.getContext("2d");
+    ctx.fillStyle = "#0b0b12"; ctx.fillRect(0, 0, cvs.width, cvs.height);
+    pairs.forEach((p, i) => {
+      const c = i % cols, r = Math.floor(i / cols);
+      const x = pad + c * (cw + pad), y = pad + r * (ch + cap + pad);
+      ctx.drawImage(p.im, x, y, cw, ch);
+      const m = p.s.meta;
+      ctx.textBaseline = "top";
+      ctx.font = "700 22px 'JetBrains Mono',monospace"; ctx.fillStyle = T.ink;
+      ctx.fillText(`${m.ticker || "?"} · ${m.page} · ${m.gex || m.options || "?"}`, x + 2, y + ch + 8);
+      ctx.font = "400 16px 'JetBrains Mono',monospace"; ctx.fillStyle = T.muted;
+      ctx.fillText((m.dataTime && m.dataTime.displayET) || "", x + 2, y + ch + 32);
+    });
+    return cvs.toDataURL("image/png");
+  }
+  function buildManifest(shots, hasGrid) {
+    const cfg = { mode, panelScope, watermark, zoomSync };
+    return {
+      tool: "GexSync group-shot", version: chrome.runtime.getManifest().version,
+      capturedAt: new Date().toISOString(), initiator: getState().id, gexsync: cfg,
+      grid: hasGrid ? "grid.png" : null,
+      panes: shots.map((s) => ({
+        file: fileNameFor(s.meta), shortId: s.meta.id, group: s.meta.group,
+        ticker: s.meta.ticker, page: s.meta.page, profile: s.meta.gex || s.meta.options || null,
+        greeks: s.meta.greeks, collapsed: s.meta.collapsed, dataTime: s.meta.dataTime, zoom: s.meta.zoom || null,
+      })),
+    };
+  }
+
+  // ---- minimal store-only ZIP (PNG/JPEG are already compressed → no deflate) ----
+  const CRC = (() => { const t = new Uint32Array(256); for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; } return t; })();
+  const crc32 = (u8) => { let c = 0xFFFFFFFF; for (let i = 0; i < u8.length; i++) c = CRC[(c ^ u8[i]) & 0xFF] ^ (c >>> 8); return (c ^ 0xFFFFFFFF) >>> 0; };
+  const strBytes = (s) => new TextEncoder().encode(s);
+  const dataUrlBytes = (u) => { const b = atob(u.slice(u.indexOf(",") + 1)); const a = new Uint8Array(b.length); for (let i = 0; i < b.length; i++) a[i] = b.charCodeAt(i); return a; };
+  function makeZip(entries) {
+    const u16 = (n) => [n & 255, (n >> 8) & 255], u32 = (n) => [n & 255, (n >> 8) & 255, (n >> 16) & 255, (n >>> 24) & 255];
+    const d = new Date(); // stamp entries with the capture time (DOS date/time fields)
+    const dosT = ((d.getHours() << 11) | (d.getMinutes() << 5) | (d.getSeconds() >> 1)) & 0xFFFF;
+    const dosD = (((d.getFullYear() - 1980) << 9) | ((d.getMonth() + 1) << 5) | d.getDate()) & 0xFFFF;
+    const parts = [], central = []; let offset = 0;
+    for (const e of entries) {
+      const name = strBytes(e.name), crc = crc32(e.bytes), size = e.bytes.length;
+      const local = [].concat([0x50, 0x4b, 0x03, 0x04], u16(20), u16(0), u16(0), u16(dosT), u16(dosD), u32(crc), u32(size), u32(size), u16(name.length), u16(0));
+      parts.push(new Uint8Array(local), name, e.bytes);
+      central.push({ name, crc, size, offset });
+      offset += local.length + name.length + size;
+    }
+    let cdSize = 0;
+    for (const c of central) {
+      const h = [].concat([0x50, 0x4b, 0x01, 0x02], u16(20), u16(20), u16(0), u16(0), u16(dosT), u16(dosD), u32(c.crc), u32(c.size), u32(c.size), u16(c.name.length), u16(0), u16(0), u16(0), u16(0), u32(0), u32(c.offset));
+      parts.push(new Uint8Array(h), c.name);
+      cdSize += h.length + c.name.length;
+    }
+    parts.push(new Uint8Array([].concat([0x50, 0x4b, 0x05, 0x06], u16(0), u16(0), u16(central.length), u16(central.length), u32(cdSize), u32(offset), u16(0))));
+    return new Blob(parts, { type: "application/zip" });
+  }
+  // Save via the background downloads API so we can land in a Downloads/gexsync/
+  // subfolder (the anchor `download` attr flattens "/" → "_"). Fall back to a plain
+  // anchor download (Downloads root, subfolder in name flattened) if that fails.
+  async function downloadBlob(blob, name) {
+    const dataUrl = await new Promise((res) => { const fr = new FileReader(); fr.onload = () => res(fr.result); fr.onerror = () => res(null); fr.readAsDataURL(blob); });
+    const ok = dataUrl && alive() && await new Promise((res) => {
+      try { chrome.runtime.sendMessage({ type: "gexsync-download", url: dataUrl, filename: name }, (r) => res(!chrome.runtime.lastError && r && r.ok)); }
+      catch (e) { res(false); }
+    });
+    if (ok) return;
+    const url = URL.createObjectURL(blob); // fallback
+    const a = document.createElement("a"); a.href = url; a.download = name.split("/").pop();
+    (document.body || document.documentElement).appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 4000);
+  }
+  // Poll storage for this round's pane responses; resolve when the count is steady
+  // for 800 ms (everyone in) or a 4 s cap (a pane is missing/slow) — whichever first.
+  // Cap allows for each pane's expand→read→collapse→capture before it answers.
+  function collectShots(seq) {
+    return new Promise((resolve) => {
+      const found = new Map(); let lastN = -1, steadyAt = Date.now(), start = Date.now();
+      const iv = setInterval(async () => {
+        const all = await new Promise((r) => get(null, r)) || {};
+        for (const [k, v] of Object.entries(all)) if (k.startsWith(SHOT_PREFIX) && v && v.seq === seq && v.png) found.set(k, v);
+        if (found.size !== lastN) { lastN = found.size; steadyAt = Date.now(); }
+        if ((found.size > 0 && Date.now() - steadyAt >= 800) || Date.now() - start >= 4000) { clearInterval(iv); resolve([...found.values()]); }
+      }, 200);
+    });
+  }
+  let shooting = false;
+  async function groupShotRound() {
+    // clear any stale responses, then broadcast — every pane (incl. this one) answers
+    const all = await new Promise((r) => get(null, r)) || {};
+    const stale = Object.keys(all).filter((k) => k.startsWith(SHOT_PREFIX));
+    if (stale.length) await new Promise((r) => chrome.storage.local.remove(stale, r));
+    send({ [SHOOT_REQ]: { seq: Date.now() + ":" + Math.random().toString(36).slice(2, 6), t: Date.now() } });
+    const seq = (await new Promise((r) => get(SHOOT_REQ, (x) => r(x[SHOOT_REQ])))).seq;
+    const shots = await collectShots(seq);
+    if (!shots.length) { showToast("GexSync: no charts captured for the group shot."); return; }
+    const grid = await stitch(shots);
+    const entries = [];
+    if (grid) entries.push({ name: "grid.png", bytes: dataUrlBytes(grid) });
+    shots.forEach((s) => { if (s.png) entries.push({ name: fileNameFor(s.meta), bytes: dataUrlBytes(s.png) }); });
+    entries.push({ name: "manifest.json", bytes: strBytes(JSON.stringify(buildManifest(shots, !!grid), null, 2)) });
+    const stamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
+    await downloadBlob(makeZip(entries), `gexsync/gexsync-group-${stamp}.zip`); // subfolder under Downloads/
+    if (alive()) chrome.storage.local.remove(shots.map((s) => SHOT_PREFIX + s.meta.id));
+  }
+  // Intercept the pane camera: capture-phase, so GEXbot's own menu never opens.
+  document.addEventListener("click", (e) => {
+    if (!groupShot || !onSyncPage()) return;
+    const btn = e.target.closest && e.target.closest("button");
+    if (!btn || !btn.querySelector('svg[data-testid="CameraAltIcon"]')) return;
+    e.preventDefault(); e.stopImmediatePropagation();
+    if (shooting) return; shooting = true;
+    groupShotRound().catch(() => {}).finally(() => { shooting = false; });
+  }, true);
+
   // ---- spot ↔ es-future sync (Ticker mode; it's a ticker-axis view) ----
   // GEXbot has no dedicated key for it — the toggle just flips the ticker to
   // "SPX⇒ES". Sync it group-scoped like the ticker, but APPLY by clicking the
@@ -672,7 +859,7 @@
 
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area !== "local") return;
-    if (changes[CFG_KEY]?.newValue) { const c = changes[CFG_KEY].newValue; const pScope = panelScope; if (c.panelScope) panelScope = c.panelScope; watermark = c.watermark !== false; const pSync = zoomSync; zoomSync = c.zoomSync === true; if (!zoomSync) writeHold(null); else if (!pSync || panelScope !== pScope) adoptLive(); zHudOn(); }
+    if (changes[CFG_KEY]?.newValue) { const c = changes[CFG_KEY].newValue; const pScope = panelScope; if (c.panelScope) panelScope = c.panelScope; watermark = c.watermark !== false; const pSync = zoomSync; zoomSync = c.zoomSync === true; groupShot = c.groupShot === true; if (!zoomSync) writeHold(null); else if (!pSync || panelScope !== pScope) adoptLive(); zHudOn(); }
     if (changes[MODE_KEY]?.newValue) { mode = changes[MODE_KEY].newValue === "live" ? "profiles" : changes[MODE_KEY].newValue; renderChip(); }
     if (changes[SESSION_KEY]) { replayLocked = !!changes[SESSION_KEY].newValue && changes[SESSION_KEY].newValue.phase !== "idle"; renderChip(); }
     if (!onSyncPage()) return; // off /classic|/state (SPA nav): don't touch the page
@@ -683,7 +870,7 @@
     if (tickerSync() && changes[ES_CHAN()]?.newValue) applyEs(changes[ES_CHAN()].newValue.es);
     if (zoomSync && !replayLocked && !zoomBusy() && changes[liveKey()]?.newValue) { writeHold(changes[liveKey()].newValue); ZHUD.follow(); } // live sync from a peer — but never override a tab you're actively zooming
     if (changes[RECALL_KEY]) recallZoom(); // Save/Recall broadcast from the popup
-
+    if (groupShot && changes[SHOOT_REQ]?.newValue) respondShot(changes[SHOOT_REQ].newValue.seq); // every pane captures itself
   });
 
   // Show our UI only on /classic|/state. GEXbot is a SPA, so navigating to
