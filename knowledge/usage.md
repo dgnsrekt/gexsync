@@ -42,9 +42,11 @@ Replay has two settings in the popup:
   2s, tightest sync) or *On pause* (resync only when playback pauses, quieter).
 * **Debug** — shows each tab's master/client role in the on-page pill.
 
-While a replay session is active the popup settings **lock** (a notice appears).
-End the session by switching Mode off Replay, or hit **Exit** in the on-page
-replay bar, to unlock them.
+While a replay session is active, only the two settings that would reshape the
+running session **lock** (a notice appears): **Cross-page scope** and **Play
+tracking**. Everything else stays usable mid-replay — watermark, **Group
+screenshot**, **Live zoom sync**, and **Debug**. End the session by switching Mode
+off Replay, or hit **Exit** in the on-page replay bar.
 
 ## Global settings
 
@@ -56,9 +58,10 @@ replay bar, to unlock them.
   chart watermark so screenshots are self-labeling.
 * **Live zoom sync** — when on, charts on the **same ticker** stay zoom-matched in
   real time (zoom or pan one, the rest follow) and each holds its zoom through
-  GEXbot's periodic chart refresh — even on a single tab. Sync is keyed to the
-  ticker, not the color group; the tab under your mouse is the authority, so your
-  adjustment always wins. The pill's leading indicator reacts as you go
+  GEXbot's periodic chart refresh — even on a single tab, **and during a replay
+  session** (your framing holds while you scrub). Sync is keyed to the ticker, not
+  the color group; the tab under your mouse is the authority, so your adjustment
+  always wins. The pill's leading indicator reacts as you go
   (*master → setting… → synced →*). Off, each chart uses GEXbot's own zoom
   independently. *If a chart's zoom indicator ever snags, double-click the chart to
   reset it.*

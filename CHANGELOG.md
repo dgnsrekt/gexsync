@@ -4,6 +4,18 @@ All notable changes to GexSync are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and the project follows
 [semantic versioning](https://semver.org/).
 
+## [1.4.1] — 2026-07-23
+
+### Fixed
+- **Live zoom sync now works during a replay session.** Pan or zoom one chart and
+  same-ticker charts follow, held through replay's redraws — it was previously
+  suppressed while replay was active. Toggling Live zoom sync off mid-replay clears
+  the hold and frees the chart to replay's natural range.
+- **Fewer settings lock during replay.** Only the two that reshape a running session —
+  **Cross-page scope** and **Play tracking** — stay locked. **Watermark**, **Group
+  screenshot**, **Live zoom sync**, and the master/client **Debug** readout are now
+  adjustable mid-replay (they were incorrectly disabled).
+
 ## [1.4.0] — 2026-07-23
 
 ### Added
@@ -150,6 +162,7 @@ All notable changes to GexSync are documented here. The format is based on
   different dates, tickers, and profiles side by side.
 - Bundled README, LICENSE, and OKF knowledge base.
 
+[1.4.1]: https://github.com/dgnsrekt/gexsync/compare/v1.4.0...v1.4.1
 [1.4.0]: https://github.com/dgnsrekt/gexsync/compare/v1.3.0...v1.4.0
 [1.3.0]: https://github.com/dgnsrekt/gexsync/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/dgnsrekt/gexsync/compare/v1.1.0...v1.2.0
