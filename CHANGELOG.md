@@ -4,6 +4,17 @@ All notable changes to GexSync are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and the project follows
 [semantic versioning](https://semver.org/).
 
+## [1.6.0] — 2026-07-24
+
+### Added
+- **Show days to expiry (DTE)** (popup toggle, off by default; rides on the
+  watermark, so it's disabled when the watermark is off). With it on, the chart
+  watermark appends the selected profile's DTE — **latest**/**next** show
+  `{n}DTE` (e.g. `VIX NEXT 12DTE`), and **90d** shows `(AGG)` since it has no
+  single expiry. DTE counts from the chart's own **update date** to the expiry
+  in the profile button, so it **follows replay** — a tab parked on a past day
+  shows that day's DTE, not today's. Each tab computes its own; nothing syncs.
+
 ## [1.5.0] — 2026-07-24
 
 ### Added
@@ -171,6 +182,7 @@ All notable changes to GexSync are documented here. The format is based on
   different dates, tickers, and profiles side by side.
 - Bundled README, LICENSE, and OKF knowledge base.
 
+[1.6.0]: https://github.com/dgnsrekt/gexsync/compare/v1.5.0...v1.6.0
 [1.5.0]: https://github.com/dgnsrekt/gexsync/compare/v1.4.1...v1.5.0
 [1.4.1]: https://github.com/dgnsrekt/gexsync/compare/v1.4.0...v1.4.1
 [1.4.0]: https://github.com/dgnsrekt/gexsync/compare/v1.3.0...v1.4.0
