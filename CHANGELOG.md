@@ -4,6 +4,15 @@ All notable changes to GexSync are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and the project follows
 [semantic versioning](https://semver.org/).
 
+## [1.5.0] — 2026-07-24
+
+### Added
+- **Sync settings navigation** (popup toggle, off by default). With it on, opening
+  the **Settings** panel and moving between **Alerts**, **Alerts History**, and
+  **Home** mirrors across your synced tabs — click the gear on one chart and the
+  others open Settings too. Follows **Cross-page scope** (state & classic as one
+  pool or two). Off, each tab's Settings panel is independent, as before.
+
 ## [1.4.1] — 2026-07-23
 
 ### Fixed
@@ -162,6 +171,7 @@ All notable changes to GexSync are documented here. The format is based on
   different dates, tickers, and profiles side by side.
 - Bundled README, LICENSE, and OKF knowledge base.
 
+[1.5.0]: https://github.com/dgnsrekt/gexsync/compare/v1.4.1...v1.5.0
 [1.4.1]: https://github.com/dgnsrekt/gexsync/compare/v1.4.0...v1.4.1
 [1.4.0]: https://github.com/dgnsrekt/gexsync/compare/v1.3.0...v1.4.0
 [1.3.0]: https://github.com/dgnsrekt/gexsync/compare/v1.2.0...v1.3.0
