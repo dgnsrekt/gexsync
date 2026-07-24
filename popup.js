@@ -77,10 +77,14 @@ const wm = document.getElementById("watermark");
 const zoomSyncEl = document.getElementById("zoomSync");
 const groupShotEl = document.getElementById("groupShot");
 const settingsNavEl = document.getElementById("settingsNav");
-chrome.storage.local.get("gexsync-cfg", (r) => { sel.value = r["gexsync-cfg"]?.panelScope || "all"; wm.checked = r["gexsync-cfg"]?.watermark !== false; zoomSyncEl.checked = r["gexsync-cfg"]?.zoomSync === true; groupShotEl.checked = r["gexsync-cfg"]?.groupShot === true; settingsNavEl.checked = r["gexsync-cfg"]?.settingsNav === true; });
-const saveCfg = () => chrome.storage.local.get("gexsync-cfg", (r) => chrome.storage.local.set({ "gexsync-cfg": { ...(r["gexsync-cfg"] || {}), panelScope: sel.value, watermark: wm.checked, zoomSync: zoomSyncEl.checked, groupShot: groupShotEl.checked, settingsNav: settingsNavEl.checked } }));
+const dteEl = document.getElementById("dte");
+// DTE rides on the watermark — grey it out and force it off when the watermark is off.
+const syncDteLock = () => { dteEl.disabled = !wm.checked; if (!wm.checked) dteEl.checked = false; };
+chrome.storage.local.get("gexsync-cfg", (r) => { sel.value = r["gexsync-cfg"]?.panelScope || "all"; wm.checked = r["gexsync-cfg"]?.watermark !== false; zoomSyncEl.checked = r["gexsync-cfg"]?.zoomSync === true; groupShotEl.checked = r["gexsync-cfg"]?.groupShot === true; settingsNavEl.checked = r["gexsync-cfg"]?.settingsNav === true; dteEl.checked = r["gexsync-cfg"]?.dte === true; syncDteLock(); });
+const saveCfg = () => chrome.storage.local.get("gexsync-cfg", (r) => chrome.storage.local.set({ "gexsync-cfg": { ...(r["gexsync-cfg"] || {}), panelScope: sel.value, watermark: wm.checked, zoomSync: zoomSyncEl.checked, groupShot: groupShotEl.checked, settingsNav: settingsNavEl.checked, dte: dteEl.checked } }));
 sel.addEventListener("change", saveCfg);
-wm.addEventListener("change", saveCfg);
+wm.addEventListener("change", () => { syncDteLock(); saveCfg(); });
+dteEl.addEventListener("change", saveCfg);
 zoomSyncEl.addEventListener("change", saveCfg);
 groupShotEl.addEventListener("change", saveCfg);
 settingsNavEl.addEventListener("change", saveCfg);
@@ -130,6 +134,7 @@ async function stateSnapshot() {
     `Mode: ${curMode}`,
     `Cross-page scope: ${sel.value}`,
     `Watermark: ${wm.checked ? "on" : "off"}`,
+    `Show DTE: ${dteEl.checked ? "on" : "off"}`,
     `Live zoom sync: ${zoomSyncEl.checked ? "on" : "off"}`,
     `Group screenshot: ${groupShotEl.checked ? "on" : "off"}`,
     `Settings nav sync: ${settingsNavEl.checked ? "on" : "off"}`,

@@ -123,6 +123,11 @@
     <span>Add profile to chart watermark</span>
   </label>
   <label class="switch">
+    <input type="checkbox" id="dte"><span class="track"></span>
+    <span>Show days to expiry (DTE)</span>
+  </label>
+  <div class="hint" style="margin-top:5px">Appends the profile's DTE to the watermark (<b>latest/next</b> → e.g. <b>3DTE</b>; <b>90d</b> → <b>(AGG)</b>). Counts from the chart's update date, so it follows replay. Needs the watermark on.</div>
+  <label class="switch">
     <input type="checkbox" id="zoomSync"><span class="track"></span>
     <span>Live zoom sync</span>
   </label>

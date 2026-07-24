@@ -45,6 +45,7 @@
   let zoomSync = false; // live chart-zoom sync + hold-through-refresh (see zoom.js); opt-in
   let groupShot = false; // camera captures ALL synced panes → one ZIP (see shot.js); opt-in
   let settingsNav = false; // mirror Settings-panel navigation (gear/alerts/history/home); opt-in
+  let showDte = false; // append days-to-expiry (or (AGG)) to the watermark; opt-in, needs watermark on
   const panelKey = () => scopedKey("gexsync-panel", panelScope);
   chrome.storage.local.get(CFG_KEY, (r) => {
     if (r[CFG_KEY]?.panelScope) panelScope = r[CFG_KEY].panelScope;
@@ -52,6 +53,7 @@
     zoomSync = r[CFG_KEY]?.zoomSync === true; // default off (opt-in)
     groupShot = r[CFG_KEY]?.groupShot === true; // default off (opt-in)
     settingsNav = r[CFG_KEY]?.settingsNav === true; // default off (opt-in)
+    showDte = r[CFG_KEY]?.dte === true; // default off (opt-in)
     zHudOn();
   });
 
@@ -859,6 +861,34 @@
   }
   if (document.body) buildModeChip(); else window.addEventListener("DOMContentLoaded", buildModeChip);
 
+  // The chart's reference date — GEXbot's "update" readout (date/time/spot). It's
+  // the ONLY MM/DD/YYYY on the page and it mirrors the replay scrubber, so reading
+  // it makes DTE replay-aware for free (parked point in replay, latest when live).
+  // ponytail: single date leaf = update date; anchor to the "update" grid if GEXbot
+  // ever renders a second date somewhere.
+  function refDate() {
+    for (const e of document.querySelectorAll("h6, p, span, div")) {
+      if (e.childElementCount) continue;
+      const m = e.textContent.trim().match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+      if (m) return new Date(+m[3], +m[1] - 1, +m[2]);
+    }
+    return null;
+  }
+  // Watermark suffix for the selected gex profile: "(AGG)" for 90d, "{n}DTE" for
+  // latest/next (calendar days from the update date to the "(MM/DD)" in the button).
+  // "" when there's no gex expiry to read (settings/alerts pages) or no ref date.
+  function dteSuffix() {
+    const sel = getGroups().gex?.querySelector('button[aria-pressed="true"]');
+    if (!sel) return "";
+    if (keywordOf(sel) === "90d") return "(AGG)";
+    const md = sel.textContent.match(/\((\d{1,2})\/(\d{1,2})\)/); // "next (08/05)"
+    const ref = refDate();
+    if (!md || !ref) return "";
+    const exp = new Date(ref.getFullYear(), +md[1] - 1, +md[2]);
+    if (exp < ref) exp.setFullYear(exp.getFullYear() + 1); // year wrap (e.g. Dec ref, Jan expiry)
+    return `${Math.round((exp - ref) / 86400000)}DTE`;
+  }
+
   // Append this tab's profile to GEXbot's big ticker watermark (the <h6> over
   // the chart), e.g. "META" -> "META LATEST". React only rewrites it on ticker
   // change, so a light interval re-appends and keeps it synced to the profile.
@@ -877,7 +907,9 @@
     const wmBase = wm.textContent.trim().split(/\s+/)[0]; // "NDX" | "NDX⇒NQU6"
     // off → strip back to just the ticker/contract; on → + profile
     const label = profileLabel();
-    const want = watermark ? `${wmBase} ${label.replace("90d", "90 days").toUpperCase()}` : wmBase;
+    let prof = label.replace("90d", "90 days").toUpperCase();
+    if (showDte && label !== "?") { const s = dteSuffix(); if (s) prof += ` ${s}`; } // + "{n}DTE" | "(AGG)"
+    const want = watermark ? `${wmBase} ${prof}` : wmBase;
     if (wm.textContent.trim() !== want) wm.textContent = want;
     // "?" = no profile toggles on this page (settings/alerts). Native hover tip
     // tells the user how to get back; cleared on any real profile.
@@ -917,7 +949,7 @@
 
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area !== "local") return;
-    if (changes[CFG_KEY]?.newValue) { const c = changes[CFG_KEY].newValue; const pScope = panelScope; if (c.panelScope) panelScope = c.panelScope; watermark = c.watermark !== false; const pSync = zoomSync; zoomSync = c.zoomSync === true; groupShot = c.groupShot === true; const sNav = settingsNav; settingsNav = c.settingsNav === true; if (settingsNav !== sNav) lastNav = null; if (!zoomSync) writeHold(null); else if (!pSync || panelScope !== pScope) adoptLive(); zHudOn(); }
+    if (changes[CFG_KEY]?.newValue) { const c = changes[CFG_KEY].newValue; const pScope = panelScope; if (c.panelScope) panelScope = c.panelScope; watermark = c.watermark !== false; const pSync = zoomSync; zoomSync = c.zoomSync === true; groupShot = c.groupShot === true; const sNav = settingsNav; settingsNav = c.settingsNav === true; if (settingsNav !== sNav) lastNav = null; showDte = c.dte === true; if (!zoomSync) writeHold(null); else if (!pSync || panelScope !== pScope) adoptLive(); zHudOn(); }
     if (changes[MODE_KEY]?.newValue) { mode = changes[MODE_KEY].newValue === "live" ? "profiles" : changes[MODE_KEY].newValue; renderChip(); }
     if (changes[SESSION_KEY]) { replayLocked = !!changes[SESSION_KEY].newValue && changes[SESSION_KEY].newValue.phase !== "idle"; renderChip(); }
     if (!onSyncPage()) return; // off /classic|/state (SPA nav): don't touch the page
