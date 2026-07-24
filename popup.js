@@ -76,12 +76,14 @@ const sel = document.getElementById("panelScope");
 const wm = document.getElementById("watermark");
 const zoomSyncEl = document.getElementById("zoomSync");
 const groupShotEl = document.getElementById("groupShot");
-chrome.storage.local.get("gexsync-cfg", (r) => { sel.value = r["gexsync-cfg"]?.panelScope || "all"; wm.checked = r["gexsync-cfg"]?.watermark !== false; zoomSyncEl.checked = r["gexsync-cfg"]?.zoomSync === true; groupShotEl.checked = r["gexsync-cfg"]?.groupShot === true; });
-const saveCfg = () => chrome.storage.local.get("gexsync-cfg", (r) => chrome.storage.local.set({ "gexsync-cfg": { ...(r["gexsync-cfg"] || {}), panelScope: sel.value, watermark: wm.checked, zoomSync: zoomSyncEl.checked, groupShot: groupShotEl.checked } }));
+const settingsNavEl = document.getElementById("settingsNav");
+chrome.storage.local.get("gexsync-cfg", (r) => { sel.value = r["gexsync-cfg"]?.panelScope || "all"; wm.checked = r["gexsync-cfg"]?.watermark !== false; zoomSyncEl.checked = r["gexsync-cfg"]?.zoomSync === true; groupShotEl.checked = r["gexsync-cfg"]?.groupShot === true; settingsNavEl.checked = r["gexsync-cfg"]?.settingsNav === true; });
+const saveCfg = () => chrome.storage.local.get("gexsync-cfg", (r) => chrome.storage.local.set({ "gexsync-cfg": { ...(r["gexsync-cfg"] || {}), panelScope: sel.value, watermark: wm.checked, zoomSync: zoomSyncEl.checked, groupShot: groupShotEl.checked, settingsNav: settingsNavEl.checked } }));
 sel.addEventListener("change", saveCfg);
 wm.addEventListener("change", saveCfg);
 zoomSyncEl.addEventListener("change", saveCfg);
 groupShotEl.addEventListener("change", saveCfg);
+settingsNavEl.addEventListener("change", saveCfg);
 
 // Replay settings — merge on write to keep master.
 const track = document.getElementById("replayTrack");
@@ -130,6 +132,7 @@ async function stateSnapshot() {
     `Watermark: ${wm.checked ? "on" : "off"}`,
     `Live zoom sync: ${zoomSyncEl.checked ? "on" : "off"}`,
     `Group screenshot: ${groupShotEl.checked ? "on" : "off"}`,
+    `Settings nav sync: ${settingsNavEl.checked ? "on" : "off"}`,
     `Zoom layout: ${layoutMeta && layoutMeta.count ? layoutMeta.count + " ticker(s) saved · " + ago(layoutMeta.t) : "none"}`,
     `Replay session: ${sessTxt}`,
     `Replay play-tracking: ${track.value === "heartbeat" ? "heartbeat" : "on pause"}${dbg.checked ? " · debug" : ""}`,
