@@ -44,12 +44,14 @@
   let watermark = true; // append this tab's profile to the chart's ticker watermark
   let zoomSync = false; // live chart-zoom sync + hold-through-refresh (see zoom.js); opt-in
   let groupShot = false; // camera captures ALL synced panes → one ZIP (see shot.js); opt-in
+  let settingsNav = false; // mirror Settings-panel navigation (gear/alerts/history/home); opt-in
   const panelKey = () => scopedKey("gexsync-panel", panelScope);
   chrome.storage.local.get(CFG_KEY, (r) => {
     if (r[CFG_KEY]?.panelScope) panelScope = r[CFG_KEY].panelScope;
     watermark = r[CFG_KEY]?.watermark !== false; // default on
     zoomSync = r[CFG_KEY]?.zoomSync === true; // default off (opt-in)
     groupShot = r[CFG_KEY]?.groupShot === true; // default off (opt-in)
+    settingsNav = r[CFG_KEY]?.settingsNav === true; // default off (opt-in)
     zHudOn();
   });
 
@@ -152,6 +154,61 @@
       if (collapsed !== null) send({ [panelKey()]: { collapsed, t: performance.now() } });
     }).observe(toolbar, { childList: true, subtree: true, attributes: true, attributeFilter: ["data-testid"] });
     return true;
+  }
+
+  // ---- settings-panel navigation sync (gear / alerts / history / home) ----
+  // The Settings panel and its sub-views (alerts config, alert history) are React
+  // view swaps with NO url/route to read — so detect the view by its heading text
+  // and navigate by clicking the panel's own nav icons. Same state-mirror machine
+  // as panel-collapse, generalized from a boolean to a 4-view registry. Opt-in
+  // (settingsNav); the page-axis follows panelScope (Cross-page scope).
+  const navKey = () => scopedKey("gexsync-nav", panelScope);
+  const napSleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  const iconBtn = (t) => [...document.querySelectorAll("button")].find((b) => b.querySelector(`svg[data-testid="${t}"]`)) || null;
+  const panelOpen = () => !!iconBtn("HomeIcon"); // Home icon exists ONLY while the Settings panel is open; the gear only exists on the chart
+
+  // Canonical read: heading text uniquely names the view (the active sub-view also
+  // hides its own nav icon, but the heading is the sturdier signal).
+  function navView() {
+    if (!panelOpen()) return "chart";
+    const heads = [...document.querySelectorAll("h1,h2,h3,h4,h5,h6")].map((e) => e.textContent.trim());
+    if (heads.some((h) => /alerts history/i.test(h))) return "history";
+    if (heads.some((h) => /\balerts$/i.test(h))) return "alerts"; // "{TICKER} alerts"
+    return "settings"; // panel open, no sub-view heading = settings root
+  }
+
+  // Navigate to a target view idempotently (≤2 clicks). The guard is held across
+  // the whole sequence so intermediate views don't echo onto the bus, and lastNav
+  // is pinned to the applied view so the poll below doesn't re-broadcast it.
+  async function applyNav(view) {
+    if (navView() === view) return; // already there: no-op ends echoes
+    applyingRemote = true;
+    try {
+      if (view === "chart") { iconBtn("HomeIcon")?.click(); }
+      else {
+        // sub-view → settings root: drop to chart first so the gear reopens the root
+        if (view === "settings" && panelOpen()) { iconBtn("HomeIcon")?.click(); await napSleep(250); }
+        if (!panelOpen()) { iconBtn("SettingsIcon")?.click(); await napSleep(250); } // gear only exists on the chart
+        if (view === "alerts") iconBtn("NotificationsIcon")?.click();
+        else if (view === "history") iconBtn("HistoryIcon")?.click();
+        // "settings": panel is now open at its root — nothing more to click
+      }
+      lastNav = view;
+    } finally {
+      setTimeout(() => { applyingRemote = false; }, 400);
+    }
+  }
+
+  // Poll-driven (like watchSwitches): the panel mounts/unmounts its whole subtree,
+  // so a single fixed observer target is unreliable. Cheap re-read; only real
+  // transitions hit the bus.
+  let lastNav = "";
+  function watchNav() {
+    if (applyingRemote || !settingsNav) return;
+    const v = navView();
+    if (v === lastNav) return;
+    lastNav = v;
+    send({ [navKey()]: { view: v, t: performance.now() } });
   }
 
   // ---- options-profile switches (delta/gamma/vanna/charm), /state only ----
@@ -859,12 +916,13 @@
 
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area !== "local") return;
-    if (changes[CFG_KEY]?.newValue) { const c = changes[CFG_KEY].newValue; const pScope = panelScope; if (c.panelScope) panelScope = c.panelScope; watermark = c.watermark !== false; const pSync = zoomSync; zoomSync = c.zoomSync === true; groupShot = c.groupShot === true; if (!zoomSync) writeHold(null); else if (!pSync || panelScope !== pScope) adoptLive(); zHudOn(); }
+    if (changes[CFG_KEY]?.newValue) { const c = changes[CFG_KEY].newValue; const pScope = panelScope; if (c.panelScope) panelScope = c.panelScope; watermark = c.watermark !== false; const pSync = zoomSync; zoomSync = c.zoomSync === true; groupShot = c.groupShot === true; settingsNav = c.settingsNav === true; if (!zoomSync) writeHold(null); else if (!pSync || panelScope !== pScope) adoptLive(); zHudOn(); }
     if (changes[MODE_KEY]?.newValue) { mode = changes[MODE_KEY].newValue === "live" ? "profiles" : changes[MODE_KEY].newValue; renderChip(); }
     if (changes[SESSION_KEY]) { replayLocked = !!changes[SESSION_KEY].newValue && changes[SESSION_KEY].newValue.phase !== "idle"; renderChip(); }
     if (!onSyncPage()) return; // off /classic|/state (SPA nav): don't touch the page
     if (profileSync() && changes[KEY]?.newValue) applyProfile(changes[KEY].newValue.group, changes[KEY].newValue.keyword);
     if (changes[panelKey()]?.newValue) applyPanel(changes[panelKey()].newValue.collapsed); // panel always
+    if (settingsNav && changes[navKey()]?.newValue) applyNav(changes[navKey()].newValue.view); // Settings-panel nav mirror (opt-in)
     if (profileSync() && changes[OPTS_KEY]?.newValue) applyOpts(changes[OPTS_KEY].newValue.state);
     if (tickerSync() && changes[tickerChan()]?.newValue) applyTicker(changes[tickerChan()].newValue.ticker);
     if (tickerSync() && changes[ES_CHAN()]?.newValue) applyEs(changes[ES_CHAN()].newValue.es);
@@ -897,5 +955,6 @@
     if (!onSyncPage()) return; // dormant off /classic|/state
     watchGroups();
     if (!panelDone) panelDone = watchPanel();
+    watchNav();
   }, 500);
 })();
