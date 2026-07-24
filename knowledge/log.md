@@ -1,5 +1,11 @@
 # Knowledge base update log
 
+## 2026-07-23 (v1.4.1)
+* **Replay behavior fix**: documented that during a replay session only **Cross-page
+  scope** and **Play tracking** lock now — watermark, Group screenshot, Debug, and
+  **Live zoom sync** stay usable — and that Live zoom sync holds through a replay
+  session (usage.md).
+
 ## 2026-07-23
 * **Caught up to v1.4.0**: documented **Group Shot** (camera captures all synced
   panes → one ZIP with a stitched grid, per-pane images, and a manifest recording
