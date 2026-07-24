@@ -202,10 +202,11 @@
   // Poll-driven (like watchSwitches): the panel mounts/unmounts its whole subtree,
   // so a single fixed observer target is unreliable. Cheap re-read; only real
   // transitions hit the bus.
-  let lastNav = "";
+  let lastNav = null; // null = unseeded: seed from the live view on activation WITHOUT broadcasting
   function watchNav() {
     if (applyingRemote || !settingsNav) return;
     const v = navView();
+    if (lastNav === null) { lastNav = v; return; } // first active poll (boot with toggle on, or off→on): adopt current view, don't publish it onto peers
     if (v === lastNav) return;
     lastNav = v;
     send({ [navKey()]: { view: v, t: performance.now() } });
@@ -916,7 +917,7 @@
 
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area !== "local") return;
-    if (changes[CFG_KEY]?.newValue) { const c = changes[CFG_KEY].newValue; const pScope = panelScope; if (c.panelScope) panelScope = c.panelScope; watermark = c.watermark !== false; const pSync = zoomSync; zoomSync = c.zoomSync === true; groupShot = c.groupShot === true; settingsNav = c.settingsNav === true; if (!zoomSync) writeHold(null); else if (!pSync || panelScope !== pScope) adoptLive(); zHudOn(); }
+    if (changes[CFG_KEY]?.newValue) { const c = changes[CFG_KEY].newValue; const pScope = panelScope; if (c.panelScope) panelScope = c.panelScope; watermark = c.watermark !== false; const pSync = zoomSync; zoomSync = c.zoomSync === true; groupShot = c.groupShot === true; const sNav = settingsNav; settingsNav = c.settingsNav === true; if (settingsNav !== sNav) lastNav = null; if (!zoomSync) writeHold(null); else if (!pSync || panelScope !== pScope) adoptLive(); zHudOn(); }
     if (changes[MODE_KEY]?.newValue) { mode = changes[MODE_KEY].newValue === "live" ? "profiles" : changes[MODE_KEY].newValue; renderChip(); }
     if (changes[SESSION_KEY]) { replayLocked = !!changes[SESSION_KEY].newValue && changes[SESSION_KEY].newValue.phase !== "idle"; renderChip(); }
     if (!onSyncPage()) return; // off /classic|/state (SPA nav): don't touch the page
