@@ -228,7 +228,7 @@
     .find((g) => { const t = [...g.querySelectorAll("button")].map((b) => b.textContent.trim()); return labels.every((l) => t.includes(l)); }) || null;
   const pressedLabel = (g) => g && ([...g.querySelectorAll("button")].find((b) => b.getAttribute("aria-pressed") === "true")?.textContent.trim() || null);
   const tzCombo = () => [...document.querySelectorAll("input[role=combobox]")].find((i) => /\(utc/i.test(i.value || "")) || null;
-  const settingsOpenHere = () => !!toggleGroup(["Line", "Candles"]); // bottom controls only render on the Settings root view
+  const settingsOpenHere = () => !!tzCombo(); // stable open signal: the TZ select stays mounted the whole time Settings is open, unlike the toggle groups which re-render on click (and would flicker allOpen false mid-click)
 
   function settingsState() {
     const ct = toggleGroup(["Line", "Candles"]);
@@ -255,27 +255,46 @@
       if (opt) opt.click(); else combo.blur(); // no match: leave it
     }, 160);
   }
-  function applySettings(state) {
-    if (!settingsState()) return; // controls gone (Settings closed here) — nothing to click
+  function applySettings(msg) {
+    if (Date.now() < settingsBusyUntil) return; // I'm the just-clicked master — ignore incoming so an echo can't revert me
+    const state = msg && msg.state;
+    if (!state || !settingsState()) return; // no payload, or controls gone here — nothing to click
     applyingRemote = true;
     try {
       clickToggle(["Line", "Candles"], state.chart);
       clickToggle(["Left", "Center", "Right"], state.align);
       applyTz(state.tz);
     } finally {
-      setTimeout(() => { applyingRemote = false; lastSettings = JSON.stringify(state); }, 500);
+      setTimeout(() => { applyingRemote = false; }, 500);
     }
   }
-  let lastSettings = null; // null = unseeded: adopt current state on activation WITHOUT broadcasting
-  function watchSettings() {
-    if (applyingRemote || !settingsSync || !allOpen) { if (!allOpen) lastSettings = null; return; }
-    const s = settingsState(); if (!s) return;
-    const sig = JSON.stringify(s);
-    if (lastSettings === null) { lastSettings = sig; return; } // first active poll: adopt, don't publish onto peers
-    if (sig === lastSettings) return;
-    lastSettings = sig;
-    send({ [settingsKey()]: { state: s, t: performance.now() } });
+
+  // Click-driven master (the zoom-sync authority pattern): the tab where you click a
+  // Settings control is the authority. It broadcasts ONCE (no poll/read race) and holds
+  // a busy window during which it ignores incoming echoes, so it can't be reverted.
+  const SETTINGS_BUSY_MS = 1200;
+  let settingsBusyUntil = 0, pushTimer = 0;
+  function isSettingsControl(el) {
+    if (!el || !el.closest) return false;
+    const g = el.closest(".MuiToggleButtonGroup-root");
+    if (g) { const t = [...g.querySelectorAll("button")].map((b) => b.textContent.trim()); return t.includes("Line") || t.includes("Left"); }
+    if (el.closest("[role=combobox]") === tzCombo()) return true;                                  // the TZ select
+    const opt = el.closest('[role="option"]'); if (opt && /\(utc/i.test(opt.textContent || "")) return true; // a TZ menu option
+    return false;
   }
+  function pushSettings(tries) {
+    if (!settingsSync || !allOpen) return; // still gated on every in-scope panel being open
+    const s = settingsState();
+    if (!s) { if ((tries || 0) < 3) pushTimer = setTimeout(() => pushSettings((tries || 0) + 1), 120); return; } // controls mid-render: retry
+    send({ [settingsKey()]: { state: s, master: TAB, t: performance.now() } });
+  }
+  document.addEventListener("click", (e) => {
+    if (!settingsSync || applyingRemote) return; // ignore our own programmatic (apply) clicks
+    if (!isSettingsControl(e.target)) return;
+    settingsBusyUntil = Date.now() + SETTINGS_BUSY_MS; // this tab is the authority for a beat
+    clearTimeout(pushTimer);
+    pushTimer = setTimeout(() => pushSettings(0), 130); // let GEXbot update the DOM, then read + broadcast once
+  }, true);
 
   // "All in-scope panels open" presence — mirrors the group-count beacon (per-tab key,
   // expiry heartbeat, prune stale). Scope: "all" counts every tab; else same page-type.
@@ -1082,14 +1101,14 @@
 
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area !== "local") return;
-    if (changes[CFG_KEY]?.newValue) { const c = changes[CFG_KEY].newValue; const pScope = panelScope; if (c.panelScope) panelScope = c.panelScope; watermark = c.watermark !== false; const pSync = zoomSync; zoomSync = c.zoomSync === true; groupShot = c.groupShot === true; const sNav = settingsNav; settingsNav = c.settingsNav === true; if (settingsNav !== sNav) lastNav = null; showDte = c.dte === true; const sSync = settingsSync; settingsSync = c.settingsSync === true; if (settingsSync !== sSync) lastSettings = null; if (!zoomSync) writeHold(null); else if (!pSync || panelScope !== pScope) adoptLive(); zHudOn(); }
+    if (changes[CFG_KEY]?.newValue) { const c = changes[CFG_KEY].newValue; const pScope = panelScope; if (c.panelScope) panelScope = c.panelScope; watermark = c.watermark !== false; const pSync = zoomSync; zoomSync = c.zoomSync === true; groupShot = c.groupShot === true; const sNav = settingsNav; settingsNav = c.settingsNav === true; if (settingsNav !== sNav) lastNav = null; showDte = c.dte === true; settingsSync = c.settingsSync === true; if (!zoomSync) writeHold(null); else if (!pSync || panelScope !== pScope) adoptLive(); zHudOn(); }
     if (changes[MODE_KEY]?.newValue) { mode = changes[MODE_KEY].newValue === "live" ? "profiles" : changes[MODE_KEY].newValue; renderChip(); }
     if (changes[SESSION_KEY]) { replayLocked = !!changes[SESSION_KEY].newValue && changes[SESSION_KEY].newValue.phase !== "idle"; renderChip(); }
     if (!onSyncPage()) return; // off /classic|/state (SPA nav): don't touch the page
     if (profileSync() && changes[KEY]?.newValue) applyProfile(changes[KEY].newValue.group, changes[KEY].newValue.keyword);
     if (changes[panelKey()]?.newValue) applyPanel(changes[panelKey()].newValue.collapsed); // panel always
     if (settingsNav && changes[navKey()]?.newValue) applyNav(changes[navKey()].newValue.view); // Settings-panel nav mirror (opt-in)
-    if (settingsSync && changes[settingsKey()]?.newValue) applySettings(changes[settingsKey()].newValue.state); // bottom Settings values mirror (opt-in, all-open gated)
+    if (settingsSync && changes[settingsKey()]?.newValue) applySettings(changes[settingsKey()].newValue); // bottom Settings values mirror (opt-in, all-open gated, click-driven master)
     if (profileSync() && changes[OPTS_KEY]?.newValue) applyOpts(changes[OPTS_KEY].newValue.state);
     if (tickerSync() && changes[tickerChan()]?.newValue) applyTicker(changes[tickerChan()].newValue.ticker);
     if (tickerSync() && changes[ES_CHAN()]?.newValue) applyEs(changes[ES_CHAN()].newValue.es);
@@ -1123,6 +1142,5 @@
     watchGroups();
     if (!panelDone) panelDone = watchPanel();
     watchNav();
-    watchSettings();
   }, 500);
 })();
