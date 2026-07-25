@@ -152,6 +152,12 @@
   </label>
   <div class="hint" style="margin-top:5px">Opening Settings and moving between Alerts, History &amp; Home mirrors across synced tabs (follows Cross-page scope).</div>
 
+  <label class="switch">
+    <input type="checkbox" id="settingsSync"><span class="track"></span>
+    <span>Sync chart settings</span>
+  </label>
+  <div class="hint" style="margin-top:5px">Mirrors the Settings panel's <b>Chart Type</b>, <b>Profile Alignment</b> &amp; <b>Time Zone</b> across tabs (follows Cross-page scope). Because GEXbot only shows these while Settings is open, it syncs <b>only when every in-scope panel is open</b> — a colored box marks the synced area; otherwise a "N/M panels open" hint shows why it's waiting.</div>
+
   <div class="label">Mode</div>
   <div class="seg" id="modeSeg" role="tablist">
     <button class="seg-btn" data-mode="profiles" role="tab">Profiles</button>

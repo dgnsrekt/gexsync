@@ -46,7 +46,9 @@
   let groupShot = false; // camera captures ALL synced panes → one ZIP (see shot.js); opt-in
   let settingsNav = false; // mirror Settings-panel navigation (gear/alerts/history/home); opt-in
   let showDte = false; // append days-to-expiry (or (AGG)) to the watermark; opt-in, needs watermark on
+  let settingsSync = false; // mirror the bottom Settings controls across tabs; opt-in, only while all in-scope panels open
   const panelKey = () => scopedKey("gexsync-panel", panelScope);
+  const settingsKey = () => scopedKey("gexsync-settings", panelScope);
   chrome.storage.local.get(CFG_KEY, (r) => {
     if (r[CFG_KEY]?.panelScope) panelScope = r[CFG_KEY].panelScope;
     watermark = r[CFG_KEY]?.watermark !== false; // default on
@@ -54,6 +56,7 @@
     groupShot = r[CFG_KEY]?.groupShot === true; // default off (opt-in)
     settingsNav = r[CFG_KEY]?.settingsNav === true; // default off (opt-in)
     showDte = r[CFG_KEY]?.dte === true; // default off (opt-in)
+    settingsSync = r[CFG_KEY]?.settingsSync === true; // default off (opt-in)
     zHudOn();
   });
 
@@ -213,6 +216,155 @@
     lastNav = v;
     send({ [navKey()]: { view: v, t: performance.now() } });
   }
+
+  // ---- Sync chart settings: mirror the bottom Settings controls (Chart Type,
+  // Profile Alignment, Time Zone) across tabs. Those controls only exist in the DOM
+  // while the Settings panel is OPEN, so we sync only while EVERY in-scope tab has it
+  // open (a presence beacon tracks that) — then every peer is guaranteed clickable.
+  // Scope follows Cross-page scope. A colored box marks the synced section; when not
+  // all panels are open, a "N/M panels open" hint explains why sync is idle. Opt-in.
+  const onState = () => /^\/state/.test(location.pathname);
+  const toggleGroup = (labels) => [...document.querySelectorAll(".MuiToggleButtonGroup-root")]
+    .find((g) => { const t = [...g.querySelectorAll("button")].map((b) => b.textContent.trim()); return labels.every((l) => t.includes(l)); }) || null;
+  const pressedLabel = (g) => g && ([...g.querySelectorAll("button")].find((b) => b.getAttribute("aria-pressed") === "true")?.textContent.trim() || null);
+  const tzCombo = () => [...document.querySelectorAll("input[role=combobox]")].find((i) => /\(utc/i.test(i.value || "")) || null;
+  const settingsOpenHere = () => !!tzCombo(); // stable open signal: the TZ select stays mounted the whole time Settings is open, unlike the toggle groups which re-render on click (and would flicker allOpen false mid-click)
+
+  function settingsState() {
+    const ct = toggleGroup(["Line", "Candles"]);
+    if (!ct) return null; // Settings not open here
+    return {
+      chart: pressedLabel(ct)?.toLowerCase() || null,
+      align: pressedLabel(toggleGroup(["Left", "Center", "Right"]))?.toLowerCase() || null,
+      tz: tzCombo()?.value || null,
+    };
+  }
+  function clickToggle(labels, target) {
+    if (!target) return;
+    const g = toggleGroup(labels); if (!g) return;
+    const btns = [...g.querySelectorAll("button")];
+    if (btns.find((b) => b.getAttribute("aria-pressed") === "true")?.textContent.trim().toLowerCase() === target) return; // no-op guard
+    btns.find((b) => b.textContent.trim().toLowerCase() === target)?.click();
+  }
+  function applyTz(tz) {
+    const combo = tzCombo();
+    if (!tz || !combo || (combo.value || "") === tz) return;
+    combo.click(); // open the MUI Select menu (options render in a portal)
+    setTimeout(() => {
+      const opt = [...document.querySelectorAll('[role="option"]')].find((o) => o.textContent.trim() === tz);
+      if (opt) opt.click(); else combo.blur(); // no match: leave it
+    }, 160);
+  }
+  function applySettings(msg) {
+    if (Date.now() < settingsBusyUntil) return; // I'm the just-clicked master — ignore incoming so an echo can't revert me
+    const state = msg && msg.state;
+    if (!state || !settingsState()) return; // no payload, or controls gone here — nothing to click
+    applyingRemote = true;
+    try {
+      clickToggle(["Line", "Candles"], state.chart);
+      clickToggle(["Left", "Center", "Right"], state.align);
+      applyTz(state.tz);
+    } finally {
+      setTimeout(() => { applyingRemote = false; }, 500);
+    }
+  }
+
+  // Click-driven master (the zoom-sync authority pattern): the tab where you click a
+  // Settings control is the authority. It broadcasts ONCE (no poll/read race) and holds
+  // a busy window during which it ignores incoming echoes, so it can't be reverted.
+  const SETTINGS_BUSY_MS = 1200;
+  let settingsBusyUntil = 0, pushTimer = 0;
+  function isSettingsControl(el) {
+    if (!el || !el.closest) return false;
+    const g = el.closest(".MuiToggleButtonGroup-root");
+    if (g) { const t = [...g.querySelectorAll("button")].map((b) => b.textContent.trim()); return t.includes("Line") || t.includes("Left"); }
+    if (el.closest("[role=combobox]") === tzCombo()) return true;                                  // the TZ select
+    const opt = el.closest('[role="option"]'); if (opt && /\(utc/i.test(opt.textContent || "")) return true; // a TZ menu option
+    return false;
+  }
+  function pushSettings(tries) {
+    if (!settingsSync) return;
+    const s = allOpen ? settingsState() : null; // gate on all-open AND controls being ready
+    if (!s) { if ((tries || 0) < 4) pushTimer = setTimeout(() => pushSettings((tries || 0) + 1), 130); return; } // gate down / mid-render: retry briefly, then give up if genuinely not all-open
+    send({ [settingsKey()]: { state: s, master: TAB, t: performance.now() } });
+  }
+  document.addEventListener("click", (e) => {
+    if (!settingsSync || applyingRemote) return; // ignore our own programmatic (apply) clicks
+    if (!isSettingsControl(e.target)) return;
+    settingsBusyUntil = Date.now() + SETTINGS_BUSY_MS; // this tab is the authority for a beat
+    clearTimeout(pushTimer);
+    pushTimer = setTimeout(() => pushSettings(0), 130); // let GEXbot update the DOM, then read + broadcast once
+  }, true);
+
+  // "All in-scope panels open" presence — mirrors the group-count beacon (per-tab key,
+  // expiry heartbeat, prune stale). Scope: "all" counts every tab; else same page-type.
+  let allOpen = false, spOpen = 0, spTotal = 0;
+  const spKey = () => "gexsync-sp:" + TAB;
+  setInterval(() => {
+    if (!alive()) return;
+    if (!onSyncPage() || !settingsSync) { chrome.storage.local.remove(spKey()); allOpen = false; spOpen = spTotal = 0; return; }
+    send({ [spKey()]: { page: location.pathname, open: settingsOpenHere(), exp: Date.now() + 3000 } });
+    get(null, (all) => {
+      const now = Date.now(), stale = []; let total = 0, open = 0;
+      for (const k in all) {
+        if (!k.startsWith("gexsync-sp:")) continue;
+        const e = all[k];
+        if (!e || e.exp <= now) { stale.push(k); continue; }
+        if (panelScope !== "all" && e.page !== location.pathname) continue; // by-page: same page-type only
+        total++; if (e.open) open++;
+      }
+      if (stale.length && alive()) chrome.storage.local.remove(stale);
+      spTotal = total; spOpen = open; allOpen = total > 0 && open === total;
+    });
+  }, 1000);
+
+  // Box (all open) or "N/M panels open" hint (not all open), drawn around the section.
+  const scopeWord = () => panelScope === "all" ? "all your GEXbot tabs" : (onState() ? "your /state tabs" : "your /classic tabs");
+  const boxColor = () => panelScope === "all" ? T.mint : (onState() ? T.azure : T.amber);
+  let boxEl = null, badgeEl = null, hintEl = null;
+  function ssRect() {
+    const els = [toggleGroup(["Line", "Candles"]), toggleGroup(["Left", "Center", "Right"]), (tzCombo()?.closest(".MuiFormControl-root") || tzCombo())].filter(Boolean);
+    if (!els.length) return null;
+    const rs = els.map((e) => e.getBoundingClientRect());
+    return { left: Math.min(...rs.map((r) => r.left)), top: Math.min(...rs.map((r) => r.top)), right: Math.max(...rs.map((r) => r.right)), bottom: Math.max(...rs.map((r) => r.bottom)) };
+  }
+  function paintSettingsBox() {
+    if (!settingsSync || !onSyncPage() || !settingsOpenHere()) { hideBox(); hideHint(); return; }
+    if (allOpen) { hideHint(); drawBox(); } else { hideBox(); drawHint(); }
+  }
+  function drawBox() {
+    const r = ssRect(); if (!r) { hideBox(); return; }
+    if (!boxEl) {
+      boxEl = document.createElement("div");
+      boxEl.style.cssText = "position:fixed;pointer-events:none;border-radius:10px;z-index:2147481800;box-sizing:border-box;";
+      badgeEl = document.createElement("div");
+      badgeEl.style.cssText = "position:absolute;top:-9px;right:8px;pointer-events:auto;cursor:help;font:600 9.5px 'IBM Plex Sans',system-ui,sans-serif;padding:1px 6px;border-radius:9px;white-space:nowrap;";
+      boxEl.appendChild(badgeEl);
+      (document.body || document.documentElement).appendChild(boxEl);
+    }
+    const pad = 6, c = boxColor();
+    boxEl.style.left = (r.left - pad) + "px"; boxEl.style.top = (r.top - pad) + "px";
+    boxEl.style.width = (r.right - r.left + pad * 2) + "px"; boxEl.style.height = (r.bottom - r.top + pad * 2) + "px";
+    boxEl.style.border = `1.5px solid ${c}`;
+    badgeEl.style.background = c; badgeEl.style.color = "#08110c"; badgeEl.textContent = "⟳ GexSync synced";
+    badgeEl.title = `GexSync is syncing these settings across ${scopeWord()} (Cross-page scope: ${panelScope === "all" ? "All tabs" : "By page"}). Turn off “Sync chart settings” in the GexSync popup to stop.`;
+    boxEl.style.display = "block";
+  }
+  function hideBox() { if (boxEl) boxEl.style.display = "none"; }
+  function drawHint() {
+    const r = ssRect(); if (!r) { hideHint(); return; }
+    if (!hintEl) {
+      hintEl = document.createElement("div");
+      hintEl.style.cssText = `position:fixed;pointer-events:auto;cursor:help;z-index:2147481800;font:600 10px 'IBM Plex Sans',system-ui,sans-serif;padding:3px 8px;border-radius:8px;background:${T.glass};backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);color:${T.ink};border:1px dashed ${T.muted};white-space:nowrap;`;
+      (document.body || document.documentElement).appendChild(hintEl);
+    }
+    hintEl.style.left = (r.left - 6) + "px"; hintEl.style.top = (r.top - 26) + "px";
+    hintEl.textContent = `GexSync settings sync · ${spOpen}/${spTotal} panels open`;
+    hintEl.title = `Settings sync waits until every ${panelScope === "all" ? "GEXbot tab" : (onState() ? "/state tab" : "/classic tab")} has its Settings panel open. Open them all to sync; turn off “Sync chart settings” in the popup to disable.`;
+    hintEl.style.display = "block";
+  }
+  function hideHint() { if (hintEl) hintEl.style.display = "none"; }
+  setInterval(paintSettingsBox, 300);
 
   // ---- options-profile switches (delta/gamma/vanna/charm), /state only ----
   const OPTS_KEY = "gexsync-opts" + location.pathname; // page-scoped; only /state has them
@@ -949,13 +1101,14 @@
 
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area !== "local") return;
-    if (changes[CFG_KEY]?.newValue) { const c = changes[CFG_KEY].newValue; const pScope = panelScope; if (c.panelScope) panelScope = c.panelScope; watermark = c.watermark !== false; const pSync = zoomSync; zoomSync = c.zoomSync === true; groupShot = c.groupShot === true; const sNav = settingsNav; settingsNav = c.settingsNav === true; if (settingsNav !== sNav) lastNav = null; showDte = c.dte === true; if (!zoomSync) writeHold(null); else if (!pSync || panelScope !== pScope) adoptLive(); zHudOn(); }
+    if (changes[CFG_KEY]?.newValue) { const c = changes[CFG_KEY].newValue; const pScope = panelScope; if (c.panelScope) panelScope = c.panelScope; watermark = c.watermark !== false; const pSync = zoomSync; zoomSync = c.zoomSync === true; groupShot = c.groupShot === true; const sNav = settingsNav; settingsNav = c.settingsNav === true; if (settingsNav !== sNav) lastNav = null; showDte = c.dte === true; settingsSync = c.settingsSync === true; if (!zoomSync) writeHold(null); else if (!pSync || panelScope !== pScope) adoptLive(); zHudOn(); }
     if (changes[MODE_KEY]?.newValue) { mode = changes[MODE_KEY].newValue === "live" ? "profiles" : changes[MODE_KEY].newValue; renderChip(); }
     if (changes[SESSION_KEY]) { replayLocked = !!changes[SESSION_KEY].newValue && changes[SESSION_KEY].newValue.phase !== "idle"; renderChip(); }
     if (!onSyncPage()) return; // off /classic|/state (SPA nav): don't touch the page
     if (profileSync() && changes[KEY]?.newValue) applyProfile(changes[KEY].newValue.group, changes[KEY].newValue.keyword);
     if (changes[panelKey()]?.newValue) applyPanel(changes[panelKey()].newValue.collapsed); // panel always
     if (settingsNav && changes[navKey()]?.newValue) applyNav(changes[navKey()].newValue.view); // Settings-panel nav mirror (opt-in)
+    if (settingsSync && changes[settingsKey()]?.newValue) applySettings(changes[settingsKey()].newValue); // bottom Settings values mirror (opt-in, all-open gated, click-driven master)
     if (profileSync() && changes[OPTS_KEY]?.newValue) applyOpts(changes[OPTS_KEY].newValue.state);
     if (tickerSync() && changes[tickerChan()]?.newValue) applyTicker(changes[tickerChan()].newValue.ticker);
     if (tickerSync() && changes[ES_CHAN()]?.newValue) applyEs(changes[ES_CHAN()].newValue.es);
