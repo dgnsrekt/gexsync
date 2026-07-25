@@ -4,6 +4,20 @@ All notable changes to GexSync are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and the project follows
 [semantic versioning](https://semver.org/).
 
+## [1.7.0] — 2026-07-25
+
+### Added
+- **Sync chart settings** (popup toggle, off by default). Mirrors the Settings
+  panel's **Chart Type** (Line/Candles), **Profile Alignment** (Left/Center/Right),
+  and **Time Zone** across your tabs, following **Cross-page scope** (all tabs vs
+  by-page). Because GEXbot only renders these controls while the Settings panel is
+  open, syncing activates **only while every in-scope tab has Settings open** — a
+  colored box marks the synced section (one color for all-tabs; distinct
+  state/classic colors for by-page), and when not all panels are open a
+  `N/M panels open` hint shows why it's waiting. The tab where you click a control
+  is the authority (with a brief busy window so a change never bounces back).
+  Nothing is saved on our end — it's a live mirror, same as panel-collapse sync.
+
 ## [1.6.0] — 2026-07-24
 
 ### Added
@@ -182,6 +196,7 @@ All notable changes to GexSync are documented here. The format is based on
   different dates, tickers, and profiles side by side.
 - Bundled README, LICENSE, and OKF knowledge base.
 
+[1.7.0]: https://github.com/dgnsrekt/gexsync/compare/v1.6.0...v1.7.0
 [1.6.0]: https://github.com/dgnsrekt/gexsync/compare/v1.5.0...v1.6.0
 [1.5.0]: https://github.com/dgnsrekt/gexsync/compare/v1.4.1...v1.5.0
 [1.4.1]: https://github.com/dgnsrekt/gexsync/compare/v1.4.0...v1.4.1
