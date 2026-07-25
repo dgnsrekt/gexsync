@@ -283,9 +283,9 @@
     return false;
   }
   function pushSettings(tries) {
-    if (!settingsSync || !allOpen) return; // still gated on every in-scope panel being open
-    const s = settingsState();
-    if (!s) { if ((tries || 0) < 3) pushTimer = setTimeout(() => pushSettings((tries || 0) + 1), 120); return; } // controls mid-render: retry
+    if (!settingsSync) return;
+    const s = allOpen ? settingsState() : null; // gate on all-open AND controls being ready
+    if (!s) { if ((tries || 0) < 4) pushTimer = setTimeout(() => pushSettings((tries || 0) + 1), 130); return; } // gate down / mid-render: retry briefly, then give up if genuinely not all-open
     send({ [settingsKey()]: { state: s, master: TAB, t: performance.now() } });
   }
   document.addEventListener("click", (e) => {
