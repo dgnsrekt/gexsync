@@ -77,17 +77,19 @@ const wm = document.getElementById("watermark");
 const zoomSyncEl = document.getElementById("zoomSync");
 const groupShotEl = document.getElementById("groupShot");
 const settingsNavEl = document.getElementById("settingsNav");
+const settingsSyncEl = document.getElementById("settingsSync");
 const dteEl = document.getElementById("dte");
 // DTE rides on the watermark — grey it out and force it off when the watermark is off.
 const syncDteLock = () => { dteEl.disabled = !wm.checked; if (!wm.checked) dteEl.checked = false; };
-chrome.storage.local.get("gexsync-cfg", (r) => { sel.value = r["gexsync-cfg"]?.panelScope || "all"; wm.checked = r["gexsync-cfg"]?.watermark !== false; zoomSyncEl.checked = r["gexsync-cfg"]?.zoomSync === true; groupShotEl.checked = r["gexsync-cfg"]?.groupShot === true; settingsNavEl.checked = r["gexsync-cfg"]?.settingsNav === true; dteEl.checked = r["gexsync-cfg"]?.dte === true; syncDteLock(); });
-const saveCfg = () => chrome.storage.local.get("gexsync-cfg", (r) => chrome.storage.local.set({ "gexsync-cfg": { ...(r["gexsync-cfg"] || {}), panelScope: sel.value, watermark: wm.checked, zoomSync: zoomSyncEl.checked, groupShot: groupShotEl.checked, settingsNav: settingsNavEl.checked, dte: dteEl.checked } }));
+chrome.storage.local.get("gexsync-cfg", (r) => { sel.value = r["gexsync-cfg"]?.panelScope || "all"; wm.checked = r["gexsync-cfg"]?.watermark !== false; zoomSyncEl.checked = r["gexsync-cfg"]?.zoomSync === true; groupShotEl.checked = r["gexsync-cfg"]?.groupShot === true; settingsNavEl.checked = r["gexsync-cfg"]?.settingsNav === true; settingsSyncEl.checked = r["gexsync-cfg"]?.settingsSync === true; dteEl.checked = r["gexsync-cfg"]?.dte === true; syncDteLock(); });
+const saveCfg = () => chrome.storage.local.get("gexsync-cfg", (r) => chrome.storage.local.set({ "gexsync-cfg": { ...(r["gexsync-cfg"] || {}), panelScope: sel.value, watermark: wm.checked, zoomSync: zoomSyncEl.checked, groupShot: groupShotEl.checked, settingsNav: settingsNavEl.checked, settingsSync: settingsSyncEl.checked, dte: dteEl.checked } }));
 sel.addEventListener("change", saveCfg);
 wm.addEventListener("change", () => { syncDteLock(); saveCfg(); });
 dteEl.addEventListener("change", saveCfg);
 zoomSyncEl.addEventListener("change", saveCfg);
 groupShotEl.addEventListener("change", saveCfg);
 settingsNavEl.addEventListener("change", saveCfg);
+settingsSyncEl.addEventListener("change", saveCfg);
 
 // Replay settings — merge on write to keep master.
 const track = document.getElementById("replayTrack");
@@ -138,6 +140,7 @@ async function stateSnapshot() {
     `Live zoom sync: ${zoomSyncEl.checked ? "on" : "off"}`,
     `Group screenshot: ${groupShotEl.checked ? "on" : "off"}`,
     `Settings nav sync: ${settingsNavEl.checked ? "on" : "off"}`,
+    `Chart settings sync: ${settingsSyncEl.checked ? "on" : "off"}`,
     `Zoom layout: ${layoutMeta && layoutMeta.count ? layoutMeta.count + " ticker(s) saved · " + ago(layoutMeta.t) : "none"}`,
     `Replay session: ${sessTxt}`,
     `Replay play-tracking: ${track.value === "heartbeat" ? "heartbeat" : "on pause"}${dbg.checked ? " · debug" : ""}`,
