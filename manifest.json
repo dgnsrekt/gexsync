@@ -4,7 +4,7 @@
   "version": "1.7.0",
   "description": "Sync gex/options profile + replay transport across GEXbot tabs, tickers stay independent.",
   "permissions": ["storage", "downloads"],
-  "host_permissions": ["https://www.gexbot.com/*"],
+  "host_permissions": ["https://www.gexbot.com/*", "https://api.massive.com/*", "https://apewisdom.io/*"],
   "background": { "service_worker": "background.js" },
   "icons": { "16": "icons/icon16.png", "32": "icons/icon32.png", "48": "icons/icon48.png", "128": "icons/icon128.png" },
   "action": {
@@ -17,7 +17,7 @@
     "run_at": "document_idle"
   }, {
     "matches": ["https://www.gexbot.com/state*", "https://www.gexbot.com/classic*"],
-    "js": ["netwatch.js", "replaydata.js", "zoom.js", "shot.js"],
+    "js": ["netwatch.js", "replaydata.js", "zoom.js", "shot.js", "pdlines.js"],
     "run_at": "document_start",
     "world": "MAIN"
   }],

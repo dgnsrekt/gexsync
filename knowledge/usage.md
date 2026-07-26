@@ -9,8 +9,12 @@ timestamp: 2026-07-23T00:00:00Z
 # Using GexSync
 
 Everything is driven from the GexSync popup — click the toolbar icon on a GEXbot
-`state` or `classic` tab. The popup has **Global settings**, a **Mode** selector,
-and a live **Current state** readout of which tabs are participating.
+`state` or `classic` tab. The popup has two pages, picked with the selector at the top:
+
+* **Sync** — **Global settings** and the **Mode** selector.
+* **Data keys** — the opt-in [chart data add-ons](data-addons.md), off by default.
+
+Below both sits a live **Current state** readout of which tabs are participating.
 
 Exactly one sync mode is active at a time. Panel-collapse sync runs in all modes.
 
@@ -56,6 +60,22 @@ off Replay, or hit **Exit** in the on-page replay bar.
   zoom sync** (below). Works in every mode.
 * **Add profile to chart watermark** — stamps the active profile name into the
   chart watermark so screenshots are self-labeling.
+* **Show days to expiry (DTE)** — appends the selected profile's DTE to that watermark:
+  **latest**/**next** show `{n}DTE` (e.g. `VIX NEXT 12DTE`), **90d** shows `(AGG)` since
+  it spans many expiries. Counted from the chart's own update date, so it **follows
+  replay**. Rides on the watermark, so it's disabled when the watermark is off, and each
+  tab computes its own — nothing syncs.
+* **Sync settings navigation** — with it on, opening the **Settings** panel and moving
+  between **Alerts**, **Alerts History** and **Home** mirrors across your synced tabs.
+  Follows **Cross-page scope**. Off, each tab's Settings panel is independent.
+* **Sync chart settings** — mirrors the Settings panel's **Chart Type** (Line/Candles),
+  **Profile Alignment** (Left/Center/Right) and **Time Zone** across tabs, following
+  **Cross-page scope**. GEXbot only renders those controls while the Settings panel is
+  open, so this syncs **only while every in-scope tab has Settings open**: a colored box
+  marks the synced section (one color for all-tabs, distinct state/classic colors for
+  by-page), and when panels are missing an `N/M panels open` hint shows why it's waiting.
+  The tab where you click a control is the authority. Nothing is stored — it's a live
+  mirror, like panel-collapse sync.
 * **Live zoom sync** — when on, charts on the **same ticker** stay zoom-matched in
   real time (zoom or pan one, the rest follow) and each holds its zoom through
   GEXbot's periodic chart refresh — even on a single tab, **and during a replay
@@ -79,6 +99,27 @@ off Replay, or hit **Exit** in the on-page replay bar.
   week's timestamps. Panels briefly collapse so each chart is captured full-width.
   Off, the camera works as GEXbot's normal single-shot menu.
 
+## Data keys — the chart add-ons
+
+The popup's second page holds the add-ons that pull in **outside** data, as opposed to
+syncing your own tabs. They are **all off by default**:
+
+* **Reddit buzz** — the current ticker's Reddit mention rank. No key, no signup; the
+  toggle is the only gate.
+* **Massive.com data** — company details (name, exchange, market cap) for the current
+  ticker. Paste your own [Massive.com](https://massive.com) API key; a **free** key
+  covers it, and with no key saved nothing is requested at all.
+* **Previous-day levels** — draws the previous trading day's Open/High/Low/Close as
+  labelled lines (`PDO`/`PDH`/`PDL`/`PDC`), each independently toggleable, with the label
+  position selectable. Uses the same Massive key and follows replay. Stocks & ETFs only.
+
+The first two show up in a details panel that grows out of the **bottom pill**: hover the
+pill's ticker segment to peek, **click** it to pin the panel open, **Esc** to close. If a
+source is failing, an amber dot appears on that segment and the panel explains why.
+
+Full detail — what each request contains, what a free key's limits mean in practice, and
+every message you might see: [data-addons](data-addons.md).
+
 ## Current state
 
 The popup's **Current state** section lists every participating tab
@@ -86,5 +127,6 @@ The popup's **Current state** section lists every participating tab
 list) puts a full plain-text snapshot — global settings, mode, and the whole tab
 roster — on your clipboard, handy for sharing your setup or reporting an issue.
 
-See [overview](overview.md) for the big picture and [safety](safety.md) for what
-the extension can access while doing all this.
+See [overview](overview.md) for the big picture, [data-addons](data-addons.md) for the
+opt-in outside-data features, and [safety](safety.md) for what the extension can access
+while doing all this.

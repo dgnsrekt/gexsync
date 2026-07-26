@@ -30,6 +30,17 @@ chrome.tabs.query({ url: "https://www.gexbot.com/*" }, async (tabs) => {
     rows.length ? rows.map((r) => `<div>${r}</div>`).join("") : `<span class="muted">no gexbot tabs</span>`;
 });
 
+// Pages: sync | keys. Same show/hide-by-attribute trick as Mode below (only the
+// wrapper DIVs toggle; the seg buttons also carry data-page). Not persisted —
+// the popup reopens on Sync, which is what you want 99% of the time.
+const pageBtns = [...document.querySelectorAll("#pageSeg .seg-btn")];
+const showPage = (p) => {
+  document.querySelectorAll("div[data-page]").forEach((el) => { el.hidden = el.dataset.page !== p; });
+  pageBtns.forEach((b) => b.setAttribute("aria-selected", b.dataset.page === p ? "true" : "false"));
+};
+pageBtns.forEach((b) => b.addEventListener("click", () => showPage(b.dataset.page)));
+showPage("sync");
+
 // Mode: profiles | ticker | replay (shared key read by content.js + replay.js)
 const SESSION_KEY = "replay-session";
 const idleSession = { phase: "idle", master: null, clients: [] };
@@ -79,17 +90,25 @@ const groupShotEl = document.getElementById("groupShot");
 const settingsNavEl = document.getElementById("settingsNav");
 const settingsSyncEl = document.getElementById("settingsSync");
 const dteEl = document.getElementById("dte");
+const buzzEl = document.getElementById("buzz");
+const pdEls = { pdO: document.getElementById("pdO"), pdH: document.getElementById("pdH"), pdL: document.getElementById("pdL"), pdC: document.getElementById("pdC") };
+const pdLabelSeg = document.getElementById("pdLabelSeg");
+let pdLabelPos = "left"; // left | center | right
+const renderPdLabel = () => pdLabelSeg.querySelectorAll(".seg-btn").forEach((b) => b.setAttribute("aria-selected", b.dataset.pos === pdLabelPos ? "true" : "false"));
 // DTE rides on the watermark — grey it out and force it off when the watermark is off.
 const syncDteLock = () => { dteEl.disabled = !wm.checked; if (!wm.checked) dteEl.checked = false; };
-chrome.storage.local.get("gexsync-cfg", (r) => { sel.value = r["gexsync-cfg"]?.panelScope || "all"; wm.checked = r["gexsync-cfg"]?.watermark !== false; zoomSyncEl.checked = r["gexsync-cfg"]?.zoomSync === true; groupShotEl.checked = r["gexsync-cfg"]?.groupShot === true; settingsNavEl.checked = r["gexsync-cfg"]?.settingsNav === true; settingsSyncEl.checked = r["gexsync-cfg"]?.settingsSync === true; dteEl.checked = r["gexsync-cfg"]?.dte === true; syncDteLock(); });
-const saveCfg = () => chrome.storage.local.get("gexsync-cfg", (r) => chrome.storage.local.set({ "gexsync-cfg": { ...(r["gexsync-cfg"] || {}), panelScope: sel.value, watermark: wm.checked, zoomSync: zoomSyncEl.checked, groupShot: groupShotEl.checked, settingsNav: settingsNavEl.checked, settingsSync: settingsSyncEl.checked, dte: dteEl.checked } }));
+chrome.storage.local.get("gexsync-cfg", (r) => { const g = r["gexsync-cfg"] || {}; sel.value = g.panelScope || "all"; wm.checked = g.watermark !== false; zoomSyncEl.checked = g.zoomSync === true; groupShotEl.checked = g.groupShot === true; settingsNavEl.checked = g.settingsNav === true; settingsSyncEl.checked = g.settingsSync === true; dteEl.checked = g.dte === true; buzzEl.checked = g.buzz === true; for (const k in pdEls) pdEls[k].checked = g[k] === true; pdLabelPos = g.pdLabel || "left"; renderPdLabel(); syncDteLock(); });
+const saveCfg = () => chrome.storage.local.get("gexsync-cfg", (r) => chrome.storage.local.set({ "gexsync-cfg": { ...(r["gexsync-cfg"] || {}), panelScope: sel.value, watermark: wm.checked, zoomSync: zoomSyncEl.checked, groupShot: groupShotEl.checked, settingsNav: settingsNavEl.checked, settingsSync: settingsSyncEl.checked, dte: dteEl.checked, buzz: buzzEl.checked, pdO: pdEls.pdO.checked, pdH: pdEls.pdH.checked, pdL: pdEls.pdL.checked, pdC: pdEls.pdC.checked, pdLabel: pdLabelPos } }));
 sel.addEventListener("change", saveCfg);
 wm.addEventListener("change", () => { syncDteLock(); saveCfg(); });
 dteEl.addEventListener("change", saveCfg);
+buzzEl.addEventListener("change", saveCfg);
 zoomSyncEl.addEventListener("change", saveCfg);
 groupShotEl.addEventListener("change", saveCfg);
 settingsNavEl.addEventListener("change", saveCfg);
 settingsSyncEl.addEventListener("change", saveCfg);
+for (const k in pdEls) pdEls[k].addEventListener("change", saveCfg);
+pdLabelSeg.querySelectorAll(".seg-btn").forEach((b) => b.addEventListener("click", () => { pdLabelPos = b.dataset.pos; renderPdLabel(); saveCfg(); }));
 
 // Replay settings — merge on write to keep master.
 const track = document.getElementById("replayTrack");
@@ -137,6 +156,8 @@ async function stateSnapshot() {
     `Cross-page scope: ${sel.value}`,
     `Watermark: ${wm.checked ? "on" : "off"}`,
     `Show DTE: ${dteEl.checked ? "on" : "off"}`,
+    `Prev-day lines: ${["pdO", "pdH", "pdL", "pdC"].filter((k) => pdEls[k].checked).map((k) => k.slice(2)).join("/") || "off"}`,
+    `Reddit buzz: ${buzzEl.checked ? "on" : "off"}`,
     `Live zoom sync: ${zoomSyncEl.checked ? "on" : "off"}`,
     `Group screenshot: ${groupShotEl.checked ? "on" : "off"}`,
     `Settings nav sync: ${settingsNavEl.checked ? "on" : "off"}`,
@@ -199,4 +220,28 @@ zoomRecallBtn.addEventListener("click", () => {
   chrome.storage.local.set({ "gexsync-zoom-recall": { t: Date.now() } });
   zoomRecallBtn.textContent = "Recalled ✓"; zoomRecallBtn.classList.add("done");
   setTimeout(() => { zoomRecallBtn.textContent = "⭱ Recall"; zoomRecallBtn.classList.remove("done"); }, 1400);
+});
+
+// ---- Massive.com API key: enter → save → mask ----
+const MV_KEY = "gexsync-massive";
+const mvKeyEl = document.getElementById("mvKey");
+const mvMask = document.getElementById("mvMask");
+// Swap the full-width field for a masked readout when a key is saved. Both are
+// plain (non-flex) elements, so the `hidden` attribute actually hides them. The
+// raw key is never rendered back.
+const mvShow = (key) => {
+  const has = !!key;
+  mvKeyEl.hidden = has; mvMask.hidden = !has;
+  if (has) mvMask.textContent = "🔒 Saved · ····" + String(key).slice(-4);
+  else mvKeyEl.value = "";
+};
+chrome.storage.local.get(MV_KEY, (r) => mvShow(r[MV_KEY]?.key));
+document.getElementById("mvSave").addEventListener("click", () => {
+  const key = mvKeyEl.value.trim();
+  if (!key) return;
+  chrome.storage.local.set({ [MV_KEY]: { key } }, () => mvShow(key));
+});
+mvKeyEl.addEventListener("keydown", (e) => { if (e.key === "Enter") document.getElementById("mvSave").click(); });
+document.getElementById("mvClear").addEventListener("click", () => {
+  chrome.storage.local.remove(MV_KEY, () => mvShow(null)); // content.js clears its cache on the change
 });

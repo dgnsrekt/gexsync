@@ -38,5 +38,14 @@ single ZIP — a stitched grid, the individual images, and a manifest that recor
 the data date/time each pane is showing). A single **Cross-page scope** setting
 decides whether `state` and `classic` tabs are treated as one pool or kept separate.
 
+## Outside data is opt-in and off by default
+
+Syncing your tabs needs no network access, and GexSync makes **no outbound requests**
+until you deliberately switch on one of the **chart data add-ons** on the popup's *Data
+keys* page: company details and previous-day price lines (which do nothing until you save
+your own free API key), and a Reddit mention rank (keyless — the toggle is the only gate).
+See [data-addons](data-addons.md) for what each one does and
+[safety](safety.md) for exactly what leaves the browser and when.
+
 See [usage](usage.md) for how to drive each mode, [install](install.md) to set
 it up, and [safety](safety.md) for what it can and cannot access.

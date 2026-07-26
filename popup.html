@@ -11,7 +11,6 @@
   .wordmark { font: 700 20px/1 var(--display); letter-spacing: -.01em; }
   .wordmark .s { color: var(--mint); }
   .tag { margin-left: auto; font: 500 10px/1 var(--mono); letter-spacing: .12em; color: var(--muted); text-transform: uppercase; }
-
   /* section labels */
   .label { font: 500 10px/1 var(--mono); letter-spacing: .14em; text-transform: uppercase; color: var(--muted); margin: 8px 0 5px; }
   .hint { color: var(--muted); font-size: 11px; line-height: 1.35; margin-top: 3px; }
@@ -109,6 +108,12 @@
     <span class="tag">MV3 · gexbot.com</span>
   </div>
 
+  <div class="seg" id="pageSeg" role="tablist">
+    <button class="seg-btn" data-page="sync" role="tab">Sync</button>
+    <button class="seg-btn" data-page="keys" role="tab">Data keys</button>
+  </div>
+
+  <div data-page="sync">
   <div class="label">Global settings</div>
   <label class="row">
     Cross-page scope
@@ -181,6 +186,48 @@
       <span>Debug — show master/client role in pill</span>
     </label>
   </div>
+
+  </div><!-- /page: sync -->
+
+  <div data-page="keys" hidden>
+  <div class="label">Reddit buzz <span style="color:var(--muted);text-transform:none;letter-spacing:0">· opt-in · no key</span></div>
+  <label class="switch">
+    <input type="checkbox" id="buzz"><span class="track"></span>
+    <span>Show Reddit mention rank</span>
+  </label>
+  <div class="hint" style="margin-top:5px">Adds the current ticker's Reddit mention rank and count to the watermark popover, plus where it ranks among the tickers you have open, from <b>apewisdom.io</b> — no signup, no key. Covers roughly the 300 most-mentioned tickers, refreshed hourly; quieter symbols show as unranked. Off by default.</div>
+
+  <div class="label">Massive.com data <span style="color:var(--muted);text-transform:none;letter-spacing:0">· opt-in</span></div>
+  <input id="mvKey" type="password" spellcheck="false" autocomplete="off" placeholder="Massive (Polygon) API key"
+    style="width:100%;margin-top:2px;padding:7px 10px;border-radius:9px;background:var(--raised);color:var(--ink);border:1px solid var(--line);font:12px var(--mono)">
+  <div id="mvMask" hidden style="margin-top:2px;padding:7px 10px;border-radius:9px;background:var(--raised);border:1px solid var(--line);font:12px var(--mono);color:var(--mint)"></div>
+  <div class="btnrow" style="gap:8px;margin-top:6px">
+    <button id="mvSave" class="btn" style="flex:1">Save</button>
+    <button id="mvClear" class="btn" style="flex:1">Clear</button>
+  </div>
+  <div class="hint" style="margin-top:5px">Shows the current ticker's company details (name, market cap, exchange) in a small panel on the chart. Your key is stored locally and masked after saving — it's sent only to Massive, never anywhere else.</div>
+  <!-- Both add-ons run on either plan, so there's nothing to select — the plans differ
+       only in speed and history depth. Stated once, here, instead of a tier toggle
+       that could disagree with the key. -->
+  <div class="hint" style="margin-top:6px;padding:7px 10px;border-radius:9px;background:var(--raised);border:1px solid var(--line)">
+    <b>Free key</b> — 5 calls/min, end-of-day data, 2 years of history. Both add-ons below work. Replay further back than ~2 years shows no levels, and opening several new tickers at once can throttle briefly; it retries on its own.<br>
+    <b>Paid key</b> — unlimited calls, longer history. Same add-ons, no throttling.
+  </div>
+
+  <div class="label">Previous-day levels <span style="color:var(--muted);text-transform:none;letter-spacing:0">· opt-in</span></div>
+  <div class="btnrow" style="gap:14px;margin-top:2px;flex-wrap:wrap">
+    <label class="switch" style="margin-top:0"><input type="checkbox" id="pdO"><span class="track"></span><span>Open</span></label>
+    <label class="switch" style="margin-top:0"><input type="checkbox" id="pdH"><span class="track"></span><span>High</span></label>
+    <label class="switch" style="margin-top:0"><input type="checkbox" id="pdL"><span class="track"></span><span>Low</span></label>
+    <label class="switch" style="margin-top:0"><input type="checkbox" id="pdC"><span class="track"></span><span>Close</span></label>
+  </div>
+  <div class="seg" id="pdLabelSeg" role="tablist" style="margin-top:6px">
+    <button class="seg-btn" data-pos="left" role="tab">Label left</button>
+    <button class="seg-btn" data-pos="center" role="tab">Center</button>
+    <button class="seg-btn" data-pos="right" role="tab">Right</button>
+  </div>
+  <div class="hint" style="margin-top:5px">Draws white horizontal lines on the chart at the previous trading day's Open/High/Low/Close (labeled PDO/PDH/PDL/PDC). Each independent; off by default. Uses the Massive key and follows replay. Stocks &amp; ETFs only.</div>
+  </div><!-- /page: keys -->
 
   <details id="stateWrap">
     <summary>

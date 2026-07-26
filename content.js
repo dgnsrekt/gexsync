@@ -3,6 +3,7 @@
 (function () {
   const KEY = "gexsync" + location.pathname; // profile channel, always per page
   const CFG_KEY = "gexsync-cfg";
+  const MASSIVE_KEY = "gexsync-massive"; // Massive.com API key + fundamentals cfg
   let applyingRemote = false; // suppress re-broadcast during programmatic click
 
   // chrome.runtime?.id is falsy once this content script is orphaned by an
@@ -47,6 +48,10 @@
   let settingsNav = false; // mirror Settings-panel navigation (gear/alerts/history/home); opt-in
   let showDte = false; // append days-to-expiry (or (AGG)) to the watermark; opt-in, needs watermark on
   let settingsSync = false; // mirror the bottom Settings controls across tabs; opt-in, only while all in-scope panels open
+  let pdShow = { o: false, h: false, l: false, c: false }; // prev-day OHLC lines on the chart; each opt-in
+  let pdLabelPos = "left"; // label placement: left | center | right
+  let buzzOn = false; // ApeWisdom Reddit mentions in the watermark popover; opt-in, no key
+  const readPd = (c) => ({ o: c?.pdO === true, h: c?.pdH === true, l: c?.pdL === true, c: c?.pdC === true });
   const panelKey = () => scopedKey("gexsync-panel", panelScope);
   const settingsKey = () => scopedKey("gexsync-settings", panelScope);
   chrome.storage.local.get(CFG_KEY, (r) => {
@@ -57,6 +62,9 @@
     settingsNav = r[CFG_KEY]?.settingsNav === true; // default off (opt-in)
     showDte = r[CFG_KEY]?.dte === true; // default off (opt-in)
     settingsSync = r[CFG_KEY]?.settingsSync === true; // default off (opt-in)
+    pdShow = readPd(r[CFG_KEY]);
+    pdLabelPos = r[CFG_KEY]?.pdLabel || "left";
+    buzzOn = r[CFG_KEY]?.buzz === true; // default off (opt-in)
     zHudOn();
   });
 
@@ -914,7 +922,15 @@
     chip.id = "gexsync-mode-chip";
     // bottom-LEFT, raised above the replay transport bar (left:20 bottom:20) so
     // they don't overlap in Replay mode; the split-view divider covered the right.
-    chip.style.cssText = `position:fixed;left:16px;bottom:72px;z-index:2147482000;display:flex;align-items:center;border-radius:9999px;background:${T.glass};backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);border:1px solid rgba(255,255,255,.12);color:${T.ink};font:600 13px ${T.ui};box-shadow:0 8px 24px rgba(0,0,0,.45);user-select:none;`;
+    // overflow:hidden so a segment's hover wash clips to the pill's own curve
+    chip.style.cssText = `position:relative;display:flex;align-items:center;border-radius:9999px;overflow:hidden;background:${T.glass};backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);border:1px solid rgba(255,255,255,.12);color:${T.ink};font:600 13px ${T.ui};box-shadow:0 8px 24px rgba(0,0,0,.45);user-select:none;`;
+    // The pill lives in a bottom-anchored column, so the details panel can be a
+    // SIBLING above it instead of a floating card positioned by hand: same left edge,
+    // grows upward, and it follows the pill automatically when segments appear or
+    // vanish (group segment, replay mark). No rect math, no reposition-on-resize.
+    const stack = document.createElement("div");
+    stack.id = "gexsync-stack";
+    stack.style.cssText = "position:fixed;left:16px;bottom:72px;z-index:2147482000;display:flex;flex-direction:column;align-items:flex-start;gap:8px;width:max-content;";
     const MODES = ["profiles", "ticker", "replay"];
     const LABEL = { profiles: "Profiles", ticker: "Ticker", replay: "Replay" };
 
@@ -944,8 +960,10 @@
     // info segment: this tab's id · page · ticker · profile — visible with the
     // side panel closed, replaces the top-left debug badge that blocked the nav
     // links. replay.js appends MASTER/client via chip.dataset.replayRole.
+    // …and it doubles as the details panel's handle: hover opens, click pins.
     const infoSeg = document.createElement("span");
-    infoSeg.style.cssText = `display:flex;align-items:center;padding:6px 14px;border-left:1px solid rgba(255,255,255,.12);font:500 12px ${T.mono};letter-spacing:.3px;white-space:nowrap;color:${T.ink};`;
+    infoSeg.style.cssText = `display:flex;align-items:center;gap:6px;padding:6px 14px;border-left:1px solid rgba(255,255,255,.12);font:500 12px ${T.mono};letter-spacing:.3px;white-space:nowrap;color:${T.ink};cursor:pointer;transition:background .16s;`;
+    infoSeg.title = "Ticker details — hover to peek, click to pin open (Esc closes)";
 
     chip.append(markSeg, modeSeg, grpSeg, infoSeg);
     const shortId = TAB.slice(0, 3).toUpperCase();
@@ -956,8 +974,21 @@
       const role = r ? ` ${sep} <span style="color:${r === "MASTER" ? T.mint : T.azure}">${r}</span>` : "";
       const page = location.pathname.replace(/^\//, "").toUpperCase();
       const prof = profileLabel().replace("90d", "90 days").toUpperCase();
+      // Panel state rides the same dataset channel replay.js uses for the role:
+      // "" closed, "1" peeking, "lock" pinned. Caret points up because the panel
+      // opens upward; the wash makes the segment read as the thing that opened it.
+      const st = chip.dataset.mvOpen || "";
+      // amber = a source is failing (shown open OR closed, so you notice without
+      // hovering); mint = just the open/pinned state. The panel says which and why.
+      const warn = chip.dataset.mvWarn === "1";
+      const cue = st === "lock" ? "🔒" : st ? "▴" : warn ? "●" : "";
+      infoSeg.title = warn
+        ? "A data source is failing — open for the reason"
+        : "Ticker details — hover to peek, click to pin open (Esc closes)";
+      infoSeg.style.background = st ? "rgba(22,224,163,.15)" : warn ? "rgba(255,180,84,.12)" : "transparent";
       // order: ticker · CLASSIC/STATE · profile [· role] · tab-id (titled, muted)
-      infoSeg.innerHTML = `${tickerValue() || "?"} ${sep} ${page} ${sep} ${prof}${role} ${sep} <span title="tab id" style="cursor:help;color:${T.muted}">#${shortId}</span>`;
+      infoSeg.innerHTML = `${tickerValue() || "?"} ${sep} ${page} ${sep} ${prof}${role} ${sep} <span title="tab id" style="cursor:help;color:${T.muted}">#${shortId}</span>` +
+        (cue ? `<span style="color:${warn ? T.amber : T.mint};font-size:11px">${cue}</span>` : "");
     };
     // swatch + how many tabs share this group (min-width holds 2 digits steady)
     let groupCount = 1;
@@ -983,7 +1014,9 @@
       paintGroup();
       paintInfo();
     };
-    (document.body || document.documentElement).appendChild(chip);
+    stack.appendChild(chip);
+    (document.body || document.documentElement).appendChild(stack);
+    mvBindPill(stack, infoSeg);
     setInterval(paintInfo, 700); // ticker/profile change on their own (esp. post-reload)
 
     // Group-count presence: each ticker-mode tab heartbeats its group under its
@@ -1063,21 +1096,299 @@
     if (showDte && label !== "?") { const s = dteSuffix(); if (s) prof += ` ${s}`; } // + "{n}DTE" | "(AGG)"
     const want = watermark ? `${wmBase} ${prof}` : wmBase;
     if (wm.textContent.trim() !== want) wm.textContent = want;
-    // "?" = no profile toggles on this page (settings/alerts). Native hover tip
-    // tells the user how to get back; cleared on any real profile.
-    const tip = watermark && label === "?"
-      ? "No chart profile here — this tab is on Settings/Alerts. Click the home (⌂) icon in the panel to return to the chart."
-      : "";
-    if (wm.title !== tip) wm.title = tip;
-    // The watermark is pointer-events:none (background overlay) so a native title
-    // never fires. Make it hoverable only while the tip is up — the ? state has no
-    // chart underneath to block.
-    const pe = tip ? "auto" : "";
-    if (wm.style.pointerEvents !== pe) wm.style.pointerEvents = pe;
+    // The "?" (Settings/Alerts) hint and the Massive fundamentals now share one
+    // GexSync hover popover (see mvContent). Retire the native title tip so they
+    // don't double up, and leave the watermark pointer-events:none (the popover
+    // hit-tests the cursor, so the watermark never needs to eat chart clicks).
+    if (wm.title) wm.title = "";
+    if (wm.style.pointerEvents) wm.style.pointerEvents = "";
     // tint the watermark the group color in Ticker mode; GEXbot default otherwise
     wm.style.color = watermark && mode === "ticker" ? (GROUPS.find((g) => g.name === groupName()) || GROUPS[0]).color : "";
   }
   setInterval(paintWatermark, 700);
+
+  // ---- Pill details panel: Massive fundamentals, Reddit buzz, profile hint -----
+  // One panel shown only while hovering the big ticker watermark. On a chart it
+  // shows the current ticker's Massive.com (Polygon) company details, fetched via
+  // the background worker so the API key never touches this page (fetched once per
+  // ticker and cached). On Settings/Alerts it shows the "no chart profile" hint
+  // (the old native title tip, folded in here). Inert on a chart until a key is
+  // saved. Per tab, gone off /classic|/state.
+  let mvPanel = null, mvKeyReady = false, mvHover = false, mvLocked = false, mvLastHtml = "";
+  const mvCache = new Map(); // TICKER -> {name,exch,mcap,sh,...} | {error,retry}
+  const mvPrevCache = new Map(); // "TICKER|YYYY-MM-DD" -> {date,o,h,l,c,v} | {error,retry} — prev trading day
+  const mvBusy = new Set(); // cache keys with a request in flight (the tick re-asks every 500ms)
+  const bzCache = new Map(); // TICKER -> {rank,mentions,mentions24,rank24,of} | {error,retry} — ApeWisdom
+  let bzUni = null; // { tk, rank, of, t } — rank among the tickers open in other synced tabs
+  get(MASSIVE_KEY, (r) => { mvKeyReady = !!r[MASSIVE_KEY]?.key; });
+
+  // A failure is cached like a result so the popover can explain itself — but a SOFT
+  // failure carries a cooldown, and the prefetch tick re-asks once it lapses. That's
+  // what rides out a free key's 5-calls/min quota: spacing requests can't (5/min is a
+  // budget, not a burst rate, so fitting inside it means ~12s gaps, which would punish
+  // paid keys for nothing). Hard failures — bad key, unsupported symbol — never retry.
+  // ponytail: fixed cooldown, no token bucket; the per-day cache means bursts only
+  // happen on the first load of a ticker set.
+  const MV_SOFT = /^(rate limited|network error|fetch failed|HTTP 5\d\d)$/;
+  const MV_COOL_MS = 20000;
+  const mvFail = (e) => { const error = e || "fetch failed"; return { error, retry: MV_SOFT.test(error) ? Date.now() + MV_COOL_MS : 0 }; };
+  const mvFresh = (v) => !!v && !(v.retry && Date.now() > v.retry);
+
+  const mvCap = (n) => {
+    if (n == null) return "—";
+    const a = Math.abs(n);
+    if (a >= 1e12) return `$${(n / 1e12).toFixed(2)}T`;
+    if (a >= 1e9) return `$${(n / 1e9).toFixed(1)}B`;
+    if (a >= 1e6) return `$${(n / 1e6).toFixed(0)}M`;
+    return `$${n.toFixed(0)}`;
+  };
+  const mvSh = (n) => n == null ? null : n >= 1e9 ? `${(n / 1e9).toFixed(1)}B sh` : n >= 1e6 ? `${(n / 1e6).toFixed(0)}M sh` : `${n} sh`;
+  const mvPad2 = (n) => String(n).padStart(2, "0");
+  // Reference date for the prev-day lookup = GEXbot's "update" date (replay/live aware).
+  const mvRefStr = () => { const d = refDate(); return d ? `${d.getFullYear()}-${mvPad2(d.getMonth() + 1)}-${mvPad2(d.getDate())}` : null; };
+  const mvMD = (iso) => { const p = String(iso).split("-"); return p.length === 3 ? `${p[1]}/${p[2]}` : iso; };
+  const mvVol = (n) => n == null ? "" : n >= 1e9 ? `${(n / 1e9).toFixed(1)}B` : n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `${(n / 1e3).toFixed(0)}K` : `${n}`;
+  const mvPx = (n) => n == null ? "—" : (+n).toFixed(2);
+  // Plain-English reason the panel has nothing to show — written for someone who
+  // just pasted an API key and doesn't know what any of this means.
+  function mvErrMsg(err, tk) {
+    switch (err) {
+      case "no API key":
+        return `No Massive.com key added yet. Open the GexSync popup, paste your key under <b>“Massive.com data,”</b> and details appear here.`;
+      case "bad API key":
+        return `Massive.com didn’t accept this API key. Re-check it copied correctly and that your Massive plan is active, then save it again in the popup.`;
+      case "rate limited":
+        return `Massive.com is briefly throttling requests (too many at once). This clears on its own in a minute — nothing to fix.`;
+      case "not found":
+      case "no data":
+        return `No company data for <b>${tk}</b>. Massive covers <b>stocks &amp; ETFs</b> (SPY, AAPL, QQQ…), not indexes like <b>SPX</b> or <b>VIX</b>. Nothing’s broken — there’s just nothing to show for this symbol.`;
+      case "not entitled":
+        return `Your Massive plan won’t return daily bars for <b>${tk}</b> here. On the free plan that means either an index (bars cover <b>stocks &amp; ETFs</b> only) or a replay date more than about <b>2 years</b> back. Nothing’s broken — the rest of the panel still works.`;
+      case "network error":
+        return `Couldn’t reach Massive.com — looks like a network/connection hiccup. It’ll retry.`;
+      default:
+        return `Massive.com couldn’t return data (${err}).`;
+    }
+  }
+
+  // Reddit mention rank for the current ticker, or "" when there's nothing to say.
+  // Only the RANK move is shown as a delta. Across a live sample every ticker had
+  // `mentions` at roughly a quarter of `mentions_24h_ago` (SPY 76 vs 364, QQQ 28 vs
+  // 154, NVDA 28 vs 112), so the two are not the same window and neither a percentage
+  // nor a side-by-side would mean what a reader assumes. rank vs rank_24h_ago is
+  // unambiguous, so that's the only comparison drawn. ponytail: `mentions24` is still
+  // in the payload — one line to add once the window semantics are confirmed.
+  const bzArrow = (d) => { // rank movement — a SMALLER rank is better, so invert the delta
+    if (d.rank24 == null) return "";
+    const n = d.rank24 - d.rank;
+    return n > 0 ? ` · ↑${n}` : n < 0 ? ` · ↓${-n}` : " · =";
+  };
+  function bzLine(tk) {
+    if (!buzzOn) return "";
+    const d = bzCache.get(tk);
+    if (!d) return ""; // still in flight
+    if (d.error) return `<div style="margin-top:4px;color:${T.amber}">Reddit · ${mvErrShort(d.error)}</div>`;
+    if (d.rank == null) return `<div style="margin-top:4px;color:${T.muted}">Reddit · not in today's top ${d.of}</div>`;
+    // Only worth saying with something to compare against, and only for a ticker that
+    // has a rank at all (an unranked one already says so on the line above).
+    const uni = bzUni && bzUni.tk === tk && bzUni.rank && bzUni.of > 1
+      ? `<div style="color:${T.muted}">#${bzUni.rank} most-discussed of your ${bzUni.of} open tickers</div>` : "";
+    return `<div style="margin-top:4px;color:${T.muted}">Reddit #${d.rank} of ${d.of}${bzArrow(d)}</div>` +
+      `<div style="font-family:${T.mono}">${d.mentions} mentions</div>` + uni;
+  }
+
+  // Same glass, border, blur and shadow as the pill, so the two read as one object.
+  // align-self:stretch against the shrink-wrapped stack makes the panel exactly as
+  // wide as the pill for free — and keeps matching it as the pill's segments change.
+  // max-width only bites if a line is wider than the pill.
+  // Terse form of the same failures, for the one-line slots (prev-day row, Reddit row)
+  // where the full paragraph above would swamp the panel.
+  function mvErrShort(err) {
+    switch (err) {
+      case "rate limited": return "throttled, retrying";
+      case "not entitled": return "not on your plan — index, or past ~2 years";
+      case "bad API key": return "key rejected";
+      case "no API key": return "no key saved";
+      case "network error":
+      case "fetch failed": return "network hiccup, retrying";
+      case "not found":
+      case "no data": return "nothing for this symbol";
+      default: return err;
+    }
+  }
+  // Does anything the panel would show for this ticker currently hold an error? Drives
+  // the pill's amber dot, so a failure is noticeable without opening the panel.
+  function mvWarn(tk) {
+    if (!tk) return false;
+    if (buzzOn && bzCache.get(tk)?.error) return true;
+    if (!mvKeyReady) return false;
+    if (mvCache.get(tk)?.error) return true;
+    const ref = mvRefStr();
+    return !!(ref && mvPrevCache.get(tk + "|" + ref)?.error);
+  }
+
+  function mvBuild() {
+    if (mvPanel) return mvPanel;
+    mvPanel = document.createElement("div");
+    mvPanel.id = "gexsync-massive";
+    mvPanel.style.cssText = `position:relative;align-self:stretch;max-width:520px;padding:10px 13px;border-radius:14px;background:${T.glass};backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);border:1px solid rgba(255,255,255,.12);color:${T.ink};font:500 12px ${T.ui};line-height:1.5;box-shadow:0 8px 24px rgba(0,0,0,.45);display:none;`;
+    const stack = document.getElementById("gexsync-stack");
+    if (stack) stack.insertBefore(mvPanel, stack.firstChild); // above the pill
+    else (document.body || document.documentElement).appendChild(mvPanel);
+    return mvPanel;
+  }
+  // What the popover shows for the current state, or null = nothing (hide).
+  function mvContent() {
+    if (profileLabel() === "?") // Settings/Alerts: the retired native title tip, restyled
+      return `<div style="font:700 12px ${T.ui};color:${T.amber}">No chart profile</div>` +
+        `<div style="margin-top:2px">This tab is on Settings/Alerts — click the home (⌂) icon in the panel to return to the chart.</div>`;
+    if (!mvKeyReady && !buzzOn) return null; // on a chart with no enrichment source on
+    const tk = baseTicker();
+    if (!tk) return null;
+    const buzz = bzLine(tk);
+    // Buzz needs no key, so it can be the whole panel.
+    if (!mvKeyReady) return buzz ? `<div style="font:700 12px ${T.ui};color:${T.mint};letter-spacing:.02em">${tk}</div>` + buzz : null;
+    if (!mvCache.has(tk)) return null; // Massive prefetch still in flight
+    const d = mvCache.get(tk);
+    if (d.error)
+      return `<div style="font:700 12px ${T.ui};color:${T.amber}">Massive · ${tk}</div>` +
+        `<div style="margin-top:3px;line-height:1.45">${mvErrMsg(d.error, tk)}</div>` + buzz;
+    const bits = [];
+    if (d.mcap != null) bits.push(`${mvCap(d.mcap)} mkt cap`);
+    if (d.sh != null) bits.push(mvSh(d.sh));
+    if (!bits.length) { // ETFs/indices have no mkt cap or share count — show what we do have
+      if (d.type) bits.push(d.type);
+      if (d.ccy) bits.push(String(d.ccy).toUpperCase());
+    }
+    const meta = bits.join(" · ");
+    // Previous trading day's OHLCV (from the update date; skips weekends/holidays).
+    const ref = mvRefStr();
+    const pd = ref ? mvPrevCache.get(tk + "|" + ref) : null;
+    // A failed bar used to render as nothing at all, which made a 429 or an
+    // out-of-window replay date look identical to "still loading".
+    const prev = !pd ? ""
+      : pd.error
+        ? `<div style="margin-top:4px;color:${T.amber}">Prev day · ${mvErrShort(pd.error)}</div>`
+        : `<div style="margin-top:4px;color:${T.muted}">Prev day ${mvMD(pd.date)}${pd.v != null ? ` · ${mvVol(pd.v)} vol` : ""}</div>` +
+          `<div style="font-family:${T.mono}">O${mvPx(pd.o)} H${mvPx(pd.h)} L${mvPx(pd.l)} C${mvPx(pd.c)}</div>`;
+    return `<div style="font:700 12px ${T.ui};color:${T.mint};letter-spacing:.02em">${tk}${d.exch ? ` · ${d.exch}` : ""}</div>` +
+      `<div style="margin-top:2px">${d.name || "—"}</div>` +
+      (meta ? `<div style="margin-top:2px;color:${T.muted};font-family:${T.mono}">${meta}</div>` : "") +
+      prev + buzz;
+  }
+  function mvFetch(tk) { // fetch + cache silently; the hover popover reads the cache
+    if (!alive() || mvBusy.has(tk) || mvFresh(mvCache.get(tk))) return;
+    mvBusy.add(tk);
+    chrome.runtime.sendMessage({ type: "gexsync-massive", ticker: tk }, (res) => {
+      mvBusy.delete(tk);
+      if (chrome.runtime.lastError) return; // worker asleep/orphaned; the next tick retries
+      mvCache.set(tk, res && res.ok ? res.data : mvFail(res && res.error));
+      mvSync();
+    });
+  }
+  function bzFetch(tk) { // ApeWisdom rank; the worker holds the hourly list, so this is cheap
+    const key = "bz|" + tk;
+    if (!alive() || mvBusy.has(key) || mvFresh(bzCache.get(tk))) return;
+    mvBusy.add(key);
+    chrome.runtime.sendMessage({ type: "gexsync-buzz", ticker: tk }, (res) => {
+      mvBusy.delete(key);
+      if (chrome.runtime.lastError) return;
+      bzCache.set(tk, res && res.ok ? res.data : mvFail(res && res.error));
+      mvSync();
+    });
+  }
+  // Not cached like the others: open tabs come and go, so this one goes stale on a
+  // timer instead of per ticker. Only asked for while the popover is actually open —
+  // it's the only place the line shows — so it costs nothing the rest of the time.
+  const BZ_UNI_MS = 5000;
+  function bzUniFetch(tk) {
+    if (!alive() || mvBusy.has("uni")) return;
+    if (bzUni && bzUni.tk === tk && Date.now() - bzUni.t < BZ_UNI_MS) return;
+    mvBusy.add("uni");
+    chrome.runtime.sendMessage({ type: "gexsync-buzz-uni", ticker: tk }, (res) => {
+      mvBusy.delete("uni");
+      if (chrome.runtime.lastError) return;
+      bzUni = res && res.ok ? { tk, rank: res.data.rank, of: res.data.of, t: Date.now() } : null;
+      mvSync();
+    });
+  }
+  function mvPrevFetch(tk, ref) { // prev trading day OHLCV for (ticker, reference date)
+    const key = tk + "|" + ref;
+    if (!alive() || mvBusy.has(key) || mvFresh(mvPrevCache.get(key))) return;
+    mvBusy.add(key);
+    chrome.runtime.sendMessage({ type: "gexsync-massive-prevday", ticker: tk, ref }, (res) => {
+      mvBusy.delete(key);
+      if (chrome.runtime.lastError) return;
+      mvPrevCache.set(key, res && res.ok ? res.data : mvFail(res && res.error));
+      mvSync();
+    });
+  }
+  // Publish the current ticker's prev-day OHLC + which lines are enabled to a hidden
+  // node that pdlines.js (MAIN world) reads to draw the chart overlay.
+  const pdNode = () => { let n = document.getElementById("__gxpd"); if (!n) { n = document.createElement("div"); n.id = "__gxpd"; n.style.display = "none"; document.documentElement.appendChild(n); } return n; };
+  function mvWritePD() {
+    const anyOn = pdShow.o || pdShow.h || pdShow.l || pdShow.c;
+    if (!onSyncPage() || !anyOn) { const n = document.getElementById("__gxpd"); if (n && n.textContent) n.textContent = ""; return; }
+    const tk = baseTicker(), ref = mvRefStr();
+    const pd = tk && ref ? mvPrevCache.get(tk + "|" + ref) : null;
+    const lvl = pd && !pd.error ? { o: pd.o, h: pd.h, l: pd.l, c: pd.c } : {};
+    const next = JSON.stringify({ show: pdShow, lvl, pos: pdLabelPos });
+    const n = pdNode(); if (n.textContent !== next) n.textContent = next;
+  }
+  function mvSync() {
+    const html = (mvHover || mvLocked) && onSyncPage() ? mvContent() : null;
+    // Repaint the pill only when the state actually flips — mvSync runs every 500ms.
+    const chip = document.getElementById("gexsync-mode-chip");
+    if (chip) {
+      const flag = html ? (mvLocked ? "lock" : "1") : ""; // no content → no cue to show
+      // The warn dot shows whether or not the panel is open — that's the point of it.
+      const warn = onSyncPage() && mvWarn(baseTicker()) ? "1" : "";
+      if (chip.dataset.mvOpen !== flag || chip.dataset.mvWarn !== warn) {
+        chip.dataset.mvOpen = flag; chip.dataset.mvWarn = warn; renderChip();
+      }
+    }
+    const p = html ? mvBuild() : mvPanel;
+    if (!p) return;
+    if (html) { if (mvLastHtml !== html) { p.innerHTML = html; mvLastHtml = html; } p.style.display = "block"; }
+    else p.style.display = "none";
+  }
+  // Prefetch the current ticker + reference date (so a replay seek to another day
+  // picks up its own bar) — runs regardless of hover. Both fetchers no-op unless the
+  // cache is empty or a soft failure's cooldown lapsed, so calling them every tick
+  // costs a Map lookup and doubles as the retry.
+  setInterval(() => {
+    if (onSyncPage()) {
+      const tk = baseTicker();
+      if (tk && mvKeyReady) { mvFetch(tk); const ref = mvRefStr(); if (ref) mvPrevFetch(tk, ref); }
+      if (tk && buzzOn) { bzFetch(tk); if (mvHover) bzUniFetch(tk); }
+    }
+    mvSync();
+    mvWritePD();
+  }, 500);
+  chrome.storage.onChanged.addListener((c, area) => {
+    if (area !== "local" || !c[MASSIVE_KEY]) return;
+    mvKeyReady = !!c[MASSIVE_KEY].newValue?.key;
+    mvCache.clear(); mvPrevCache.clear(); // key changed either way: forget results (incl. "no API key")
+    mvSync();
+  });
+  // The pill's info segment is the handle. Leaving is bound on the STACK, not the
+  // segment, so travelling up across the 8px gap onto the panel never counts as
+  // leaving — which is what a hover popover normally needs a hide-delay timer for.
+  // Called from buildModeChip once the pill exists.
+  function mvBindPill(stack, handle) {
+    handle.addEventListener("mouseenter", () => { mvHover = true; mvSync(); });
+    stack.addEventListener("mouseleave", () => { if (!mvLocked) { mvHover = false; mvSync(); } });
+    handle.addEventListener("click", (e) => {
+      e.stopPropagation(); // the segment is inside the pill; don't trip other handlers
+      mvLocked = !mvLocked;
+      mvHover = true; // unlocking with the cursor still on the pill keeps it visible
+      mvSync();
+    });
+    document.addEventListener("keydown", (e) => {
+      if (e.key !== "Escape" || !mvLocked) return;
+      mvLocked = false; mvHover = false; mvSync();
+    });
+  }
 
   // Report this tab's full state to the popup on request.
   function getState() {
@@ -1101,7 +1412,7 @@
 
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area !== "local") return;
-    if (changes[CFG_KEY]?.newValue) { const c = changes[CFG_KEY].newValue; const pScope = panelScope; if (c.panelScope) panelScope = c.panelScope; watermark = c.watermark !== false; const pSync = zoomSync; zoomSync = c.zoomSync === true; groupShot = c.groupShot === true; const sNav = settingsNav; settingsNav = c.settingsNav === true; if (settingsNav !== sNav) lastNav = null; showDte = c.dte === true; settingsSync = c.settingsSync === true; if (!zoomSync) writeHold(null); else if (!pSync || panelScope !== pScope) adoptLive(); zHudOn(); }
+    if (changes[CFG_KEY]?.newValue) { const c = changes[CFG_KEY].newValue; const pScope = panelScope; if (c.panelScope) panelScope = c.panelScope; watermark = c.watermark !== false; const pSync = zoomSync; zoomSync = c.zoomSync === true; groupShot = c.groupShot === true; const sNav = settingsNav; settingsNav = c.settingsNav === true; if (settingsNav !== sNav) lastNav = null; showDte = c.dte === true; settingsSync = c.settingsSync === true; pdShow = readPd(c); pdLabelPos = c.pdLabel || "left"; buzzOn = c.buzz === true; if (!zoomSync) writeHold(null); else if (!pSync || panelScope !== pScope) adoptLive(); zHudOn(); }
     if (changes[MODE_KEY]?.newValue) { mode = changes[MODE_KEY].newValue === "live" ? "profiles" : changes[MODE_KEY].newValue; renderChip(); }
     if (changes[SESSION_KEY]) { replayLocked = !!changes[SESSION_KEY].newValue && changes[SESSION_KEY].newValue.phase !== "idle"; renderChip(); }
     if (!onSyncPage()) return; // off /classic|/state (SPA nav): don't touch the page
