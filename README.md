@@ -21,7 +21,7 @@ which are off by default.
 
 [![GexSync — 30-second tour](docs/gexsync-promo.gif)](https://x.com/DGNSREKT/status/2078327126411907501)
 
-*Click for the full video + a thread on how each mode works. Profiles, ticker, and replay sync — the whole thing in half a minute.*
+*Click for the full video + a thread on how each mode works. Profiles, ticker, replay, and the opt-in data add-ons — the whole thing in half a minute.*
 
 ## Ask an AI instead
 
