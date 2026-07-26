@@ -50,7 +50,7 @@
   let settingsSync = false; // mirror the bottom Settings controls across tabs; opt-in, only while all in-scope panels open
   let pdShow = { o: false, h: false, l: false, c: false }; // prev-day OHLC lines on the chart; each opt-in
   let pdLabelPos = "left"; // label placement: left | center | right
-  let buzzOn = false; // ApeWisdom Reddit mentions in the watermark popover; opt-in, no key
+  let buzzOn = false; // ApeWisdom Reddit mentions in the pill's details panel; opt-in, no key
   const readPd = (c) => ({ o: c?.pdO === true, h: c?.pdH === true, l: c?.pdL === true, c: c?.pdC === true });
   const panelKey = () => scopedKey("gexsync-panel", panelScope);
   const settingsKey = () => scopedKey("gexsync-settings", panelScope);
