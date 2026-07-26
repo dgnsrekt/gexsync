@@ -19,9 +19,9 @@ which are off by default.
 
 ## ▶ Watch the 30-second tour
 
-[![GexSync — 30-second tour](docs/gexsync-promo.gif)](https://x.com/DGNSREKT/status/2078327126411907501)
+[![GexSync — 30-second tour](docs/gexsync-promo.gif)](https://social.dgnsrekt.ai/@dgnsrekt/116987346903297637)
 
-*Click for the full video + a thread on how each mode works. Profiles, ticker, replay, and the opt-in data add-ons — the whole thing in half a minute.*
+*Click to watch it — profiles, ticker, replay, and the opt-in data add-ons, the whole thing in half a minute. A full feature-by-feature walkthrough is linked from there too.*
 
 ## Ask an AI instead
 
