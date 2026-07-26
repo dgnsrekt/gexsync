@@ -4,6 +4,49 @@ All notable changes to GexSync are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and the project follows
 [semantic versioning](https://semver.org/).
 
+## [1.8.0] — 2026-07-25
+
+### Added
+- **Chart data add-ons** — a new **Data keys** page in the popup, holding the first
+  features that bring **outside** data onto the chart. All are **off by default**, and
+  they are gated differently: **Reddit buzz** needs no key at all, while the two
+  Massive.com add-ons do nothing until you save **your own** API key. A **free**
+  Massive key covers both.
+  - **Reddit buzz** — the current ticker's Reddit mention rank, count, and 24-hour
+    rank change, from [apewisdom.io](https://apewisdom.io). No key, no signup. Also
+    ranks the current symbol against the other tickers you have open. The list it
+    fetches covers roughly the 300 most-mentioned tickers and refreshes hourly, so a
+    quiet symbol reads `not in today's top 285` rather than failing.
+  - **Massive.com data** — company details (name, exchange, market cap, share count;
+    security type and currency for ETFs), fetched once per ticker per trading day.
+  - **Previous-day levels** — the previous trading day's **O**pen/**H**igh/**L**ow/
+    **C**lose drawn as labelled chart lines (`PDO`/`PDH`/`PDL`/`PDC`), each
+    independently toggleable, with selectable label placement. **Follows replay**: the
+    "previous day" is measured from the chart's own update date, so a tab parked on a
+    past session shows that session's previous day. Stocks & ETFs only.
+- **Ticker details panel on the pill.** Hover the pill's ticker segment to peek at the
+  add-on data, **click** to pin it open, **Esc** to close. The panel is exactly as wide
+  as the pill and grows out of it, so the two read as one object.
+- **Visible failure state.** An amber dot appears on the pill's ticker segment whenever
+  a data source is failing — with the panel open or closed — and the panel gives the
+  reason in plain language. Throttling on a free key is expected and clears itself:
+  soft failures retry on a 20-second cooldown so panels fill in progressively, while
+  hard ones (a rejected key, an unsupported symbol) don't retry, because asking again
+  can't change the answer.
+
+### Changed
+- **Documentation now states the network contract precisely.** GexSync makes **zero**
+  outbound requests until you switch on an add-on — the README and `knowledge/safety.md`
+  previously claimed it never made any at all. Both now name each host, say what each
+  request carries, and note that `apewisdom.io` is never told which ticker you are
+  viewing (the ranked list is matched locally) and that fetched data is never persisted.
+  Every outbound request in the extension lives in `background.js`; `content.js` has
+  none, which is why an API key never reaches a script running on gexbot.com.
+- New `knowledge/data-addons.md` documents both providers, what a free key's limits mean
+  in practice, and every failure message. `knowledge/usage.md` also picked up three
+  settings that had shipped without documentation: **Sync chart settings** (1.7.0),
+  **Show days to expiry** (1.6.0) and **Sync settings navigation** (1.5.0).
+
 ## [1.7.0] — 2026-07-25
 
 ### Added
