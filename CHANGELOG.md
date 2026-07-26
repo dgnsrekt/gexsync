@@ -4,6 +4,16 @@ All notable changes to GexSync are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and the project follows
 [semantic versioning](https://semver.org/).
 
+## [1.8.1] — 2026-07-25
+
+### Fixed
+- **The extension is called "GexSync" again.** The manifest name had read
+  `GexSync (replay)` since the original replay-sync work back at version 1.0 — a working
+  suffix that was never removed, and that every version bump since carried forward
+  untouched. Chrome shows the manifest name in `chrome://extensions` and in the toolbar
+  tooltip, so the install read like a single-feature dev build rather than the whole
+  extension. Name only; no behaviour change. Reload the extension to pick it up.
+
 ## [1.8.0] — 2026-07-25
 
 ### Added
