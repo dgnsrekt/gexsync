@@ -1092,10 +1092,26 @@
     const wmBase = wm.textContent.trim().split(/\s+/)[0]; // "NDX" | "NDX⇒NQU6"
     // off → strip back to just the ticker/contract; on → + profile
     const label = profileLabel();
-    let prof = label.replace("90d", "90 days").toUpperCase();
-    if (showDte && label !== "?") { const s = dteSuffix(); if (s) prof += ` ${s}`; } // + "{n}DTE" | "(AGG)"
-    const want = watermark ? `${wmBase} ${prof}` : wmBase;
-    if (wm.textContent.trim() !== want) wm.textContent = want;
+    const prof = label.replace("90d", "90 days").toUpperCase();
+    const dte = showDte && label !== "?" ? (dteSuffix() || "") : ""; // "{n}DTE" | "(AGG)"
+    const base = watermark ? `${wmBase} ${prof}` : wmBase;
+    const oneLine = watermark && dte ? `${base} ${dte}` : base;
+    // Paint one line first — this also forces the element single-line so we can
+    // measure its true width — then drop the DTE tag onto its own line when the
+    // full string would collide with GEXbot's right-side control panel (short
+    // browser windows). Measure always reflects single-line, so no oscillation;
+    // both writes are synchronous, so the intermediate state never paints.
+    if (wm.textContent !== oneLine) wm.textContent = oneLine;
+    let want = oneLine;
+    if (watermark && dte) {
+      const bar = chevronSvg()?.closest("button")?.parentElement?.getBoundingClientRect();
+      const r = wm.getBoundingClientRect();
+      if (bar && r.right > bar.left && r.left < bar.right && r.bottom > bar.top && r.top < bar.bottom)
+        want = `${base}\n${dte}`;
+    }
+    const ws = want.includes("\n") ? "pre-line" : "";
+    if (wm.style.whiteSpace !== ws) wm.style.whiteSpace = ws;
+    if (wm.textContent !== want) wm.textContent = want;
     // The "?" (Settings/Alerts) hint and the Massive fundamentals now share one
     // GexSync hover popover (see mvContent). Retire the native title tip so they
     // don't double up, and leave the watermark pointer-events:none (the popover
