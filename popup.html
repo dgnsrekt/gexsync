@@ -52,6 +52,25 @@
 
   hr { border: none; border-top: 1px solid var(--line); margin: 8px 0; }
 
+  /* watchlist */
+  .wl-add { display: flex; gap: 8px; margin-top: 7px; }
+  #wlInput {
+    flex: 1; min-width: 0; padding: 7px 10px; border-radius: 9px; text-transform: uppercase;
+    background: var(--raised); color: var(--ink); border: 1px solid var(--line); font: 13px var(--mono);
+  }
+  #wlInput:focus { outline: none; border-color: var(--mint); }
+  #wlAdd { flex: 0 0 auto; padding: 8px 14px; }
+  .wl-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+  .wl-chips:empty::after { content: "No tickers yet — add 2+ to enable cycling."; color: var(--muted); font-size: 11px; }
+  .chip {
+    display: inline-flex; align-items: center; gap: 6px; padding: 4px 6px 4px 10px; border-radius: 8px;
+    background: var(--raised); border: 1px solid var(--line); font: 600 12px var(--mono); color: var(--ink);
+  }
+  .chip button {
+    border: none; background: none; cursor: pointer; color: var(--muted); font: 13px var(--ui); line-height: 1; padding: 0 2px;
+  }
+  .chip button:hover { color: var(--amber); }
+
   /* current state */
   #count { color: var(--muted); font-size: 12px; }
   #count b { color: var(--ink); font-weight: 600; }
@@ -111,6 +130,7 @@
   <div class="seg" id="pageSeg" role="tablist">
     <button class="seg-btn" data-page="sync" role="tab">Sync</button>
     <button class="seg-btn" data-page="keys" role="tab">Data keys</button>
+    <button class="seg-btn" data-page="watchlist" role="tab">Watchlist</button>
   </div>
 
   <div data-page="sync">
@@ -228,6 +248,17 @@
   </div>
   <div class="hint" style="margin-top:5px">Draws white horizontal lines on the chart at the previous trading day's Open/High/Low/Close (labeled PDO/PDH/PDL/PDC). Each independent; off by default. Uses the Massive key and follows replay. Stocks &amp; ETFs only.</div>
   </div><!-- /page: keys -->
+
+  <div data-page="watchlist" hidden>
+  <div class="label">Watchlist</div>
+  <div class="hint">One click on the chart pill cycles your Ticker-mode group through these. Needs 2+ tickers.</div>
+  <div class="wl-add">
+    <input id="wlInput" list="wlAll" placeholder="Add ticker (e.g. NVDA)" spellcheck="false" autocomplete="off" autocapitalize="characters">
+    <datalist id="wlAll"></datalist>
+    <button id="wlAdd" class="btn">Add</button>
+  </div>
+  <div id="wlChips" class="wl-chips"></div>
+  </div><!-- /page: watchlist -->
 
   <details id="stateWrap">
     <summary>

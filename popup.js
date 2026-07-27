@@ -83,6 +83,45 @@ function selectMode(next) {
 }
 modeBtns.forEach((b) => b.addEventListener("click", () => selectMode(b.dataset.mode)));
 
+// ---- Watchlist: curate the tickers the on-chart pill cycles through (Ticker mode).
+// Symbols come from the packaged tickers.json (GEXbot's own /tickers list, refreshed
+// by scripts/update-tickers.mjs). Order = add order; stored in gexsync-cfg.watchlist. ----
+const wlInput = document.getElementById("wlInput");
+const wlAdd = document.getElementById("wlAdd");
+const wlChips = document.getElementById("wlChips");
+const wlList = document.getElementById("wlAll");
+let known = new Set(); // valid symbols from tickers.json (futures excluded — hash-cycle can't drive them)
+let watchlist = [];
+fetch(chrome.runtime.getURL("tickers.json")).then((r) => r.json()).then((j) => {
+  const syms = [...(j.indexes || []), ...(j.stocks || [])].sort();
+  known = new Set(syms);
+  wlList.innerHTML = syms.map((s) => `<option value="${s}"></option>`).join("");
+}).catch(() => {}); // no datalist if the file is somehow missing — typing still works against `known` (empty → any)
+chrome.storage.local.get("gexsync-cfg", (r) => { watchlist = (r["gexsync-cfg"] || {}).watchlist || []; renderChips(); });
+function saveWatchlist() {
+  chrome.storage.local.get("gexsync-cfg", (r) => chrome.storage.local.set({ "gexsync-cfg": { ...(r["gexsync-cfg"] || {}), watchlist } }));
+}
+function renderChips() {
+  wlChips.innerHTML = watchlist.map((s) =>
+    `<span class="chip">${s}<button data-sym="${s}" title="Remove ${s}" aria-label="Remove ${s}">✕</button></span>`).join("");
+}
+function addTicker() {
+  const s = wlInput.value.trim().toUpperCase();
+  wlInput.value = "";
+  // Accept a known symbol (or anything if the list failed to load); ignore dupes.
+  if (!s || (known.size && !known.has(s)) || watchlist.includes(s)) return;
+  watchlist.push(s);
+  renderChips(); saveWatchlist();
+}
+wlAdd.addEventListener("click", addTicker);
+wlInput.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); addTicker(); } });
+wlChips.addEventListener("click", (e) => {
+  const sym = e.target.dataset?.sym;
+  if (!sym) return;
+  watchlist = watchlist.filter((s) => s !== sym);
+  renderChips(); saveWatchlist();
+});
+
 const sel = document.getElementById("panelScope");
 const wm = document.getElementById("watermark");
 const zoomSyncEl = document.getElementById("zoomSync");

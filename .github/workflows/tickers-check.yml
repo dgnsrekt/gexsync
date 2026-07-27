@@ -1,0 +1,18 @@
+# Once a day, check the packaged tickers.json against GEXbot's live /tickers list.
+# Fails (red X + notification) when GEXbot adds/removes tickers — then run
+# `node scripts/update-tickers.mjs` locally and commit the refreshed file.
+name: tickers-check
+on:
+  schedule:
+    - cron: "17 13 * * *" # daily ~13:17 UTC; one hit on the endpoint, not per push
+  workflow_dispatch: {}
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: node tickers.test.mjs           # offline shape guard
+      - run: node scripts/update-tickers.mjs --check  # live drift check

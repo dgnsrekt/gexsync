@@ -51,6 +51,7 @@
   let pdShow = { o: false, h: false, l: false, c: false }; // prev-day OHLC lines on the chart; each opt-in
   let pdLabelPos = "left"; // label placement: left | center | right
   let buzzOn = false; // ApeWisdom Reddit mentions in the pill's details panel; opt-in, no key
+  let watchlist = []; // symbols the pill's cycle arrows step through (Ticker mode, 2+); curated in the popup
   const readPd = (c) => ({ o: c?.pdO === true, h: c?.pdH === true, l: c?.pdL === true, c: c?.pdC === true });
   const panelKey = () => scopedKey("gexsync-panel", panelScope);
   const settingsKey = () => scopedKey("gexsync-settings", panelScope);
@@ -65,6 +66,7 @@
     pdShow = readPd(r[CFG_KEY]);
     pdLabelPos = r[CFG_KEY]?.pdLabel || "left";
     buzzOn = r[CFG_KEY]?.buzz === true; // default off (opt-in)
+    watchlist = r[CFG_KEY]?.watchlist || [];
     zHudOn();
   });
 
@@ -506,6 +508,20 @@
     flashSync(`to ${ticker}`); // brief non-blocking "syncing <group> to <ticker>"
     setTimeout(() => { applyingRemote = false; }, 1500); // outlast the switch so we don't echo
   }
+
+  // ---- watchlist cycle (Ticker mode) ----
+  // prev/next relative to THIS tab's current ticker; if the current ticker isn't in
+  // the watchlist, step in from the end (◂) or the start (▸). Null unless the pill's
+  // cycle arrows should show at all (Ticker mode + a 2+ list).
+  const cycleTargets = () => {
+    const n = watchlist.length;
+    if (!tickerSync() || n < 2) return null;
+    const cur = baseTicker(), i = watchlist.indexOf(cur);
+    return {
+      prev: i === -1 ? watchlist[n - 1] : watchlist[(i - 1 + n) % n],
+      next: i === -1 ? watchlist[0] : watchlist[(i + 1) % n],
+    };
+  };
 
   // ---- boot repair (stuck hash-URL loads) ----
   // A fresh full-page load of a #TICKER#profile URL (F5 / reopen) flakily lands
@@ -957,6 +973,26 @@
       renderChip();
     });
 
+    // Watchlist cycle bar — its OWN compact pill stacked below the main pill
+    // (appended to the stack after the chip). Shown only in Ticker mode with a 2+
+    // watchlist (paintCycle gates display); one click steps the whole color group.
+    const cycleBar = document.createElement("div");
+    cycleBar.id = "gexsync-cycle-bar";
+    cycleBar.style.cssText = `display:none;align-items:center;gap:9px;padding:6px 14px;border-radius:9999px;background:${T.glass};backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);border:1px solid rgba(255,255,255,.12);color:${T.ink};font:600 12px ${T.mono};white-space:nowrap;box-shadow:0 8px 24px rgba(0,0,0,.45);user-select:none;`;
+    // The prev/next symbol labels are clickable too (bigger targets than the arrows):
+    // click AVGO to go back, NVDA to go forward. Hover brightens the whole side.
+    const step = (glyph, dir, align) => {
+      const el = document.createElement("span");
+      el.style.cssText = `cursor:pointer;padding:0 2px;line-height:1;transition:color .16s;${glyph ? "font-size:15px" : `color:${T.muted};min-width:38px;text-align:${align}`}`;
+      if (glyph) el.textContent = glyph;
+      el.addEventListener("click", (e) => { e.stopPropagation(); cycleTicker(dir); });
+      el.addEventListener("mouseenter", () => el.style.color = T.mint);
+      el.addEventListener("mouseleave", () => el.style.color = glyph ? "" : T.muted);
+      return el;
+    };
+    const cPrev = step("", -1, "right"), cBack = step("◂", -1), cFwd = step("▸", 1), cNext = step("", 1, "left");
+    cycleBar.append(cPrev, cBack, cFwd, cNext);
+
     // info segment: this tab's id · page · ticker · profile — visible with the
     // side panel closed, replaces the top-left debug badge that blocked the nav
     // links. replay.js appends MASTER/client via chip.dataset.replayRole.
@@ -966,6 +1002,29 @@
     infoSeg.title = "Ticker details — hover to peek, click to pin open (Esc closes)";
 
     chip.append(markSeg, modeSeg, grpSeg, infoSeg);
+
+    // Step to the prev/next watchlist ticker as if the user changed it: in-app
+    // hashchange + a group broadcast (immediate, no 400ms poll lag). Pre-set
+    // lastTicker so the poll doesn't re-broadcast the same value.
+    const cycleTicker = (dir) => {
+      const t = cycleTargets(); if (!t) return;
+      const target = dir < 0 ? t.prev : t.next;
+      if (!target || baseTicker() === target) return;
+      location.hash = `#${target}#${profileSegment()}`;
+      window.dispatchEvent(new HashChangeEvent("hashchange"));
+      lastTicker = target;
+      send({ [tickerChan()]: { ticker: target, t: performance.now() } });
+      flashSync(`to ${target}`);
+      setTimeout(paintCycle, 120); // relabel prev/next off the new current
+    };
+    const paintCycle = () => {
+      const t = cycleTargets();
+      cycleBar.style.display = t ? "flex" : "none";
+      if (!t) return;
+      cycleBar.style.color = (GROUPS.find((x) => x.name === groupName()) || GROUPS[0]).color; // group-tinted like the pill
+      cPrev.textContent = t.prev; cNext.textContent = t.next;
+      cBack.title = `Previous ticker: ${t.prev}`; cFwd.title = `Next ticker: ${t.next}`;
+    };
     const shortId = TAB.slice(0, 3).toUpperCase();
     const sep = `<span style="color:${T.muted}">·</span>`;
     const paintInfo = () => {
@@ -1013,11 +1072,13 @@
       modeSeg.style.paddingLeft = showMark ? "7px" : "13px";
       paintGroup();
       paintInfo();
+      paintCycle();
     };
     stack.appendChild(chip);
+    stack.appendChild(cycleBar); // below the pill; hidden (out of flow) until Ticker mode + 2+ watchlist
     (document.body || document.documentElement).appendChild(stack);
     mvBindPill(stack, infoSeg);
-    setInterval(paintInfo, 700); // ticker/profile change on their own (esp. post-reload)
+    setInterval(() => { paintInfo(); paintCycle(); }, 700); // ticker/profile change on their own (esp. post-reload)
 
     // Group-count presence: each ticker-mode tab heartbeats its group under its
     // own key (no shared map → no read-modify-write race); the count is how many
@@ -1428,7 +1489,7 @@
 
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area !== "local") return;
-    if (changes[CFG_KEY]?.newValue) { const c = changes[CFG_KEY].newValue; const pScope = panelScope; if (c.panelScope) panelScope = c.panelScope; watermark = c.watermark !== false; const pSync = zoomSync; zoomSync = c.zoomSync === true; groupShot = c.groupShot === true; const sNav = settingsNav; settingsNav = c.settingsNav === true; if (settingsNav !== sNav) lastNav = null; showDte = c.dte === true; settingsSync = c.settingsSync === true; pdShow = readPd(c); pdLabelPos = c.pdLabel || "left"; buzzOn = c.buzz === true; if (!zoomSync) writeHold(null); else if (!pSync || panelScope !== pScope) adoptLive(); zHudOn(); }
+    if (changes[CFG_KEY]?.newValue) { const c = changes[CFG_KEY].newValue; const pScope = panelScope; if (c.panelScope) panelScope = c.panelScope; watermark = c.watermark !== false; const pSync = zoomSync; zoomSync = c.zoomSync === true; groupShot = c.groupShot === true; const sNav = settingsNav; settingsNav = c.settingsNav === true; if (settingsNav !== sNav) lastNav = null; showDte = c.dte === true; settingsSync = c.settingsSync === true; pdShow = readPd(c); pdLabelPos = c.pdLabel || "left"; buzzOn = c.buzz === true; watchlist = c.watchlist || []; renderChip(); if (!zoomSync) writeHold(null); else if (!pSync || panelScope !== pScope) adoptLive(); zHudOn(); }
     if (changes[MODE_KEY]?.newValue) { mode = changes[MODE_KEY].newValue === "live" ? "profiles" : changes[MODE_KEY].newValue; renderChip(); }
     if (changes[SESSION_KEY]) { replayLocked = !!changes[SESSION_KEY].newValue && changes[SESSION_KEY].newValue.phase !== "idle"; renderChip(); }
     if (!onSyncPage()) return; // off /classic|/state (SPA nav): don't touch the page
