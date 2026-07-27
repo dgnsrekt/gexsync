@@ -4,6 +4,24 @@ All notable changes to GexSync are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and the project follows
 [semantic versioning](https://semver.org/).
 
+## [1.9.0] — 2026-07-27
+
+### Added
+- **Watchlist + one-click ticker cycling.** A new **Watchlist** page in the popup
+  lets you curate a list of tickers (picked from GEXbot's own ticker list, packaged
+  with the extension — no extra API calls at runtime). In **Ticker mode**, once the
+  list has 2+ entries, a compact cycle bar appears under the pill showing the
+  previous and next ticker (e.g. `AVGO ◂ ▸ NVDA`). One click — on either arrow or on
+  the symbol labels themselves — steps your whole color group to that ticker, reusing
+  the existing ticker-sync path so every synced tab follows. Cycling only acts in
+  Ticker mode; the bar stays hidden otherwise.
+
+### Fixed
+- **The chart watermark no longer collides with GEXbot's control panel.** On short
+  browser windows the right-side control panel overlapped the end of the
+  `TICKER … 0DTE` watermark. The watermark now measures itself against that panel and
+  drops the DTE tag onto its own line when they would overlap.
+
 ## [1.8.1] — 2026-07-25
 
 ### Fixed
@@ -249,6 +267,9 @@ All notable changes to GexSync are documented here. The format is based on
   different dates, tickers, and profiles side by side.
 - Bundled README, LICENSE, and OKF knowledge base.
 
+[1.9.0]: https://github.com/dgnsrekt/gexsync/compare/v1.8.1...v1.9.0
+[1.8.1]: https://github.com/dgnsrekt/gexsync/compare/v1.8.0...v1.8.1
+[1.8.0]: https://github.com/dgnsrekt/gexsync/compare/v1.7.0...v1.8.0
 [1.7.0]: https://github.com/dgnsrekt/gexsync/compare/v1.6.0...v1.7.0
 [1.6.0]: https://github.com/dgnsrekt/gexsync/compare/v1.5.0...v1.6.0
 [1.5.0]: https://github.com/dgnsrekt/gexsync/compare/v1.4.1...v1.5.0
