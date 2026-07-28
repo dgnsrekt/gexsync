@@ -139,7 +139,7 @@
       <circle cx="16" cy="16" r="2.4" fill="#16E0A3"/>
     </svg>
     <span class="wordmark">Gex<span class="s">Sync</span></span>
-    <span class="tag">MV3 · gexbot.com</span>
+    <span class="tag" id="verTap">MV3 · gexbot.com</span>
   </div>
 
   <div class="seg" id="pageSeg" role="tablist">
@@ -198,6 +198,15 @@
     <span>Sync chart settings</span>
   </label>
   <div class="hint" style="margin-top:5px">Mirrors the Settings panel's <b>Chart Type</b>, <b>Profile Alignment</b> &amp; <b>Time Zone</b> across tabs (follows Cross-page scope). Because GEXbot only shows these while Settings is open, it syncs <b>only when every in-scope panel is open</b> — a colored box marks the synced area; otherwise a "N/M panels open" hint shows why it's waiting.</div>
+
+  <div id="matrixRow" hidden>
+    <div class="label">✨ Secrets</div>
+    <label class="switch">
+      <input type="checkbox" id="matrix"><span class="track"></span>
+      <span>Matrix rain</span>
+    </label>
+    <div class="hint" style="margin-top:5px">Digital rain behind every pane, tinted to the group color, seeded with this pane's ticker &amp; the GEXbot lexicon. Purely cosmetic.</div>
+  </div>
 
   <div class="label">Mode</div>
   <div class="seg" id="modeSeg" role="tablist">

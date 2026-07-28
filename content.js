@@ -55,6 +55,7 @@
   const LINES_KEY = "gexsync-lines"; // per-ticker horizontal lines: { TICKER: [line] } in storage
   let lines = {};       // mirror of storage[LINES_KEY] — the source of truth for what renders
   let lineMode = false; // this tab's horizontal-line draw mode (local, off by default)
+  let matrixOn = false; // easter egg: matrix rain behind the panes; off by default, unlocked in the popup
   const readPd = (c) => ({ o: c?.pdO === true, h: c?.pdH === true, l: c?.pdL === true, c: c?.pdC === true });
   const panelKey = () => scopedKey("gexsync-panel", panelScope);
   const settingsKey = () => scopedKey("gexsync-settings", panelScope);
@@ -70,6 +71,7 @@
     pdLabelPos = r[CFG_KEY]?.pdLabel || "left";
     buzzOn = r[CFG_KEY]?.buzz === true; // default off (opt-in)
     watchlist = r[CFG_KEY]?.watchlist || [];
+    matrixOn = r[CFG_KEY]?.matrix === true; // default off (opt-in easter egg)
     zHudOn();
   });
   chrome.storage.local.get(LINES_KEY, (r) => { lines = r[LINES_KEY] || {}; writeLinesNode(); });
@@ -544,6 +546,19 @@
     linesNode().textContent = payload;
   }
   function saveLines(next) { lines = next; chrome.storage.local.set({ [LINES_KEY]: next }); writeLinesNode(); }
+
+  // Easter-egg matrix rain: feed matrix.js (MAIN world) the on-flag + this pane's live
+  // context via the #__gxmatrix node, same bridge/sig-guard idiom as writeLinesNode.
+  const matrixNode = () => { let n = document.getElementById("__gxmatrix"); if (!n) { n = document.createElement("div"); n.id = "__gxmatrix"; n.style.display = "none"; document.documentElement.appendChild(n); } return n; };
+  let lastMatrixSig = "";
+  function writeMatrixNode() {
+    const g = GROUPS.find((x) => x.name === groupName()) || GROUPS[0];
+    const payload = JSON.stringify({ on: matrixOn && onSyncPage(), ticker: baseTicker(), profile: profileLabel(), color: g.color });
+    if (payload === lastMatrixSig) return; // on/ticker/profile/color unchanged — skip
+    lastMatrixSig = payload;
+    matrixNode().textContent = payload;
+  }
+  setInterval(writeMatrixNode, 500); // keeps ticker/profile/group changes flowing to the rain
   // The public line API. Object shape matches mvDraw({ price, shape, text, overrides }).
   function addLine(ticker, o) {
     if (!ticker || !o || typeof o.price !== "number" || !isFinite(o.price)) return { ok: false, error: "bad-price" };
@@ -1569,7 +1584,7 @@
 
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area !== "local") return;
-    if (changes[CFG_KEY]?.newValue) { const c = changes[CFG_KEY].newValue; const pScope = panelScope; if (c.panelScope) panelScope = c.panelScope; watermark = c.watermark !== false; const pSync = zoomSync; zoomSync = c.zoomSync === true; groupShot = c.groupShot === true; const sNav = settingsNav; settingsNav = c.settingsNav === true; if (settingsNav !== sNav) lastNav = null; showDte = c.dte === true; settingsSync = c.settingsSync === true; pdShow = readPd(c); pdLabelPos = c.pdLabel || "left"; buzzOn = c.buzz === true; watchlist = c.watchlist || []; renderChip(); if (!zoomSync) writeHold(null); else if (!pSync || panelScope !== pScope) adoptLive(); zHudOn(); }
+    if (changes[CFG_KEY]?.newValue) { const c = changes[CFG_KEY].newValue; const pScope = panelScope; if (c.panelScope) panelScope = c.panelScope; watermark = c.watermark !== false; const pSync = zoomSync; zoomSync = c.zoomSync === true; groupShot = c.groupShot === true; const sNav = settingsNav; settingsNav = c.settingsNav === true; if (settingsNav !== sNav) lastNav = null; showDte = c.dte === true; settingsSync = c.settingsSync === true; pdShow = readPd(c); pdLabelPos = c.pdLabel || "left"; buzzOn = c.buzz === true; watchlist = c.watchlist || []; matrixOn = c.matrix === true; writeMatrixNode(); renderChip(); if (!zoomSync) writeHold(null); else if (!pSync || panelScope !== pScope) adoptLive(); zHudOn(); }
     if (changes[MODE_KEY]?.newValue) { mode = changes[MODE_KEY].newValue === "live" ? "profiles" : changes[MODE_KEY].newValue; renderChip(); }
     if (changes[SESSION_KEY]) { replayLocked = !!changes[SESSION_KEY].newValue && changes[SESSION_KEY].newValue.phase !== "idle"; renderChip(); }
     if (!onSyncPage()) return; // off /classic|/state (SPA nav): don't touch the page

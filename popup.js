@@ -161,14 +161,17 @@ const settingsNavEl = document.getElementById("settingsNav");
 const settingsSyncEl = document.getElementById("settingsSync");
 const dteEl = document.getElementById("dte");
 const buzzEl = document.getElementById("buzz");
+const matrixEl = document.getElementById("matrix");
+const matrixRow = document.getElementById("matrixRow");
+const verTap = document.getElementById("verTap");
 const pdEls = { pdO: document.getElementById("pdO"), pdH: document.getElementById("pdH"), pdL: document.getElementById("pdL"), pdC: document.getElementById("pdC") };
 const pdLabelSeg = document.getElementById("pdLabelSeg");
 let pdLabelPos = "left"; // left | center | right
 const renderPdLabel = () => pdLabelSeg.querySelectorAll(".seg-btn").forEach((b) => b.setAttribute("aria-selected", b.dataset.pos === pdLabelPos ? "true" : "false"));
 // DTE rides on the watermark — grey it out and force it off when the watermark is off.
 const syncDteLock = () => { dteEl.disabled = !wm.checked; if (!wm.checked) dteEl.checked = false; };
-chrome.storage.local.get("gexsync-cfg", (r) => { const g = r["gexsync-cfg"] || {}; sel.value = g.panelScope || "all"; wm.checked = g.watermark !== false; zoomSyncEl.checked = g.zoomSync === true; groupShotEl.checked = g.groupShot === true; settingsNavEl.checked = g.settingsNav === true; settingsSyncEl.checked = g.settingsSync === true; dteEl.checked = g.dte === true; buzzEl.checked = g.buzz === true; for (const k in pdEls) pdEls[k].checked = g[k] === true; pdLabelPos = g.pdLabel || "left"; renderPdLabel(); syncDteLock(); });
-const saveCfg = () => chrome.storage.local.get("gexsync-cfg", (r) => chrome.storage.local.set({ "gexsync-cfg": { ...(r["gexsync-cfg"] || {}), panelScope: sel.value, watermark: wm.checked, zoomSync: zoomSyncEl.checked, groupShot: groupShotEl.checked, settingsNav: settingsNavEl.checked, settingsSync: settingsSyncEl.checked, dte: dteEl.checked, buzz: buzzEl.checked, pdO: pdEls.pdO.checked, pdH: pdEls.pdH.checked, pdL: pdEls.pdL.checked, pdC: pdEls.pdC.checked, pdLabel: pdLabelPos } }));
+chrome.storage.local.get("gexsync-cfg", (r) => { const g = r["gexsync-cfg"] || {}; sel.value = g.panelScope || "all"; wm.checked = g.watermark !== false; zoomSyncEl.checked = g.zoomSync === true; groupShotEl.checked = g.groupShot === true; settingsNavEl.checked = g.settingsNav === true; settingsSyncEl.checked = g.settingsSync === true; dteEl.checked = g.dte === true; buzzEl.checked = g.buzz === true; for (const k in pdEls) pdEls[k].checked = g[k] === true; pdLabelPos = g.pdLabel || "left"; matrixEl.checked = g.matrix === true; if (g.unlocked) matrixRow.hidden = false; renderPdLabel(); syncDteLock(); });
+const saveCfg = () => chrome.storage.local.get("gexsync-cfg", (r) => chrome.storage.local.set({ "gexsync-cfg": { ...(r["gexsync-cfg"] || {}), panelScope: sel.value, watermark: wm.checked, zoomSync: zoomSyncEl.checked, groupShot: groupShotEl.checked, settingsNav: settingsNavEl.checked, settingsSync: settingsSyncEl.checked, dte: dteEl.checked, buzz: buzzEl.checked, pdO: pdEls.pdO.checked, pdH: pdEls.pdH.checked, pdL: pdEls.pdL.checked, pdC: pdEls.pdC.checked, pdLabel: pdLabelPos, matrix: matrixEl.checked } }));
 sel.addEventListener("change", saveCfg);
 wm.addEventListener("change", () => { syncDteLock(); saveCfg(); });
 dteEl.addEventListener("change", saveCfg);
@@ -178,7 +181,27 @@ groupShotEl.addEventListener("change", saveCfg);
 settingsNavEl.addEventListener("change", saveCfg);
 settingsSyncEl.addEventListener("change", saveCfg);
 for (const k in pdEls) pdEls[k].addEventListener("change", saveCfg);
+matrixEl.addEventListener("change", saveCfg);
 pdLabelSeg.querySelectorAll(".seg-btn").forEach((b) => b.addEventListener("click", () => { pdLabelPos = b.dataset.pos; renderPdLabel(); saveCfg(); }));
+
+// Easter egg: tap the version text 7× (Android "build number" style) to reveal the
+// Matrix rain toggle. Counter resets after a short idle; `unlocked` persists in cfg
+// (merge-write, mirroring saveWatchlist) so the row stays once found.
+let _taps = 0, _tapReset = 0;
+verTap.addEventListener("click", () => {
+  if (!matrixRow.hidden) return; // already unlocked
+  clearTimeout(_tapReset);
+  _tapReset = setTimeout(() => { _taps = 0; verTap.textContent = "MV3 · gexbot.com"; }, 1500);
+  _taps++;
+  const left = 7 - _taps;
+  if (left > 0) { if (_taps >= 4) verTap.textContent = `${left} more…`; return; }
+  clearTimeout(_tapReset);
+  _taps = 0;
+  matrixRow.hidden = false;
+  chrome.storage.local.get("gexsync-cfg", (r) => chrome.storage.local.set({ "gexsync-cfg": { ...(r["gexsync-cfg"] || {}), unlocked: true } }));
+  verTap.textContent = "✨ unlocked";
+  setTimeout(() => { verTap.textContent = "MV3 · gexbot.com"; }, 1600);
+});
 
 // Replay settings — merge on write to keep master.
 const track = document.getElementById("replayTrack");
