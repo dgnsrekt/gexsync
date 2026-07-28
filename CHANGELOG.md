@@ -4,6 +4,14 @@ All notable changes to GexSync are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and the project follows
 [semantic versioning](https://semver.org/).
 
+## [1.11.0] — 2026-07-28
+
+### Added
+- **A little something hidden.** There's a new toggle you have to find — tap the
+  version text in the popup a few times, Android-"build number" style, and a **✨ Secrets**
+  block appears at the bottom of the Sync page. What's inside is purely cosmetic, off by
+  default, and tinted to your ticker group. Reload the extension, then go tapping. 🟩
+
 ## [1.10.0] — 2026-07-28
 
 ### Added
@@ -287,6 +295,7 @@ All notable changes to GexSync are documented here. The format is based on
   different dates, tickers, and profiles side by side.
 - Bundled README, LICENSE, and OKF knowledge base.
 
+[1.11.0]: https://github.com/dgnsrekt/gexsync/compare/v1.10.0...v1.11.0
 [1.10.0]: https://github.com/dgnsrekt/gexsync/compare/v1.9.0...v1.10.0
 [1.9.0]: https://github.com/dgnsrekt/gexsync/compare/v1.8.1...v1.9.0
 [1.8.1]: https://github.com/dgnsrekt/gexsync/compare/v1.8.0...v1.8.1
