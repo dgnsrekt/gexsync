@@ -52,6 +52,9 @@
   let pdLabelPos = "left"; // label placement: left | center | right
   let buzzOn = false; // ApeWisdom Reddit mentions in the pill's details panel; opt-in, no key
   let watchlist = []; // symbols the pill's cycle arrows step through (Ticker mode, 2+); curated in the popup
+  const LINES_KEY = "gexsync-lines"; // per-ticker horizontal lines: { TICKER: [line] } in storage
+  let lines = {};       // mirror of storage[LINES_KEY] — the source of truth for what renders
+  let lineMode = false; // this tab's horizontal-line draw mode (local, off by default)
   const readPd = (c) => ({ o: c?.pdO === true, h: c?.pdH === true, l: c?.pdL === true, c: c?.pdC === true });
   const panelKey = () => scopedKey("gexsync-panel", panelScope);
   const settingsKey = () => scopedKey("gexsync-settings", panelScope);
@@ -69,6 +72,7 @@
     watchlist = r[CFG_KEY]?.watchlist || [];
     zHudOn();
   });
+  chrome.storage.local.get(LINES_KEY, (r) => { lines = r[LINES_KEY] || {}; writeLinesNode(); });
 
   // Mode gates what syncs (one axis at a time; panel-collapse always syncs):
   //   profiles — gex + options profiles sync; ticker independent
@@ -523,6 +527,62 @@
     };
   };
 
+  // ---- horizontal lines (per-ticker) ----
+  // ONE store, several front doors: the pill's line-mode + chart clicks, the popup's
+  // Lines section, and (later) a programmatic draw op all end up in add/remove/clearLines
+  // here. The store lives in chrome.storage keyed by TICKER; a
+  // MAIN-world renderer (lines.js) draws whatever the current ticker's lines node holds.
+  // Line records mirror mvsync/TradingView's createShape object so an agent payload IS
+  // the stored record: { id, shape, points:[{time,price}], text, overrides }.
+  const linesNode = () => { let n = document.getElementById("__gxlines"); if (!n) { n = document.createElement("div"); n.id = "__gxlines"; n.style.display = "none"; document.documentElement.appendChild(n); } return n; };
+  let lastLinesSig = "";
+  function writeLinesNode() {
+    const tk = baseTicker();
+    const payload = JSON.stringify({ ticker: tk, lines: (tk && lines[tk]) || [], mode: lineMode });
+    if (payload === lastLinesSig) return; // ticker/lines/mode unchanged — skip
+    lastLinesSig = payload;
+    linesNode().textContent = payload;
+  }
+  function saveLines(next) { lines = next; chrome.storage.local.set({ [LINES_KEY]: next }); writeLinesNode(); }
+  // The public line API. Object shape matches mvDraw({ price, shape, text, overrides }).
+  function addLine(ticker, o) {
+    if (!ticker || !o || typeof o.price !== "number" || !isFinite(o.price)) return { ok: false, error: "bad-price" };
+    if (o.shape && o.shape !== "horizontal_line") return { ok: false, error: "unsupported-shape", shape: o.shape };
+    const id = Math.random().toString(36).slice(2, 9);
+    const line = { id, shape: "horizontal_line", points: [{ time: o.time ?? null, price: o.price }], text: o.text ?? null,
+      overrides: { linecolor: "#16E0A3", linewidth: 1, linestyle: "dashed", ...(o.overrides || {}) } };
+    saveLines({ ...lines, [ticker]: [...(lines[ticker] || []), line] });
+    return { ok: true, id, ticker };
+  }
+  function removeLine(ticker, id) {
+    if (!lines[ticker]) return { ok: false, error: "no-such-ticker" };
+    const kept = lines[ticker].filter((l) => l.id !== id);
+    const next = { ...lines }; if (kept.length) next[ticker] = kept; else delete next[ticker];
+    saveLines(next); return { ok: true, removed: id };
+  }
+  function clearLines(ticker) { if (!lines[ticker]) return { ok: true, cleared: 0 }; const n = lines[ticker].length; const next = { ...lines }; delete next[ticker]; saveLines(next); return { ok: true, cleared: n }; }
+  function clearAllLines() { const n = Object.values(lines).reduce((a, l) => a + l.length, 0); saveLines({}); return { ok: true, cleared: n }; }
+  const listLines = (ticker) => (ticker ? (lines[ticker] || []).slice() : { ...lines });
+
+  // MAIN-world (lines.js) → here: a chart click in line mode placed/removed a line.
+  window.addEventListener("gexsync-line-place", (e) => { const p = e.detail && e.detail.price; if (typeof p === "number") addLine(baseTicker(), { price: p }); });
+  window.addEventListener("gexsync-line-remove", (e) => { const id = e.detail && e.detail.id; if (id) removeLine(baseTicker(), id); });
+  // Keep the render node pointed at the current ticker (writeLinesNode is sig-guarded,
+  // so this only touches the DOM when the ticker, its lines, or line mode change).
+  setInterval(writeLinesNode, 500);
+  // Any tab (or the popup) mutating the store → refresh this tab's cache + render node.
+  chrome.storage.onChanged.addListener((c, area) => { if (area === "local" && c[LINES_KEY]) { lines = c[LINES_KEY].newValue || {}; writeLinesNode(); } });
+  // Programmatic seam (inert in this build — nothing sends these here; a later driver
+  // relays to exactly these cmds). Same API as the functions above.
+  chrome.runtime.onMessage.addListener((msg, sender, reply) => {
+    if (!msg || !msg.cmd || !String(msg.cmd).startsWith("gexsync-line-")) return;
+    if (msg.cmd === "gexsync-line-add") reply(addLine(msg.ticker || baseTicker(), msg));
+    else if (msg.cmd === "gexsync-line-remove") reply(removeLine(msg.ticker || baseTicker(), msg.id));
+    else if (msg.cmd === "gexsync-line-list") reply({ ok: true, lines: listLines(msg.ticker) });
+    else if (msg.cmd === "gexsync-line-clear") reply(msg.ticker ? clearLines(msg.ticker) : clearAllLines());
+    return true; // async reply
+  });
+
   // ---- boot repair (stuck hash-URL loads) ----
   // A fresh full-page load of a #TICKER#profile URL (F5 / reopen) flakily lands
   // STUCK — GEXbot fails to RENDER the chart (EMPTY: "No data to display"; or
@@ -957,6 +1017,16 @@
     markSeg.style.cssText = `display:flex;align-items:center;padding:6px 3px 6px 13px;color:${T.muted};transition:color .16s;`;
     markSeg.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="transform-box:fill-box;transform-origin:center"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4.5v5h5"/></svg>`;
 
+    // horizontal-line mode toggle — after the mark, before the label. Click to arm, then
+    // click the chart to drop a line at that price (click a line to remove it). Mint when on.
+    const lineSeg = document.createElement("span");
+    lineSeg.id = "gexsync-chip-line";
+    lineSeg.style.cssText = `display:flex;align-items:center;padding:6px 6px;cursor:pointer;color:${T.muted};transition:color .16s;`;
+    lineSeg.title = "Horizontal line mode — click, then click the chart to drop a line (click a line to remove it)";
+    lineSeg.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><line x1="3" y1="9" x2="21" y2="9"/><line x1="3" y1="15" x2="21" y2="15" stroke-dasharray="3 3" opacity=".55"/></svg>`;
+    const paintLineBtn = () => { lineSeg.style.color = lineMode ? T.mint : T.muted; };
+    lineSeg.addEventListener("click", () => { lineMode = !lineMode; writeLinesNode(); paintLineBtn(); });
+
     const modeSeg = document.createElement("span");
     modeSeg.id = "gexsync-chip-mode";
     // snug to the label now that "mode:" is gone (the pill already resizes between modes
@@ -1002,7 +1072,7 @@
     infoSeg.style.cssText = `display:flex;align-items:center;gap:6px;padding:6px 14px;border-left:1px solid rgba(255,255,255,.12);font:500 12px ${T.mono};letter-spacing:.3px;white-space:nowrap;color:${T.ink};cursor:pointer;transition:background .16s;`;
     infoSeg.title = "Ticker details — hover to peek, click to pin open (Esc closes)";
 
-    chip.append(markSeg, modeSeg, grpSeg, infoSeg);
+    chip.append(markSeg, lineSeg, modeSeg, grpSeg, infoSeg);
 
     // Step to the prev/next watchlist ticker as if the user changed it: in-app
     // hashchange + a group broadcast (immediate, no 400ms poll lag). Pre-set
@@ -1082,6 +1152,7 @@
       paintGroup();
       paintInfo();
       paintCycle();
+      paintLineBtn();
     };
     stack.appendChild(chip);
     stack.appendChild(cycleBar); // below the pill; hidden (out of flow) until Ticker mode + 2+ watchlist

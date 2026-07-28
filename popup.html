@@ -71,6 +71,21 @@
   }
   .chip button:hover { color: var(--amber); }
 
+  /* saved lines */
+  #linesList:empty::after { content: "No lines yet. Arm line mode on the chart pill, then click a chart to drop one."; color: var(--muted); font-size: 11px; }
+  .ln-grp { margin-top: 11px; }
+  .ln-hd { display: flex; align-items: center; gap: 8px; }
+  .ln-tk { font: 700 13px var(--ui); }
+  .ln-n { color: var(--muted); font-size: 11px; }
+  .ln-clr { margin-left: auto; padding: 2px 8px; border-radius: 7px; cursor: pointer; background: var(--raised); border: 1px solid var(--line); color: var(--muted); font: 600 10px var(--mono); letter-spacing: .06em; text-transform: uppercase; }
+  .ln-clr:hover { color: var(--amber); border-color: var(--amber); }
+  .ln-row { display: flex; align-items: center; gap: 9px; margin-top: 5px; padding: 6px 9px; border-radius: 8px; background: var(--raised); border: 1px solid var(--line); }
+  .ln-sw { width: 11px; height: 11px; border-radius: 2px; flex: 0 0 auto; box-shadow: 0 0 0 1px rgba(255,255,255,.25); }
+  .ln-px { font: 600 12.5px var(--mono); color: var(--ink); }
+  .ln-txt { color: var(--muted); font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .ln-del { margin-left: auto; border: none; background: none; cursor: pointer; color: var(--muted); font: 13px var(--ui); line-height: 1; padding: 0 2px; }
+  .ln-del:hover { color: var(--amber); }
+
   /* current state */
   #count { color: var(--muted); font-size: 12px; }
   #count b { color: var(--ink); font-weight: 600; }
@@ -131,6 +146,7 @@
     <button class="seg-btn" data-page="sync" role="tab">Sync</button>
     <button class="seg-btn" data-page="keys" role="tab">Data keys</button>
     <button class="seg-btn" data-page="watchlist" role="tab">Watchlist</button>
+    <button class="seg-btn" data-page="lines" role="tab">Lines</button>
   </div>
 
   <div data-page="sync">
@@ -248,6 +264,15 @@
   </div>
   <div class="hint" style="margin-top:5px">Draws white horizontal lines on the chart at the previous trading day's Open/High/Low/Close (labeled PDO/PDH/PDL/PDC). Each independent; off by default. Uses the Massive key and follows replay. Stocks &amp; ETFs only.</div>
   </div><!-- /page: keys -->
+
+  <div data-page="lines" hidden>
+  <div class="label">Saved lines</div>
+  <div class="hint">Horizontal lines you've drawn, grouped by ticker. They're per-ticker — a line shows only on charts of that ticker. Draw them with the line button on the chart pill.</div>
+  <div id="linesList"></div>
+  <div class="btnrow" style="margin-top:9px">
+    <button id="linesClearAll" class="btn">Clear all lines</button>
+  </div>
+  </div><!-- /page: lines -->
 
   <div data-page="watchlist" hidden>
   <div class="label">Watchlist</div>

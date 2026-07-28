@@ -122,6 +122,37 @@ wlChips.addEventListener("click", (e) => {
   renderChips(); saveWatchlist();
 });
 
+// ---- Saved lines: overview of the per-ticker horizontal-line store. The popup reads
+// and mutates storage["gexsync-lines"] directly; every tab's content.js reacts via
+// storage.onChanged and re-renders its ticker's lines. No live tab needed here. ----
+const LINES_KEY = "gexsync-lines";
+const linesList = document.getElementById("linesList");
+const linesClearAll = document.getElementById("linesClearAll");
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+function renderLines(store) {
+  const tickers = Object.keys(store || {}).filter((t) => store[t] && store[t].length).sort();
+  linesList.innerHTML = tickers.map((tk) => {
+    const rows = store[tk].map((l) => {
+      const px = l.points && l.points[0] != null ? (+l.points[0].price).toFixed(2) : "?";
+      const col = (l.overrides && l.overrides.linecolor) || "#16E0A3";
+      const txt = l.text ? `<span class="ln-txt">${esc(l.text)}</span>` : "";
+      return `<div class="ln-row"><span class="ln-sw" style="background:${esc(col)}"></span><span class="ln-px">${px}</span>${txt}<button class="ln-del" data-tk="${esc(tk)}" data-id="${esc(l.id)}" title="Remove this line">✕</button></div>`;
+    }).join("");
+    const n = store[tk].length;
+    return `<div class="ln-grp"><div class="ln-hd"><span class="ln-tk">${esc(tk)}</span><span class="ln-n">${n} line${n === 1 ? "" : "s"}</span><button class="ln-clr" data-tk="${esc(tk)}" title="Clear ${esc(tk)}">clear</button></div>${rows}</div>`;
+  }).join("");
+  linesClearAll.disabled = tickers.length === 0;
+}
+const withLines = (fn) => chrome.storage.local.get(LINES_KEY, (r) => { const next = fn(r[LINES_KEY] || {}); if (next !== undefined) chrome.storage.local.set({ [LINES_KEY]: next }); });
+chrome.storage.local.get(LINES_KEY, (r) => renderLines(r[LINES_KEY] || {}));
+chrome.storage.onChanged.addListener((c, area) => { if (area === "local" && c[LINES_KEY]) renderLines(c[LINES_KEY].newValue || {}); });
+linesList.addEventListener("click", (e) => {
+  const del = e.target.closest(".ln-del"), clr = e.target.closest(".ln-clr");
+  if (del) withLines((s) => { if (!s[del.dataset.tk]) return; const kept = s[del.dataset.tk].filter((l) => l.id !== del.dataset.id); const n = { ...s }; if (kept.length) n[del.dataset.tk] = kept; else delete n[del.dataset.tk]; return n; });
+  else if (clr) withLines((s) => { if (!s[clr.dataset.tk]) return; const n = { ...s }; delete n[clr.dataset.tk]; return n; });
+});
+linesClearAll.addEventListener("click", () => { if (confirm("Clear ALL saved lines across every ticker?")) chrome.storage.local.set({ [LINES_KEY]: {} }); });
+
 const sel = document.getElementById("panelScope");
 const wm = document.getElementById("watermark");
 const zoomSyncEl = document.getElementById("zoomSync");
