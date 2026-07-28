@@ -1104,15 +1104,15 @@
       setTimeout(paintCycle, 120); // relabel prev/next off the new current
     };
     const paintCycle = () => {
-      // Reserve the bar's vertical slot whenever a watchlist is set (2+ names), in
-      // EVERY mode, and only toggle visibility — so the pill (and the details panel
-      // above it) sit at the same height in Profiles / Ticker / Replay. Without this
-      // the bar's display:none↔flex shoved the bottom-anchored pill up/down → a jump
-      // when cycling modes. The bar is only visible + clickable in Ticker mode; the
-      // reserved slot is an invisible, non-interactive box otherwise.
-      const reserve = watchlist.length >= 2;
+      // ALWAYS reserve the sub-pill slot so the main pill (and the details panel above
+      // it) stay at one fixed height in every mode / watchlist size — the cycle bar
+      // fills the slot in Ticker mode with 2+ names, and Replay's transport bar sits
+      // just below the pill. Without an always-on slot the bottom-anchored pill dropped
+      // when the cycle bar was absent (≤1 ticker) and collided with the replay bar.
+      // The bar is only visible + clickable when there are prev/next targets; otherwise
+      // the reserved slot is an invisible, non-interactive box.
       const t = cycleTargets(); // non-null only in Ticker mode with 2+ names
-      cycleBar.style.display = reserve ? "flex" : "none";
+      cycleBar.style.display = "flex";
       cycleBar.style.visibility = t ? "visible" : "hidden";
       if (!t) return;
       cycleBar.style.color = (GROUPS.find((x) => x.name === groupName()) || GROUPS[0]).color; // group-tinted like the pill
