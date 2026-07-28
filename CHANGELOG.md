@@ -4,6 +4,26 @@ All notable changes to GexSync are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and the project follows
 [semantic versioning](https://semver.org/).
 
+## [1.10.0] — 2026-07-28
+
+### Added
+- **Horizontal lines on the chart.** A new **line button** on the chart pill (just
+  after the loop mark) arms *line mode*: a mint price preview tracks your cursor, a
+  click drops a horizontal line at that price, and clicking a line removes it. Lines
+  are **per-ticker** — each one belongs to the ticker it was drawn on and only shows
+  on charts of that ticker (like a TradingView drawing belongs to its symbol), and
+  they **persist** across reloads and GEXbot's chart refresh. A new **Lines** page in
+  the popup lists every saved line grouped by ticker, with per-line delete, **clear
+  this ticker**, and **clear all**.
+
+### Changed
+- **The bottom pill is now consistent across Profiles / Ticker / Replay.** The pill
+  (and its details panel) no longer jump vertically when you cycle modes; the loop
+  mark stays on the pill in every mode and is **tinted by replay role** (mint master,
+  azure client); the Replay transport bar's redundant leading circle is gone and the
+  bar sits snug under the pill like the Ticker cycle bar; and the `mode:` prefix is
+  dropped so the pill reads just **Ticker / Profiles / Replay**.
+
 ## [1.9.0] — 2026-07-27
 
 ### Added
@@ -267,6 +287,7 @@ All notable changes to GexSync are documented here. The format is based on
   different dates, tickers, and profiles side by side.
 - Bundled README, LICENSE, and OKF knowledge base.
 
+[1.10.0]: https://github.com/dgnsrekt/gexsync/compare/v1.9.0...v1.10.0
 [1.9.0]: https://github.com/dgnsrekt/gexsync/compare/v1.8.1...v1.9.0
 [1.8.1]: https://github.com/dgnsrekt/gexsync/compare/v1.8.0...v1.8.1
 [1.8.0]: https://github.com/dgnsrekt/gexsync/compare/v1.7.0...v1.8.0
