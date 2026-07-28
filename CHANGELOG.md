@@ -4,6 +4,15 @@ All notable changes to GexSync are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and the project follows
 [semantic versioning](https://semver.org/).
 
+## [1.11.1] — 2026-07-28
+
+### Fixed
+- **The bottom pill no longer drops when the watchlist is short.** With 1 or fewer
+  watchlist tickers the pill used to fall to the bottom of the chart and, in Replay mode,
+  hide behind the "Be master" transport bar. The pill (and its details panel) now stay at
+  one fixed height in every mode and watchlist size; the cycle bar and the replay bar sit
+  just below it.
+
 ## [1.11.0] — 2026-07-28
 
 ### Added
@@ -295,6 +304,7 @@ All notable changes to GexSync are documented here. The format is based on
   different dates, tickers, and profiles side by side.
 - Bundled README, LICENSE, and OKF knowledge base.
 
+[1.11.1]: https://github.com/dgnsrekt/gexsync/compare/v1.11.0...v1.11.1
 [1.11.0]: https://github.com/dgnsrekt/gexsync/compare/v1.10.0...v1.11.0
 [1.10.0]: https://github.com/dgnsrekt/gexsync/compare/v1.9.0...v1.10.0
 [1.9.0]: https://github.com/dgnsrekt/gexsync/compare/v1.8.1...v1.9.0
