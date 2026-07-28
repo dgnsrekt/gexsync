@@ -533,12 +533,12 @@
       <style>
         /* brand: mint #16E0A3 master, azure #4AA3FF client, red #FF5C5C exit,
            amber #FFB454 no-data. Fonts injected at document level by content.js. */
-        .bar { position:fixed; left:16px; bottom:20px; display:flex; align-items:center; padding:6px;
+        .bar { position:fixed; left:16px; bottom:54px; display:flex; align-items:center; padding:6px 10px;
           border-radius:9999px; background:rgba(22,20,31,.8); backdrop-filter:blur(16px); -webkit-backdrop-filter:blur(16px);
           border:1px solid rgba(255,255,255,.12); box-shadow:0 16px 48px rgba(0,0,0,.5);
           z-index:2147483000; font:500 13px 'IBM Plex Sans',system-ui,-apple-system,sans-serif; color:#E7E9EA; user-select:none; }
-        .anchor { flex:0 0 auto; width:38px; height:38px; border-radius:9999px; border:none;
-          background:transparent; color:#9AA0AA; cursor:pointer; display:flex; align-items:center; justify-content:center; padding:0; }
+        /* anchor loop-mark hidden: the pill now carries the mark in every mode (see content.js) */
+        .anchor { display:none; }
         .bar[data-role="master"] .anchor { color:#16E0A3; }
         .bar[data-role="client"] .anchor { color:#4AA3FF; }
         .bar[data-cal="1"] .anchor { animation:calpulse 1.1s ease-in-out infinite; }
@@ -631,7 +631,13 @@
       bar.dataset.cal = calibrating ? "1" : "0";
       updateBlocker();
       const chip = document.getElementById("gexsync-mode-chip");
-      if (chip) chip.dataset.replayRole = cfg.debug && participating() ? (isMaster() ? "MASTER" : "client") : "";
+      if (chip) {
+        chip.dataset.replayRole = cfg.debug && participating() ? (isMaster() ? "MASTER" : "client") : "";
+        // tint the pill's loop mark by role (the hidden anchor circle used to carry this):
+        // mint master, azure client, muted (#9AA0AA = T.muted) otherwise.
+        const mark = chip.querySelector("#gexsync-chip-mark");
+        if (mark) { const r = myRole(); mark.style.color = r === "master" ? "#16E0A3" : r === "client" ? "#4AA3FF" : "#9AA0AA"; }
+      }
       if (!active() || !onSyncPage()) { overlay.style.display = "none"; return; }
 
       const ids = await presentIds();

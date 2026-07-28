@@ -959,8 +959,9 @@
 
     const modeSeg = document.createElement("span");
     modeSeg.id = "gexsync-chip-mode";
-    // min-width holds "mode: Profiles" so the zoom takeover labels don't jitter the pill
-    modeSeg.style.cssText = "display:flex;align-items:center;gap:7px;padding:6px 13px 6px 7px;cursor:pointer;box-sizing:border-box;min-width:118px;transition:color .16s;";
+    // snug to the label now that "mode:" is gone (the pill already resizes between modes
+    // when the group segment appears in Ticker, so a fixed width bought us nothing)
+    modeSeg.style.cssText = "display:flex;align-items:center;gap:7px;padding:6px 13px 6px 7px;cursor:pointer;box-sizing:border-box;transition:color .16s;";
     modeSeg.title = "GexSync mode — click to cycle (Profiles / Ticker / Replay)";
     modeSeg.addEventListener("click", () => { if (replayLocked) return; send({ [MODE_KEY]: MODES[(MODES.indexOf(mode) + 1) % MODES.length] }); });
 
@@ -1018,8 +1019,16 @@
       setTimeout(paintCycle, 120); // relabel prev/next off the new current
     };
     const paintCycle = () => {
-      const t = cycleTargets();
-      cycleBar.style.display = t ? "flex" : "none";
+      // Reserve the bar's vertical slot whenever a watchlist is set (2+ names), in
+      // EVERY mode, and only toggle visibility — so the pill (and the details panel
+      // above it) sit at the same height in Profiles / Ticker / Replay. Without this
+      // the bar's display:none↔flex shoved the bottom-anchored pill up/down → a jump
+      // when cycling modes. The bar is only visible + clickable in Ticker mode; the
+      // reserved slot is an invisible, non-interactive box otherwise.
+      const reserve = watchlist.length >= 2;
+      const t = cycleTargets(); // non-null only in Ticker mode with 2+ names
+      cycleBar.style.display = reserve ? "flex" : "none";
+      cycleBar.style.visibility = t ? "visible" : "hidden";
       if (!t) return;
       cycleBar.style.color = (GROUPS.find((x) => x.name === groupName()) || GROUPS[0]).color; // group-tinted like the pill
       cPrev.textContent = t.prev; cNext.textContent = t.next;
@@ -1058,18 +1067,18 @@
     renderChip = () => {
       const m = MODES.includes(mode) ? mode : "profiles";
       // locked replay session → pill can't switch modes (Exit via the replay bar)
-      modeSeg.textContent = `mode: ${LABEL[m]}${replayLocked ? " 🔒" : ""}`;
+      modeSeg.textContent = `${LABEL[m]}${replayLocked ? " 🔒" : ""}`;
       modeSeg.style.cursor = replayLocked ? "default" : "pointer";
       modeSeg.title = replayLocked ? "Locked during replay session — Exit via the replay bar" : "GexSync mode — click to cycle (Profiles / Ticker / Replay)";
       const g = GROUPS.find((x) => x.name === groupName()) || GROUPS[0];
       // tint the pill by group only in Ticker mode (groups are inert otherwise)
       chip.style.color = m === "ticker" ? g.color : T.ink;
       grpSeg.style.display = m === "ticker" ? "flex" : "none";
-      // Replay mode shows the transport bar (whose anchor is the loop mark), so
-      // drop the pill's own loop glyph to avoid two stacked circles in the corner.
-      const showMark = m !== "replay";
-      markSeg.style.display = showMark ? "flex" : "none";
-      modeSeg.style.paddingLeft = showMark ? "7px" : "13px";
+      // the loop mark stays on the pill in EVERY mode now — Replay's transport bar no
+      // longer carries its own (its anchor circle is hidden in replay.js), so there's
+      // one consistent mark on the pill across Profiles / Ticker / Replay.
+      markSeg.style.display = "flex";
+      modeSeg.style.paddingLeft = "7px";
       paintGroup();
       paintInfo();
       paintCycle();
