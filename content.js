@@ -62,6 +62,8 @@
   let tabDraws = {};  // session-lived tab-scoped drawings (sessionStorage): { TICKER: [{scope:"tab",...}] }
   let drawTool = "free"; // "free" | "arrow" — current draw tool (global via cfg.drawTool)
   let activeScope = "page"; // scope for NEW drawings: "global" | "page" | "tab" (global via cfg.drawScope)
+  let triggerColor = "#FFC24A"; // themes all trigger visuals (reticle, badge, lines); via cfg.triggerColor
+  let drawColor = "#4AA3FF"; // themes all draw visuals (reticle, badge, strokes); via cfg.drawColor
   let matrixOn = false; // easter egg: matrix rain behind the panes; off by default, unlocked in the popup
   const readPd = (c) => ({ o: c?.pdO === true, h: c?.pdH === true, l: c?.pdL === true, c: c?.pdC === true });
   const panelKey = () => scopedKey("gexsync-panel", panelScope);
@@ -82,6 +84,8 @@
     chartMode = r[CFG_KEY]?.chartMode ?? (r[CFG_KEY]?.triggerArmed ? "trigger" : ""); // shared across panes
     drawTool = r[CFG_KEY]?.drawTool || "free";
     activeScope = r[CFG_KEY]?.drawScope || "page";
+    triggerColor = r[CFG_KEY]?.triggerColor || "#FFC24A";
+    drawColor = r[CFG_KEY]?.drawColor || "#4AA3FF";
     zHudOn();
   });
   chrome.storage.local.get(LINES_KEY, (r) => { lines = r[LINES_KEY] || {}; writeLinesNode(); });
@@ -560,7 +564,7 @@
   let lastLinesSig = "";
   function writeLinesNode() {
     const tk = baseTicker();
-    const payload = JSON.stringify({ ticker: tk, lines: (tk && lines[tk]) || [], mode: chartMode, inWatch: !!(tk && watchlist.includes(tk)), draws: tk ? visibleDraws(tk, pageName()) : [], tool: drawTool, scope: activeScope });
+    const payload = JSON.stringify({ ticker: tk, lines: (tk && lines[tk]) || [], mode: chartMode, inWatch: !!(tk && watchlist.includes(tk)), draws: tk ? visibleDraws(tk, pageName()) : [], tool: drawTool, scope: activeScope, triggerColor, drawColor });
     if (payload === lastLinesSig) return; // ticker/lines/mode/watch/draws unchanged — skip
     lastLinesSig = payload;
     linesNode().textContent = payload;
@@ -591,7 +595,8 @@
     if (o.shape && o.shape !== "horizontal_line") return { ok: false, error: "unsupported-shape", shape: o.shape };
     const id = Math.random().toString(36).slice(2, 9);
     const line = { id, shape: "horizontal_line", points: [{ time: o.time ?? null, price: o.price }], text: o.text ?? null,
-      overrides: { linecolor: "#16E0A3", linewidth: 1, linestyle: "dashed", ...(o.overrides || {}) } };
+      // no default linecolor → the line follows the live trigger color; an explicit override wins
+      overrides: { linewidth: 1, linestyle: "dashed", ...(o.overrides || {}) } };
     saveLines({ ...lines, [ticker]: [...(lines[ticker] || []), line] });
     return { ok: true, id, ticker };
   }
@@ -620,7 +625,7 @@
   const scopeMatch = (d, sc, pg) => d.scope === sc && (sc !== "page" || d.page === pg);
   window.addEventListener("gexsync-draw-add", (e) => {
     const d = e.detail, tk = baseTicker(); if (!tk || !d || !Array.isArray(d.points) || !d.points.length) return;
-    const rec = { id: newDrawId(), scope: activeScope, type: d.type === "arrow" ? "arrow" : "free", color: d.color || "#4AA3FF", width: d.width || 2, points: d.points };
+    const rec = { id: newDrawId(), scope: activeScope, type: d.type === "arrow" ? "arrow" : "free", width: d.width || 2, points: d.points }; // no color → follows the live draw color
     if (activeScope === "page") rec.page = pageName();
     if (activeScope === "tab") saveTabDraws({ ...tabDraws, [tk]: [...(tabDraws[tk] || []), rec] });
     else saveDraws({ ...draws, [tk]: [...(draws[tk] || []), rec] }); // global | page
@@ -639,6 +644,7 @@
   });
   window.addEventListener("gexsync-draw-tool", (e) => { const t = e.detail && e.detail.tool; if (t === "free" || t === "arrow") setDrawTool(t); });
   window.addEventListener("gexsync-draw-scope", (e) => { const s = e.detail && e.detail.scope; if (s === "global" || s === "page" || s === "tab") setDrawScope(s); });
+  window.addEventListener("gexsync-chart-mode", (e) => { const m = e.detail && e.detail.mode; if (m === "" || m === "trigger" || m === "draw") setChartMode(m); }); // menu Off / mode-switch
   // Keep the render node pointed at the current ticker (writeLinesNode is sig-guarded,
   // so this only touches the DOM when the ticker, its lines, mode, or drawings change).
   setInterval(writeLinesNode, 500);
@@ -1096,14 +1102,14 @@
     // "trigger" mode toggle — after the mark, before the label. Click to arm: shows the reticle,
     // locks pan/zoom, and takes over the chart's right-click for the action menu. Click cycles
     // off → trigger → draw → off; draw mode adds left-drag freehand/arrow (blue reticle + draw
-    // menu). GLOBAL — all panes cycle together via cfg.chartMode. Crosshair-circle icon; amber
-    // in trigger, azure in draw.
+    // menu). GLOBAL — all panes cycle together via cfg.chartMode. Crosshair-circle icon, tinted
+    // to the chosen trigger/draw color when armed.
     const trigSeg = document.createElement("span");
     trigSeg.id = "gexsync-chip-trigger";
     trigSeg.style.cssText = `display:flex;align-items:center;padding:6px 6px;cursor:pointer;color:${T.muted};transition:color .16s;`;
     trigSeg.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="12" cy="12" r="7"/><line x1="12" y1="1.5" x2="12" y2="5.5"/><line x1="12" y1="18.5" x2="12" y2="22.5"/><line x1="1.5" y1="12" x2="5.5" y2="12"/><line x1="18.5" y1="12" x2="22.5" y2="12"/></svg>`;
     const paintTrigBtn = () => {
-      trigSeg.style.color = chartMode === "trigger" ? T.amber : chartMode === "draw" ? T.azure : T.muted;
+      trigSeg.style.color = chartMode === "trigger" ? triggerColor : chartMode === "draw" ? drawColor : T.muted;
       trigSeg.title = chartMode === "trigger" ? "Trigger mode — reticle + locked chart; right-click for the action menu (click → draw mode)"
         : chartMode === "draw" ? "Draw mode — left-drag to draw on the chart; right-click for the draw menu (click → off)"
         : "Chart tools — click to cycle: trigger mode → draw mode → off";
@@ -1652,7 +1658,7 @@
 
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area !== "local") return;
-    if (changes[CFG_KEY]?.newValue) { const c = changes[CFG_KEY].newValue; const pScope = panelScope; if (c.panelScope) panelScope = c.panelScope; watermark = c.watermark !== false; const pSync = zoomSync; zoomSync = c.zoomSync === true; groupShot = c.groupShot === true; const sNav = settingsNav; settingsNav = c.settingsNav === true; if (settingsNav !== sNav) lastNav = null; showDte = c.dte === true; settingsSync = c.settingsSync === true; pdShow = readPd(c); pdLabelPos = c.pdLabel || "left"; buzzOn = c.buzz === true; watchlist = c.watchlist || []; matrixOn = c.matrix === true; writeMatrixNode(); chartMode = c.chartMode ?? (c.triggerArmed ? "trigger" : ""); drawTool = c.drawTool || "free"; activeScope = c.drawScope || "page"; renderChip(); writeLinesNode(); if (!zoomSync) writeHold(null); else if (!pSync || panelScope !== pScope) adoptLive(); zHudOn(); }
+    if (changes[CFG_KEY]?.newValue) { const c = changes[CFG_KEY].newValue; const pScope = panelScope; if (c.panelScope) panelScope = c.panelScope; watermark = c.watermark !== false; const pSync = zoomSync; zoomSync = c.zoomSync === true; groupShot = c.groupShot === true; const sNav = settingsNav; settingsNav = c.settingsNav === true; if (settingsNav !== sNav) lastNav = null; showDte = c.dte === true; settingsSync = c.settingsSync === true; pdShow = readPd(c); pdLabelPos = c.pdLabel || "left"; buzzOn = c.buzz === true; watchlist = c.watchlist || []; matrixOn = c.matrix === true; writeMatrixNode(); chartMode = c.chartMode ?? (c.triggerArmed ? "trigger" : ""); drawTool = c.drawTool || "free"; activeScope = c.drawScope || "page"; triggerColor = c.triggerColor || "#FFC24A"; drawColor = c.drawColor || "#4AA3FF"; renderChip(); writeLinesNode(); if (!zoomSync) writeHold(null); else if (!pSync || panelScope !== pScope) adoptLive(); zHudOn(); }
     if (changes[MODE_KEY]?.newValue) { mode = changes[MODE_KEY].newValue === "live" ? "profiles" : changes[MODE_KEY].newValue; renderChip(); }
     if (changes[SESSION_KEY]) { replayLocked = !!changes[SESSION_KEY].newValue && changes[SESSION_KEY].newValue.phase !== "idle"; renderChip(); }
     if (!onSyncPage()) return; // off /classic|/state (SPA nav): don't touch the page

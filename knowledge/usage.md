@@ -135,9 +135,18 @@ Click the button again and it glows **blue** — draw mode. Same locked chart + 
 * Drawings are anchored to **time-of-day + price**. Because GEXbot shows one day at a time, a
   mark drawn at, say, 11:00 shows at the **11:00 slot every day**, across every DTE package
   (latest / next / 90d), and tracks zoom, pan, and replay.
-* Drawings persist **per ticker + page** (classic vs state). The right-click menu offers
-  **Undo last**, **Clear drawings**, and **Clone drawings here** (copy the *other* page's
-  drawings onto this one), plus **Copy price** and the tool toggle.
+* Choose where each drawing lives with the menu's **Scope** — **global** (every chart of the
+  ticker), **page** (this ticker on classic *or* state), or **tab** (just this tab, cleared when
+  you close it). The badge shows the active scope. The menu also has **Undo last** and a
+  scope-aware **Clear** (they act on the active scope only).
+
+### Colors & switching
+
+* **Colors** — the popup's **Tools** page gives each mode one color, picked from your group
+  palette: Trigger tints its reticle, price guide, and lines; Draw tints its reticle and strokes.
+  Change one and everything in that mode recolors live. The two can't be the same.
+* **Switch from the menu** — the right-click menu has **Off** and the **other mode**, so you can
+  jump Trigger ⇄ Draw or turn the tools off without cycling the pill.
 
 With the tool button off, right-click gives you the browser's normal menu back.
 

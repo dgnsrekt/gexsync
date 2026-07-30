@@ -82,7 +82,7 @@
 
   const priceOf = (ln) => ln && ln.points && ln.points[0] ? ln.points[0].price : null;
   // rebuild the stored-drawings SVG layer: each drawing's {tod,p} points → pixels this frame
-  function paintDraws(chart, drawings) {
+  function paintDraws(chart, drawings, dCol) {
     if (!drawG) return;
     drawG.replaceChildren();
     const y = chart.scales.y;
@@ -91,7 +91,7 @@
       const xy = [];
       for (const pt of dr.points) { const px = todToPx(pt.tod), py = y.getPixelForValue(pt.p); if (px == null || !isFinite(px) || !isFinite(py)) continue; xy.push([px, py]); }
       if (xy.length < 2) continue;
-      const col = dr.color || AZURE, w = dr.width || 2;
+      const col = dCol, w = dr.width || 2; // all strokes follow the live draw color
       const path = document.createElementNS(SVGNS, "path");
       path.setAttribute("d", pathD(xy)); path.setAttribute("fill", "none"); path.setAttribute("stroke", col);
       path.setAttribute("stroke-width", w); path.setAttribute("stroke-linecap", "round"); path.setAttribute("stroke-linejoin", "round");
@@ -105,6 +105,7 @@
     const list = (cfg && Array.isArray(cfg.lines)) ? cfg.lines : [];
     const mode = (cfg && cfg.mode) || "";
     const armed = mode === "trigger" || mode === "draw", drawing = mode === "draw";
+    const tCol = (cfg && cfg.triggerColor) || AMBER, dCol = (cfg && cfg.drawColor) || AZURE;
     const drawList = (cfg && Array.isArray(cfg.draws)) ? cfg.draws : [];
     if (!list.length && !armed && !drawList.length) { if (overlay) overlay.style.display = "none"; for (const { line, label } of els.values()) { line.remove(); label.remove(); } els.clear(); if (drawG) drawG.replaceChildren(); lastSig = ""; return; }
     const chart = getChart();
@@ -113,14 +114,14 @@
     const rect = chart.canvas.getBoundingClientRect(), y = chart.scales.y, area = chart.chartArea, t = timeScale();
     // crosshair on the canvas while a mode is armed
     chart.canvas.style.cursor = armed ? "crosshair" : "";
-    const sig = JSON.stringify([rect.left, rect.top, rect.width, rect.height, y.min, y.max, t ? t.min : 0, t ? t.max : 0, area.left, area.right, area.top, area.bottom, mode, (cfg && cfg.scope) || "", list.map((l) => [l.id, priceOf(l), l.overrides && l.overrides.linecolor, l.text]), drawList.map((d) => d.id)]);
+    const sig = JSON.stringify([rect.left, rect.top, rect.width, rect.height, y.min, y.max, t ? t.min : 0, t ? t.max : 0, area.left, area.right, area.top, area.bottom, mode, (cfg && cfg.scope) || "", tCol, dCol, list.map((l) => [l.id, priceOf(l), l.overrides && l.overrides.linecolor, l.text]), drawList.map((d) => d.id)]);
     if (sig === lastSig) return;
     lastSig = sig;
     overlay.style.cssText = `position:fixed;pointer-events:none;z-index:2147481600;overflow:hidden;display:block;left:${rect.left}px;top:${rect.top}px;width:${rect.width}px;height:${rect.height}px;`;
-    paintDraws(chart, drawList);
+    paintDraws(chart, drawList, dCol);
     // zoom-lock badge: shown while a mode is armed, tinted to the mode
     lockBadge.style.display = armed ? "flex" : "none";
-    lockBadge.style.color = drawing ? AZURE : AMBER;
+    lockBadge.style.color = drawing ? dCol : tCol;
     if (lockTxt) lockTxt.textContent = drawing ? `draw · ${(cfg && cfg.scope) || "page"}` : "zoom locked";
     lockBadge.style.left = (area.left + 8) + "px";
     lockBadge.style.top = Math.max(2, area.top - 20) + "px"; // sit on the top price axis, not inside the plot
@@ -139,7 +140,8 @@
         e = { line, label }; els.set(ln.id, e);
       }
       const ov = ln.overrides || {};
-      const color = ov.linecolor || "#16E0A3", w = ov.linewidth || 1, dash = (ov.linestyle || "dashed") === "solid" ? "" : "border-top-style:dashed;";
+      // follow the live trigger color unless the line has an explicit non-default override
+      const color = (ov.linecolor && ov.linecolor !== "#16E0A3") ? ov.linecolor : tCol, w = ov.linewidth || 1, dash = (ov.linestyle || "dashed") === "solid" ? "" : "border-top-style:dashed;";
       const py = y.getPixelForValue(price);
       if (py < area.top || py > area.bottom) { e.line.style.display = "none"; e.label.style.display = "none"; continue; }
       e.line.style.cssText = `position:absolute;height:0;left:${area.left}px;width:${area.right - area.left}px;top:${py}px;border-top:${w}px solid ${color};${dash}display:block;`;
@@ -169,7 +171,7 @@
     if (!onChartCanvas(e)) { hideGuide(); return; } // left the canvas → don't leave a stuck reticle
     const c = getChart(), rect = c.canvas.getBoundingClientRect(), px = e.clientX - rect.left, py = e.clientY - rect.top, area = c.chartArea;
     if (py < area.top || py > area.bottom) { hideGuide(); return; }
-    const col = drawOn() ? AZURE : AMBER;
+    const cfg = readCfg() || {}, col = drawOn() ? (cfg.drawColor || AZURE) : (cfg.triggerColor || AMBER);
     guide.style.borderTopColor = col; guide.style.top = py + "px"; guide.style.display = "block";
     vguide.style.borderLeftColor = col; vguide.style.left = px + "px"; vguide.style.display = "block";
     dot.style.borderColor = col; dot.style.left = px + "px"; dot.style.top = py + "px"; dot.style.display = "block";
@@ -188,7 +190,7 @@
   const todPricePt = (chart, px, py) => ({ tod: pxToTod(px), p: chart.scales.y.getValueForPixel(py) });
   function updatePreview() {
     if (!cap || cap.xy.length < 1) { previewPath.style.display = "none"; return; }
-    previewPath.setAttribute("d", pathD(cap.xy)); previewPath.setAttribute("stroke", AZURE); previewPath.setAttribute("stroke-width", 2); previewPath.style.display = "block";
+    previewPath.setAttribute("d", pathD(cap.xy)); previewPath.setAttribute("stroke", (readCfg() || {}).drawColor || AZURE); previewPath.setAttribute("stroke-width", 2); previewPath.style.display = "block";
   }
   document.addEventListener("pointerdown", (e) => {
     if (!drawOn() || e.button !== 0 || !onChartCanvas(e)) return;
@@ -211,7 +213,7 @@
   const endCapture = () => {
     if (!cap) return;
     const done = cap; cap = null; previewPath.style.display = "none";
-    if (done.pts.length >= 2) window.dispatchEvent(new CustomEvent("gexsync-draw-add", { detail: { type: done.type, points: done.pts, color: AZURE, width: 2 } }));
+    if (done.pts.length >= 2) window.dispatchEvent(new CustomEvent("gexsync-draw-add", { detail: { type: done.type, points: done.pts, width: 2 } }));
   };
   document.addEventListener("pointerup", endCapture, true);
   document.addEventListener("pointercancel", endCapture, true);
@@ -249,12 +251,18 @@
       menuEl.appendChild(sep());
       menuEl.appendChild(menuItem("Undo last", null, () => window.dispatchEvent(new CustomEvent("gexsync-draw-undo"))));
       menuEl.appendChild(menuItem(`Clear ${cur} drawings`, null, () => window.dispatchEvent(new CustomEvent("gexsync-draws-clear")), "#FF5C5C"));
+      menuEl.appendChild(sep());
+      menuEl.appendChild(menuItem("Trigger mode", null, () => window.dispatchEvent(new CustomEvent("gexsync-chart-mode", { detail: { mode: "trigger" } }))));
+      menuEl.appendChild(menuItem("Off", null, () => window.dispatchEvent(new CustomEvent("gexsync-chart-mode", { detail: { mode: "" } }))));
     } else {
       if (ctx.hitId != null) menuEl.appendChild(menuItem("Remove line", null, () => window.dispatchEvent(new CustomEvent("gexsync-line-remove", { detail: { id: ctx.hitId } }))));
       else menuEl.appendChild(menuItem("Add line here", ctx.price.toFixed(2), () => window.dispatchEvent(new CustomEvent("gexsync-line-place", { detail: { price: ctx.price } }))));
       menuEl.appendChild(sep());
       menuEl.appendChild(menuItem(ctx.inWatch ? "Remove from watchlist" : "Add to watchlist", ctx.ticker || "", () => window.dispatchEvent(new CustomEvent("gexsync-watchlist-toggle"))));
       if (ctx.hasLines) menuEl.appendChild(menuItem("Clear lines", ctx.ticker || "", () => window.dispatchEvent(new CustomEvent("gexsync-lines-clear")), "#FF5C5C"));
+      menuEl.appendChild(sep());
+      menuEl.appendChild(menuItem("Draw mode", null, () => window.dispatchEvent(new CustomEvent("gexsync-chart-mode", { detail: { mode: "draw" } }))));
+      menuEl.appendChild(menuItem("Off", null, () => window.dispatchEvent(new CustomEvent("gexsync-chart-mode", { detail: { mode: "" } }))));
     }
     document.body.appendChild(menuEl);
     const r = menuEl.getBoundingClientRect(); // clamp inside the viewport

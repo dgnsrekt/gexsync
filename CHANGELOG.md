@@ -4,6 +4,16 @@ All notable changes to GexSync are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and the project follows
 [semantic versioning](https://semver.org/).
 
+## [1.14.0] — 2026-07-30
+
+### Added
+- **Pick your chart-tool colors.** The popup's **Lines** page is now **Tools**, with a color
+  per mode chosen from your group palette: **Trigger** tints its reticle, price guide, and
+  lines; **Draw** tints its reticle and your strokes. Change one and everything in that mode
+  recolors live. The two can't be the same.
+- **Switch modes from the chart menu.** The right-click menu now has **Off** and the **other
+  mode** (Draw ⇄ Trigger), so you can jump modes or turn the tools off without cycling the pill.
+
 ## [1.13.0] — 2026-07-30
 
 ### Added
@@ -332,6 +342,7 @@ All notable changes to GexSync are documented here. The format is based on
   different dates, tickers, and profiles side by side.
 - Bundled README, LICENSE, and OKF knowledge base.
 
+[1.14.0]: https://github.com/dgnsrekt/gexsync/compare/v1.13.0...v1.14.0
 [1.13.0]: https://github.com/dgnsrekt/gexsync/compare/v1.12.0...v1.13.0
 [1.12.0]: https://github.com/dgnsrekt/gexsync/compare/v1.11.1...v1.12.0
 [1.11.1]: https://github.com/dgnsrekt/gexsync/compare/v1.11.0...v1.11.1

@@ -71,8 +71,17 @@
   }
   .chip button:hover { color: var(--amber); }
 
+  /* chart-tool color palette */
+  .cpal-row { display: flex; align-items: center; gap: 12px; margin-top: 9px; }
+  .cpal-lbl { width: 52px; color: var(--muted); font: 600 11px var(--ui); }
+  .cpal { display: flex; gap: 7px; flex-wrap: wrap; }
+  .cpal-sw { width: 19px; height: 19px; border-radius: 4px; cursor: pointer; box-shadow: 0 0 0 1px rgba(255,255,255,.2); transition: transform .1s; }
+  .cpal-sw:hover { transform: scale(1.12); }
+  .cpal-sw.sel { box-shadow: 0 0 0 2px #0b0e14, 0 0 0 4px #e6edf3; }
+  .cpal-sw.dis { opacity: .25; cursor: not-allowed; pointer-events: none; }
+
   /* saved lines */
-  #linesList:empty::after { content: "No lines yet. Arm line mode on the chart pill, then click a chart to drop one."; color: var(--muted); font-size: 11px; }
+  #linesList:empty::after { content: "No lines yet. Arm trigger mode on the chart pill, then right-click the chart to drop one."; color: var(--muted); font-size: 11px; }
   .ln-grp { margin-top: 11px; }
   .ln-hd { display: flex; align-items: center; gap: 8px; }
   .ln-tk { font: 700 13px var(--ui); }
@@ -146,7 +155,7 @@
     <button class="seg-btn" data-page="sync" role="tab">Sync</button>
     <button class="seg-btn" data-page="keys" role="tab">Data keys</button>
     <button class="seg-btn" data-page="watchlist" role="tab">Watchlist</button>
-    <button class="seg-btn" data-page="lines" role="tab">Lines</button>
+    <button class="seg-btn" data-page="lines" role="tab">Tools</button>
   </div>
 
   <div data-page="sync">
@@ -275,13 +284,17 @@
   </div><!-- /page: keys -->
 
   <div data-page="lines" hidden>
-  <div class="label">Saved lines</div>
-  <div class="hint">Horizontal lines you've drawn, grouped by ticker. They're per-ticker — a line shows only on charts of that ticker. Draw them with the line button on the chart pill.</div>
+  <div class="label">Chart tool colors</div>
+  <div class="hint">One color per mode, from your group palette. <b>Trigger</b> tints its reticle, price guide, and lines; <b>Draw</b> tints its reticle and your strokes. The two can't be the same.</div>
+  <div class="cpal-row"><span class="cpal-lbl">Trigger</span><div class="cpal" id="palTrigger"></div></div>
+  <div class="cpal-row"><span class="cpal-lbl">Draw</span><div class="cpal" id="palDraw"></div></div>
+  <div class="label" style="margin-top:15px">Saved lines</div>
+  <div class="hint">Horizontal lines you've drawn, grouped by ticker — a line shows on charts of that ticker. Drop them from the chart's right-click menu in trigger mode.</div>
   <div id="linesList"></div>
   <div class="btnrow" style="margin-top:9px">
     <button id="linesClearAll" class="btn">Clear all lines</button>
   </div>
-  </div><!-- /page: lines -->
+  </div><!-- /page: tools -->
 
   <div data-page="watchlist" hidden>
   <div class="label">Watchlist</div>

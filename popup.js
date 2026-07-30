@@ -128,13 +128,14 @@ wlChips.addEventListener("click", (e) => {
 const LINES_KEY = "gexsync-lines";
 const linesList = document.getElementById("linesList");
 const linesClearAll = document.getElementById("linesClearAll");
+let trigCol = "#FFC24A", drawCol = "#4AA3FF", _linesStore = {}; // chart-tool colors + cached line store
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 function renderLines(store) {
   const tickers = Object.keys(store || {}).filter((t) => store[t] && store[t].length).sort();
   linesList.innerHTML = tickers.map((tk) => {
     const rows = store[tk].map((l) => {
       const px = l.points && l.points[0] != null ? (+l.points[0].price).toFixed(2) : "?";
-      const col = (l.overrides && l.overrides.linecolor) || "#16E0A3";
+      const col = (l.overrides && l.overrides.linecolor && l.overrides.linecolor !== "#16E0A3") ? l.overrides.linecolor : trigCol;
       const txt = l.text ? `<span class="ln-txt">${esc(l.text)}</span>` : "";
       return `<div class="ln-row"><span class="ln-sw" style="background:${esc(col)}"></span><span class="ln-px">${px}</span>${txt}<button class="ln-del" data-tk="${esc(tk)}" data-id="${esc(l.id)}" title="Remove this line">✕</button></div>`;
     }).join("");
@@ -144,14 +145,35 @@ function renderLines(store) {
   linesClearAll.disabled = tickers.length === 0;
 }
 const withLines = (fn) => chrome.storage.local.get(LINES_KEY, (r) => { const next = fn(r[LINES_KEY] || {}); if (next !== undefined) chrome.storage.local.set({ [LINES_KEY]: next }); });
-chrome.storage.local.get(LINES_KEY, (r) => renderLines(r[LINES_KEY] || {}));
-chrome.storage.onChanged.addListener((c, area) => { if (area === "local" && c[LINES_KEY]) renderLines(c[LINES_KEY].newValue || {}); });
+chrome.storage.local.get(LINES_KEY, (r) => { _linesStore = r[LINES_KEY] || {}; renderLines(_linesStore); });
+chrome.storage.onChanged.addListener((c, area) => { if (area === "local" && c[LINES_KEY]) { _linesStore = c[LINES_KEY].newValue || {}; renderLines(_linesStore); } });
 linesList.addEventListener("click", (e) => {
   const del = e.target.closest(".ln-del"), clr = e.target.closest(".ln-clr");
   if (del) withLines((s) => { if (!s[del.dataset.tk]) return; const kept = s[del.dataset.tk].filter((l) => l.id !== del.dataset.id); const n = { ...s }; if (kept.length) n[del.dataset.tk] = kept; else delete n[del.dataset.tk]; return n; });
   else if (clr) withLines((s) => { if (!s[clr.dataset.tk]) return; const n = { ...s }; delete n[clr.dataset.tk]; return n; });
 });
 linesClearAll.addEventListener("click", () => { if (confirm("Clear ALL saved lines across every ticker?")) chrome.storage.local.set({ [LINES_KEY]: {} }); });
+
+// ---- Chart tool colors: one per mode, from the group palette. Written into gexsync-cfg;
+// content.js reads them and themes the reticle / lines / strokes live. The two can't match. ----
+const GROUP_COLORS = ["#16E0A3", "#FF5C5C", "#4AA3FF", "#FFC24A", "#B57AFF", "#22D3EE", "#FF8C42", "#FF5CC8"];
+const palTrigger = document.getElementById("palTrigger");
+const palDraw = document.getElementById("palDraw");
+function renderPalette() {
+  const build = (host, current, other) => {
+    host.innerHTML = GROUP_COLORS.map((hex) =>
+      `<span class="cpal-sw${hex === current ? " sel" : ""}${hex === other ? " dis" : ""}" data-hex="${hex}" style="background:${hex};color:${hex}" title="${hex === other ? "used by the other mode" : hex}"></span>`
+    ).join("");
+  };
+  build(palTrigger, trigCol, drawCol);
+  build(palDraw, drawCol, trigCol);
+}
+const setColor = (which, hex) => chrome.storage.local.get("gexsync-cfg", (r) => chrome.storage.local.set({ "gexsync-cfg": { ...(r["gexsync-cfg"] || {}), [which]: hex } }));
+palTrigger.addEventListener("click", (e) => { const sw = e.target.closest(".cpal-sw"); if (sw && !sw.classList.contains("dis")) setColor("triggerColor", sw.dataset.hex); });
+palDraw.addEventListener("click", (e) => { const sw = e.target.closest(".cpal-sw"); if (sw && !sw.classList.contains("dis")) setColor("drawColor", sw.dataset.hex); });
+const readColors = (g) => { trigCol = g.triggerColor || "#FFC24A"; drawCol = g.drawColor || "#4AA3FF"; renderPalette(); renderLines(_linesStore); };
+chrome.storage.local.get("gexsync-cfg", (r) => readColors(r["gexsync-cfg"] || {}));
+chrome.storage.onChanged.addListener((c, area) => { if (area === "local" && c["gexsync-cfg"]) readColors(c["gexsync-cfg"].newValue || {}); });
 
 const sel = document.getElementById("panelScope");
 const wm = document.getElementById("watermark");
