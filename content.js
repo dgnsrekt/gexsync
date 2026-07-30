@@ -54,9 +54,14 @@
   let watchlist = []; // symbols the pill's cycle arrows step through (Ticker mode, 2+); curated in the popup
   const LINES_KEY = "gexsync-lines"; // per-ticker horizontal lines: { TICKER: [line] } in storage
   let lines = {};       // mirror of storage[LINES_KEY] — the source of truth for what renders
-  let triggerMode = false; // "trigger" mode: shows the reticle, locks pan/zoom, and takes over the
-                           // chart's right-click for the action menu. Global across all panes —
-                           // mirrors gexsync-cfg.triggerArmed via storage.onChanged.
+  let chartMode = ""; // "" | "trigger" | "draw" — chart interaction mode, global across panes
+                      // (mirrors gexsync-cfg.chartMode via storage.onChanged). trigger = reticle +
+                      // locked chart + action menu; draw = same but left-drag draws (blue reticle).
+  const DRAW_KEY = "gexsync-drawings"; // durable drawings (localStorage): { TICKER: [{scope,page,...}] }
+  let draws = {};     // mirror of storage[DRAW_KEY] — global + page scopes (permanent)
+  let tabDraws = {};  // session-lived tab-scoped drawings (sessionStorage): { TICKER: [{scope:"tab",...}] }
+  let drawTool = "free"; // "free" | "arrow" — current draw tool (global via cfg.drawTool)
+  let activeScope = "page"; // scope for NEW drawings: "global" | "page" | "tab" (global via cfg.drawScope)
   let matrixOn = false; // easter egg: matrix rain behind the panes; off by default, unlocked in the popup
   const readPd = (c) => ({ o: c?.pdO === true, h: c?.pdH === true, l: c?.pdL === true, c: c?.pdC === true });
   const panelKey = () => scopedKey("gexsync-panel", panelScope);
@@ -74,10 +79,14 @@
     buzzOn = r[CFG_KEY]?.buzz === true; // default off (opt-in)
     watchlist = r[CFG_KEY]?.watchlist || [];
     matrixOn = r[CFG_KEY]?.matrix === true; // default off (opt-in easter egg)
-    triggerMode = r[CFG_KEY]?.triggerArmed === true; // arm state is shared across panes
+    chartMode = r[CFG_KEY]?.chartMode ?? (r[CFG_KEY]?.triggerArmed ? "trigger" : ""); // shared across panes
+    drawTool = r[CFG_KEY]?.drawTool || "free";
+    activeScope = r[CFG_KEY]?.drawScope || "page";
     zHudOn();
   });
   chrome.storage.local.get(LINES_KEY, (r) => { lines = r[LINES_KEY] || {}; writeLinesNode(); });
+  chrome.storage.local.get(DRAW_KEY, (r) => { draws = r[DRAW_KEY] || {}; writeLinesNode(); });
+  try { tabDraws = JSON.parse(sessionStorage["gexsync-draws-tab"] || "{}"); } catch (e) { tabDraws = {}; } // per-tab session drawings
 
   // Mode gates what syncs (one axis at a time; panel-collapse always syncs):
   //   profiles — gex + options profiles sync; ticker independent
@@ -540,17 +549,29 @@
   // Line records mirror mvsync/TradingView's createShape object so an agent payload IS
   // the stored record: { id, shape, points:[{time,price}], text, overrides }.
   const linesNode = () => { let n = document.getElementById("__gxlines"); if (!n) { n = document.createElement("div"); n.id = "__gxlines"; n.style.display = "none"; document.documentElement.appendChild(n); } return n; };
+  // page = classic|state from the pathname. A tab renders the union of: global drawings, this
+  // page's page-scoped drawings, and this tab's own session-lived tab-scoped drawings.
+  const pageName = () => location.pathname.replace(/^\//, "").split(/[/?#]/)[0] || "";
+  const newDrawId = () => "d" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+  const visibleDraws = (tk, pg) => [
+    ...((tk && draws[tk]) || []).filter((d) => d.scope === "global" || (d.scope === "page" && d.page === pg)),
+    ...((tk && tabDraws[tk]) || []),
+  ];
   let lastLinesSig = "";
   function writeLinesNode() {
     const tk = baseTicker();
-    const payload = JSON.stringify({ ticker: tk, lines: (tk && lines[tk]) || [], armed: triggerMode, inWatch: !!(tk && watchlist.includes(tk)) });
-    if (payload === lastLinesSig) return; // ticker/lines/armed/watch unchanged — skip
+    const payload = JSON.stringify({ ticker: tk, lines: (tk && lines[tk]) || [], mode: chartMode, inWatch: !!(tk && watchlist.includes(tk)), draws: tk ? visibleDraws(tk, pageName()) : [], tool: drawTool, scope: activeScope });
+    if (payload === lastLinesSig) return; // ticker/lines/mode/watch/draws unchanged — skip
     lastLinesSig = payload;
     linesNode().textContent = payload;
   }
   function saveLines(next) { lines = next; chrome.storage.local.set({ [LINES_KEY]: next }); writeLinesNode(); }
-  // Trigger arm is global: write it to cfg so storage.onChanged arms/disarms every pane.
-  const setTriggerArmed = (on) => chrome.storage.local.get(CFG_KEY, (r) => chrome.storage.local.set({ [CFG_KEY]: { ...(r[CFG_KEY] || {}), triggerArmed: !!on } }));
+  function saveDraws(next) { draws = next; chrome.storage.local.set({ [DRAW_KEY]: next }); writeLinesNode(); }
+  function saveTabDraws(next) { tabDraws = next; try { sessionStorage["gexsync-draws-tab"] = JSON.stringify(next); } catch (e) {} writeLinesNode(); }
+  // Chart mode is global: write it to cfg so storage.onChanged cycles every pane together.
+  const setChartMode = (m) => chrome.storage.local.get(CFG_KEY, (r) => chrome.storage.local.set({ [CFG_KEY]: { ...(r[CFG_KEY] || {}), chartMode: m } }));
+  const setDrawTool = (t) => chrome.storage.local.get(CFG_KEY, (r) => chrome.storage.local.set({ [CFG_KEY]: { ...(r[CFG_KEY] || {}), drawTool: t } }));
+  const setDrawScope = (s) => chrome.storage.local.get(CFG_KEY, (r) => chrome.storage.local.set({ [CFG_KEY]: { ...(r[CFG_KEY] || {}), drawScope: s } }));
 
   // Easter-egg matrix rain: feed matrix.js (MAIN world) the on-flag + this pane's live
   // context via the #__gxmatrix node, same bridge/sig-guard idiom as writeLinesNode.
@@ -593,11 +614,40 @@
     const next = watchlist.includes(t) ? watchlist.filter((s) => s !== t) : [...watchlist, t];
     chrome.storage.local.get(CFG_KEY, (r) => chrome.storage.local.set({ [CFG_KEY]: { ...(r[CFG_KEY] || {}), watchlist: next } }));
   });
+  // MAIN-world (lines.js draw capture/menu) → here: add/undo/clear drawings, set tool/scope.
+  // Each drawing's points are {tod: ms-since-midnight, p: price} — see lines.js for the anchoring.
+  // Undo/clear act on the ACTIVE scope; a drawing is stamped with the scope it was made in.
+  const scopeMatch = (d, sc, pg) => d.scope === sc && (sc !== "page" || d.page === pg);
+  window.addEventListener("gexsync-draw-add", (e) => {
+    const d = e.detail, tk = baseTicker(); if (!tk || !d || !Array.isArray(d.points) || !d.points.length) return;
+    const rec = { id: newDrawId(), scope: activeScope, type: d.type === "arrow" ? "arrow" : "free", color: d.color || "#4AA3FF", width: d.width || 2, points: d.points };
+    if (activeScope === "page") rec.page = pageName();
+    if (activeScope === "tab") saveTabDraws({ ...tabDraws, [tk]: [...(tabDraws[tk] || []), rec] });
+    else saveDraws({ ...draws, [tk]: [...(draws[tk] || []), rec] }); // global | page
+  });
+  window.addEventListener("gexsync-draw-undo", () => {
+    const tk = baseTicker(); if (!tk) return; const pg = pageName();
+    if (activeScope === "tab") { const arr = tabDraws[tk]; if (!arr || !arr.length) return; const next = { ...tabDraws }, kept = arr.slice(0, -1); if (kept.length) next[tk] = kept; else delete next[tk]; return void saveTabDraws(next); }
+    const arr = draws[tk]; if (!arr) return;
+    let idx = -1; for (let i = arr.length - 1; i >= 0; i--) if (scopeMatch(arr[i], activeScope, pg)) { idx = i; break; }
+    if (idx < 0) return; const kept = arr.slice(0, idx).concat(arr.slice(idx + 1)); const next = { ...draws }; if (kept.length) next[tk] = kept; else delete next[tk]; saveDraws(next);
+  });
+  window.addEventListener("gexsync-draws-clear", () => {
+    const tk = baseTicker(); if (!tk) return; const pg = pageName();
+    if (activeScope === "tab") { if (!tabDraws[tk]) return; const next = { ...tabDraws }; delete next[tk]; return void saveTabDraws(next); }
+    const arr = draws[tk]; if (!arr) return; const kept = arr.filter((d) => !scopeMatch(d, activeScope, pg)); const next = { ...draws }; if (kept.length) next[tk] = kept; else delete next[tk]; saveDraws(next);
+  });
+  window.addEventListener("gexsync-draw-tool", (e) => { const t = e.detail && e.detail.tool; if (t === "free" || t === "arrow") setDrawTool(t); });
+  window.addEventListener("gexsync-draw-scope", (e) => { const s = e.detail && e.detail.scope; if (s === "global" || s === "page" || s === "tab") setDrawScope(s); });
   // Keep the render node pointed at the current ticker (writeLinesNode is sig-guarded,
-  // so this only touches the DOM when the ticker, its lines, or trigger mode change).
+  // so this only touches the DOM when the ticker, its lines, mode, or drawings change).
   setInterval(writeLinesNode, 500);
-  // Any tab (or the popup) mutating the store → refresh this tab's cache + render node.
-  chrome.storage.onChanged.addListener((c, area) => { if (area === "local" && c[LINES_KEY]) { lines = c[LINES_KEY].newValue || {}; writeLinesNode(); } });
+  // Any tab (or the popup) mutating a store → refresh this tab's cache + render node.
+  chrome.storage.onChanged.addListener((c, area) => {
+    if (area !== "local") return;
+    if (c[LINES_KEY]) { lines = c[LINES_KEY].newValue || {}; writeLinesNode(); }
+    if (c[DRAW_KEY]) { draws = c[DRAW_KEY].newValue || {}; writeLinesNode(); }
+  });
   // Programmatic seam (inert in this build — nothing sends these here; a later driver
   // relays to exactly these cmds). Same API as the functions above.
   chrome.runtime.onMessage.addListener((msg, sender, reply) => {
@@ -1044,16 +1094,21 @@
     markSeg.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="transform-box:fill-box;transform-origin:center"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4.5v5h5"/></svg>`;
 
     // "trigger" mode toggle — after the mark, before the label. Click to arm: shows the reticle,
-    // locks pan/zoom, and takes over the chart's right-click for the action menu (copy price,
-    // add/remove line, watchlist, clear lines). Arming is GLOBAL — all panes arm together via
-    // cfg.triggerArmed. Amber (crosshair-circle icon) when on.
+    // locks pan/zoom, and takes over the chart's right-click for the action menu. Click cycles
+    // off → trigger → draw → off; draw mode adds left-drag freehand/arrow (blue reticle + draw
+    // menu). GLOBAL — all panes cycle together via cfg.chartMode. Crosshair-circle icon; amber
+    // in trigger, azure in draw.
     const trigSeg = document.createElement("span");
     trigSeg.id = "gexsync-chip-trigger";
     trigSeg.style.cssText = `display:flex;align-items:center;padding:6px 6px;cursor:pointer;color:${T.muted};transition:color .16s;`;
-    trigSeg.title = "Trigger mode — reticle + locked chart; right-click the chart for the action menu";
     trigSeg.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="12" cy="12" r="7"/><line x1="12" y1="1.5" x2="12" y2="5.5"/><line x1="12" y1="18.5" x2="12" y2="22.5"/><line x1="1.5" y1="12" x2="5.5" y2="12"/><line x1="18.5" y1="12" x2="22.5" y2="12"/></svg>`;
-    const paintTrigBtn = () => { trigSeg.style.color = triggerMode ? T.amber : T.muted; };
-    trigSeg.addEventListener("click", () => setTriggerArmed(!triggerMode)); // global; onChanged repaints every pane
+    const paintTrigBtn = () => {
+      trigSeg.style.color = chartMode === "trigger" ? T.amber : chartMode === "draw" ? T.azure : T.muted;
+      trigSeg.title = chartMode === "trigger" ? "Trigger mode — reticle + locked chart; right-click for the action menu (click → draw mode)"
+        : chartMode === "draw" ? "Draw mode — left-drag to draw on the chart; right-click for the draw menu (click → off)"
+        : "Chart tools — click to cycle: trigger mode → draw mode → off";
+    };
+    trigSeg.addEventListener("click", () => setChartMode(chartMode === "" ? "trigger" : chartMode === "trigger" ? "draw" : "")); // global; onChanged repaints every pane
 
     const modeSeg = document.createElement("span");
     modeSeg.id = "gexsync-chip-mode";
@@ -1597,7 +1652,7 @@
 
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area !== "local") return;
-    if (changes[CFG_KEY]?.newValue) { const c = changes[CFG_KEY].newValue; const pScope = panelScope; if (c.panelScope) panelScope = c.panelScope; watermark = c.watermark !== false; const pSync = zoomSync; zoomSync = c.zoomSync === true; groupShot = c.groupShot === true; const sNav = settingsNav; settingsNav = c.settingsNav === true; if (settingsNav !== sNav) lastNav = null; showDte = c.dte === true; settingsSync = c.settingsSync === true; pdShow = readPd(c); pdLabelPos = c.pdLabel || "left"; buzzOn = c.buzz === true; watchlist = c.watchlist || []; matrixOn = c.matrix === true; writeMatrixNode(); triggerMode = c.triggerArmed === true; renderChip(); writeLinesNode(); if (!zoomSync) writeHold(null); else if (!pSync || panelScope !== pScope) adoptLive(); zHudOn(); }
+    if (changes[CFG_KEY]?.newValue) { const c = changes[CFG_KEY].newValue; const pScope = panelScope; if (c.panelScope) panelScope = c.panelScope; watermark = c.watermark !== false; const pSync = zoomSync; zoomSync = c.zoomSync === true; groupShot = c.groupShot === true; const sNav = settingsNav; settingsNav = c.settingsNav === true; if (settingsNav !== sNav) lastNav = null; showDte = c.dte === true; settingsSync = c.settingsSync === true; pdShow = readPd(c); pdLabelPos = c.pdLabel || "left"; buzzOn = c.buzz === true; watchlist = c.watchlist || []; matrixOn = c.matrix === true; writeMatrixNode(); chartMode = c.chartMode ?? (c.triggerArmed ? "trigger" : ""); drawTool = c.drawTool || "free"; activeScope = c.drawScope || "page"; renderChip(); writeLinesNode(); if (!zoomSync) writeHold(null); else if (!pSync || panelScope !== pScope) adoptLive(); zHudOn(); }
     if (changes[MODE_KEY]?.newValue) { mode = changes[MODE_KEY].newValue === "live" ? "profiles" : changes[MODE_KEY].newValue; renderChip(); }
     if (changes[SESSION_KEY]) { replayLocked = !!changes[SESSION_KEY].newValue && changes[SESSION_KEY].newValue.phase !== "idle"; renderChip(); }
     if (!onSyncPage()) return; // off /classic|/state (SPA nav): don't touch the page

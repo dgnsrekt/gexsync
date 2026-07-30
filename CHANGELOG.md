@@ -4,6 +4,18 @@ All notable changes to GexSync are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and the project follows
 [semantic versioning](https://semver.org/).
 
+## [1.13.0] — 2026-07-30
+
+### Added
+- **Draw mode — freehand + arrows on the chart.** The chart pill's tool button now cycles
+  **off → trigger → draw**. In draw mode (blue reticle) you **left-drag** to paint a freehand
+  stroke or a straight arrow (switch tool in the right-click menu). Drawings are anchored to
+  **time-of-day + price**, so — since GEXbot shows one day at a time — a mark drawn at 11:00
+  shows at the 11:00 slot **every day**, across every DTE package (latest/next/90d), and tracks
+  zoom/pan/replay.
+- **Drawings persist per ticker + page** (classic vs state). The draw menu offers **Undo last**,
+  **Clear drawings**, and **Clone drawings here** (copy the other page's drawings onto this one).
+
 ## [1.12.0] — 2026-07-30
 
 ### Changed
@@ -320,6 +332,7 @@ All notable changes to GexSync are documented here. The format is based on
   different dates, tickers, and profiles side by side.
 - Bundled README, LICENSE, and OKF knowledge base.
 
+[1.13.0]: https://github.com/dgnsrekt/gexsync/compare/v1.12.0...v1.13.0
 [1.12.0]: https://github.com/dgnsrekt/gexsync/compare/v1.11.1...v1.12.0
 [1.11.1]: https://github.com/dgnsrekt/gexsync/compare/v1.11.0...v1.11.1
 [1.11.0]: https://github.com/dgnsrekt/gexsync/compare/v1.10.0...v1.11.0

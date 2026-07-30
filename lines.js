@@ -1,9 +1,10 @@
-// GexSync: user-drawn horizontal lines on GEXbot's chart (per-ticker). MAIN world —
-// needs the live Chart.js instance to map price <-> pixel. content.js (isolated)
-// owns the store; it writes the current ticker's lines + trigger-mode flag to #__gxlines.
+// GexSync: user-drawn horizontal lines + freehand drawings on GEXbot's chart. MAIN world —
+// needs the live Chart.js instance to map price/time <-> pixel. content.js (isolated) owns the
+// stores; it writes the current ticker's lines, drawings, and the chart mode to #__gxlines.
 // We render an overlay pinned to the canvas (tracking zoom/pan/refresh, like pdlines.js).
-// While trigger mode is armed we show a reticle, lock pan/zoom, and take over the chart's
-// right-click for an action menu. Nothing is drawn until a ticker has stored lines or armed.
+// Two armed modes (global, cycled from the pill): "trigger" (amber reticle, locked chart,
+// right-click action menu) and "draw" (blue reticle, left-drag paints freehand/arrow strokes,
+// right-click draw menu). Drawings anchor to (time-of-day, price) — see the mapping helpers.
 (function () {
   if (window.__gexsyncLines) return;
   window.__gexsyncLines = true;
@@ -32,8 +33,19 @@
   const CFG_ID = "__gxlines";
   const HIT = 6; // px: a right-click within this of a line's price → the menu's "Remove line"
   const readCfg = () => { const n = document.getElementById(CFG_ID); if (!n || !n.textContent) return null; try { return JSON.parse(n.textContent); } catch (e) { return null; } };
+  const AMBER = "#FFB454", AZURE = "#4AA3FF"; // trigger reticle / draw reticle+strokes
+  const SVGNS = "http://www.w3.org/2000/svg";
 
-  let overlay = null, guide = null, vguide = null, dot = null, guideLbl = null, lockBadge = null;
+  // Drawings anchor to (time-of-day, price): X is ms-since-midnight so a stroke lands at the same
+  // clock slot every day, across every DTE package; Y is absolute price. Mapped each frame via the
+  // chart's time scale (xTimeAxis) + y scale, so drawings track zoom/pan/replay for free.
+  const timeScale = () => { const c = getChart(); return c && c.scales && c.scales.xTimeAxis; };
+  function todToPx(tod) { const t = timeScale(); if (!t) return null; const d = new Date(t.min); d.setHours(0, 0, 0, 0); return t.getPixelForValue(d.getTime() + tod); }
+  function pxToTod(px) { const t = timeScale(); if (!t) return null; const ts = t.getValueForPixel(px); const d = new Date(ts); return ts - new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime(); }
+  const pathD = (xy) => xy.map((p, i) => (i ? "L" : "M") + p[0].toFixed(1) + " " + p[1].toFixed(1)).join(" ");
+  function arrowHead(x0, y0, x1, y1, s) { const a = Math.atan2(y1 - y0, x1 - x0), a1 = a + Math.PI - 0.42, a2 = a + Math.PI + 0.42; return `${x1},${y1} ${x1 + s * Math.cos(a1)},${y1 + s * Math.sin(a1)} ${x1 + s * Math.cos(a2)},${y1 + s * Math.sin(a2)}`; }
+
+  let overlay = null, guide = null, vguide = null, dot = null, guideLbl = null, lockBadge = null, lockTxt = null, svg = null, drawG = null, previewPath = null;
   const els = new Map(); // id -> { line, label }
   function ensureOverlay() {
     if (overlay) return;
@@ -54,30 +66,62 @@
     lockBadge = document.createElement("div");
     lockBadge.style.cssText = "position:absolute;display:none;align-items:center;gap:4px;padding:2px 7px;border:1px solid currentColor;border-radius:11px;background:rgba(0,0,0,.6);font:600 10px 'JetBrains Mono',ui-monospace,monospace;white-space:nowrap;";
     lockBadge.innerHTML = `<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><rect x="4.5" y="10.5" width="15" height="10" rx="2"/><path d="M8 10.5V7a4 4 0 0 1 8 0v3.5"/></svg><span>zoom locked</span>`;
-    overlay.append(guide, vguide, dot, guideLbl, lockBadge);
+    lockTxt = lockBadge.querySelector("span");
+    // freehand/arrow drawing layer (the only SVG overlay): drawG holds the stored drawings,
+    // previewPath the in-progress stroke while dragging
+    svg = document.createElementNS(SVGNS, "svg");
+    svg.setAttribute("style", "position:absolute;left:0;top:0;width:100%;height:100%;overflow:visible;pointer-events:none;");
+    drawG = document.createElementNS(SVGNS, "g");
+    previewPath = document.createElementNS(SVGNS, "path");
+    previewPath.setAttribute("fill", "none"); previewPath.setAttribute("stroke-linecap", "round"); previewPath.setAttribute("stroke-linejoin", "round");
+    previewPath.style.display = "none";
+    svg.append(drawG, previewPath);
+    overlay.append(guide, vguide, dot, guideLbl, lockBadge, svg);
     (document.body || document.documentElement).appendChild(overlay);
   }
 
   const priceOf = (ln) => ln && ln.points && ln.points[0] ? ln.points[0].price : null;
+  // rebuild the stored-drawings SVG layer: each drawing's {tod,p} points → pixels this frame
+  function paintDraws(chart, drawings) {
+    if (!drawG) return;
+    drawG.replaceChildren();
+    const y = chart.scales.y;
+    for (const dr of drawings) {
+      if (!dr || !Array.isArray(dr.points)) continue;
+      const xy = [];
+      for (const pt of dr.points) { const px = todToPx(pt.tod), py = y.getPixelForValue(pt.p); if (px == null || !isFinite(px) || !isFinite(py)) continue; xy.push([px, py]); }
+      if (xy.length < 2) continue;
+      const col = dr.color || AZURE, w = dr.width || 2;
+      const path = document.createElementNS(SVGNS, "path");
+      path.setAttribute("d", pathD(xy)); path.setAttribute("fill", "none"); path.setAttribute("stroke", col);
+      path.setAttribute("stroke-width", w); path.setAttribute("stroke-linecap", "round"); path.setAttribute("stroke-linejoin", "round");
+      drawG.appendChild(path);
+      if (dr.type === "arrow") { const s = xy[0], e = xy[xy.length - 1]; const poly = document.createElementNS(SVGNS, "polygon"); poly.setAttribute("points", arrowHead(s[0], s[1], e[0], e[1], 9 + w)); poly.setAttribute("fill", col); drawG.appendChild(poly); }
+    }
+  }
   let lastSig = "";
   function render() {
     const cfg = readCfg();
     const list = (cfg && Array.isArray(cfg.lines)) ? cfg.lines : [];
-    const armed = !!(cfg && cfg.armed);
-    if (!list.length && !armed) { if (overlay) overlay.style.display = "none"; for (const { line, label } of els.values()) { line.remove(); label.remove(); } els.clear(); lastSig = ""; return; }
+    const mode = (cfg && cfg.mode) || "";
+    const armed = mode === "trigger" || mode === "draw", drawing = mode === "draw";
+    const drawList = (cfg && Array.isArray(cfg.draws)) ? cfg.draws : [];
+    if (!list.length && !armed && !drawList.length) { if (overlay) overlay.style.display = "none"; for (const { line, label } of els.values()) { line.remove(); label.remove(); } els.clear(); if (drawG) drawG.replaceChildren(); lastSig = ""; return; }
     const chart = getChart();
     if (!chart) { if (overlay) overlay.style.display = "none"; return; }
     ensureOverlay();
-    const rect = chart.canvas.getBoundingClientRect(), y = chart.scales.y, area = chart.chartArea;
-    // crosshair on the canvas while trigger mode is armed
+    const rect = chart.canvas.getBoundingClientRect(), y = chart.scales.y, area = chart.chartArea, t = timeScale();
+    // crosshair on the canvas while a mode is armed
     chart.canvas.style.cursor = armed ? "crosshair" : "";
-    const sig = JSON.stringify([rect.left, rect.top, rect.width, rect.height, y.min, y.max, area.left, area.right, area.top, area.bottom, armed, list.map((l) => [l.id, priceOf(l), l.overrides && l.overrides.linecolor, l.text])]);
+    const sig = JSON.stringify([rect.left, rect.top, rect.width, rect.height, y.min, y.max, t ? t.min : 0, t ? t.max : 0, area.left, area.right, area.top, area.bottom, mode, (cfg && cfg.scope) || "", list.map((l) => [l.id, priceOf(l), l.overrides && l.overrides.linecolor, l.text]), drawList.map((d) => d.id)]);
     if (sig === lastSig) return;
     lastSig = sig;
     overlay.style.cssText = `position:fixed;pointer-events:none;z-index:2147481600;overflow:hidden;display:block;left:${rect.left}px;top:${rect.top}px;width:${rect.width}px;height:${rect.height}px;`;
-    // zoom-lock badge: shown while trigger mode is armed
+    paintDraws(chart, drawList);
+    // zoom-lock badge: shown while a mode is armed, tinted to the mode
     lockBadge.style.display = armed ? "flex" : "none";
-    lockBadge.style.color = "#FFB454";
+    lockBadge.style.color = drawing ? AZURE : AMBER;
+    if (lockTxt) lockTxt.textContent = drawing ? `draw · ${(cfg && cfg.scope) || "page"}` : "zoom locked";
     lockBadge.style.left = (area.left + 8) + "px";
     lockBadge.style.top = Math.max(2, area.top - 20) + "px"; // sit on the top price axis, not inside the plot
     if (!armed) hideGuide(); // overlay stays up for saved lines, but not armed → clear any leftover reticle
@@ -106,8 +150,10 @@
   function loop() { try { render(); } catch (e) {} requestAnimationFrame(loop); }
   requestAnimationFrame(loop);
 
-  // ---- trigger mode interaction (document-level capture, survives canvas swaps) ----
-  const armedOn = () => { const c = readCfg(); return !!(c && c.armed); };
+  // ---- trigger/draw mode interaction (document-level capture, survives canvas swaps) ----
+  const modeVal = () => { const c = readCfg(); return (c && c.mode) || ""; };
+  const armedOn = () => { const m = modeVal(); return m === "trigger" || m === "draw"; };
+  const drawOn = () => modeVal() === "draw";
   const onChartCanvas = (e) => { const c = getChart(); return c && e.target === c.canvas; };
   // nearest stored line to a canvas-y pixel, within HIT px → its id, else null (for the menu)
   function hitLine(py) {
@@ -123,7 +169,7 @@
     if (!onChartCanvas(e)) { hideGuide(); return; } // left the canvas → don't leave a stuck reticle
     const c = getChart(), rect = c.canvas.getBoundingClientRect(), px = e.clientX - rect.left, py = e.clientY - rect.top, area = c.chartArea;
     if (py < area.top || py > area.bottom) { hideGuide(); return; }
-    const col = "#FFB454";
+    const col = drawOn() ? AZURE : AMBER;
     guide.style.borderTopColor = col; guide.style.top = py + "px"; guide.style.display = "block";
     vguide.style.borderLeftColor = col; vguide.style.left = px + "px"; vguide.style.display = "block";
     dot.style.borderColor = col; dot.style.left = px + "px"; dot.style.top = py + "px"; dot.style.display = "block";
@@ -136,6 +182,39 @@
   document.addEventListener("mousedown", lockEv, true);
   document.addEventListener("dblclick", lockEv, true);
   document.addEventListener("wheel", lockEv, { capture: true, passive: false });
+
+  // ---- freehand/arrow capture (draw mode only): left-drag on the canvas → a stroke ----
+  let cap = null; // { type, pts:[{tod,p}], xy:[[px,py]] }
+  const todPricePt = (chart, px, py) => ({ tod: pxToTod(px), p: chart.scales.y.getValueForPixel(py) });
+  function updatePreview() {
+    if (!cap || cap.xy.length < 1) { previewPath.style.display = "none"; return; }
+    previewPath.setAttribute("d", pathD(cap.xy)); previewPath.setAttribute("stroke", AZURE); previewPath.setAttribute("stroke-width", 2); previewPath.style.display = "block";
+  }
+  document.addEventListener("pointerdown", (e) => {
+    if (!drawOn() || e.button !== 0 || !onChartCanvas(e)) return;
+    const c = getChart(); if (!c || !timeScale()) return; // no time axis → can't anchor; bail
+    e.preventDefault(); e.stopPropagation();
+    ensureOverlay();
+    const rect = c.canvas.getBoundingClientRect(), px = e.clientX - rect.left, py = e.clientY - rect.top;
+    const tool = (readCfg() || {}).tool === "arrow" ? "arrow" : "free";
+    cap = { type: tool, pts: [todPricePt(c, px, py)], xy: [[px, py]] };
+    updatePreview();
+  }, true);
+  document.addEventListener("pointermove", (e) => {
+    if (!cap) return;
+    const c = getChart(); if (!c) return;
+    const rect = c.canvas.getBoundingClientRect(), px = e.clientX - rect.left, py = e.clientY - rect.top;
+    if (cap.type === "arrow") { cap.xy = [cap.xy[0], [px, py]]; cap.pts = [cap.pts[0], todPricePt(c, px, py)]; } // start + current end
+    else { const last = cap.xy[cap.xy.length - 1]; if (!last || Math.hypot(px - last[0], py - last[1]) >= 3) { cap.xy.push([px, py]); cap.pts.push(todPricePt(c, px, py)); } } // decimate ~3px
+    updatePreview();
+  }, true);
+  const endCapture = () => {
+    if (!cap) return;
+    const done = cap; cap = null; previewPath.style.display = "none";
+    if (done.pts.length >= 2) window.dispatchEvent(new CustomEvent("gexsync-draw-add", { detail: { type: done.type, points: done.pts, color: AZURE, width: 2 } }));
+  };
+  document.addEventListener("pointerup", endCapture, true);
+  document.addEventListener("pointercancel", endCapture, true);
 
   // ---- right-click action menu (only while armed) ----
   let menuEl = null, onDocDown = null, onKey = null;
@@ -163,12 +242,20 @@
     menuEl = document.createElement("div");
     menuEl.style.cssText = "position:fixed;z-index:2147482000;min-width:184px;padding:5px 0;background:#12161f;border:1px solid #2a3342;border-radius:8px;box-shadow:0 8px 28px rgba(0,0,0,.5);font:600 12px 'JetBrains Mono',ui-monospace,monospace;user-select:none;";
     menuEl.appendChild(menuItem("Copy price", ctx.price.toFixed(2), () => navigator.clipboard.writeText(ctx.price.toFixed(2))));
-    if (ctx.hitId != null) menuEl.appendChild(menuItem("Remove line", null, () => window.dispatchEvent(new CustomEvent("gexsync-line-remove", { detail: { id: ctx.hitId } }))));
-    else menuEl.appendChild(menuItem("Add line here", ctx.price.toFixed(2), () => window.dispatchEvent(new CustomEvent("gexsync-line-place", { detail: { price: ctx.price } }))));
-    // ticker actions
-    menuEl.appendChild(sep());
-    menuEl.appendChild(menuItem(ctx.inWatch ? "Remove from watchlist" : "Add to watchlist", ctx.ticker || "", () => window.dispatchEvent(new CustomEvent("gexsync-watchlist-toggle"))));
-    if (ctx.hasLines) menuEl.appendChild(menuItem("Clear lines", ctx.ticker || "", () => window.dispatchEvent(new CustomEvent("gexsync-lines-clear")), "#FF5C5C"));
+    if (ctx.mode === "draw") {
+      const scopes = ["global", "page", "tab"], cur = ctx.scope || "page", next = scopes[(scopes.indexOf(cur) + 1) % 3];
+      menuEl.appendChild(menuItem(ctx.tool === "arrow" ? "Tool: Arrow → Freehand" : "Tool: Freehand → Arrow", null, () => window.dispatchEvent(new CustomEvent("gexsync-draw-tool", { detail: { tool: ctx.tool === "arrow" ? "free" : "arrow" } }))));
+      menuEl.appendChild(menuItem(`Scope: ${cur}`, `→ ${next}`, () => window.dispatchEvent(new CustomEvent("gexsync-draw-scope", { detail: { scope: next } }))));
+      menuEl.appendChild(sep());
+      menuEl.appendChild(menuItem("Undo last", null, () => window.dispatchEvent(new CustomEvent("gexsync-draw-undo"))));
+      menuEl.appendChild(menuItem(`Clear ${cur} drawings`, null, () => window.dispatchEvent(new CustomEvent("gexsync-draws-clear")), "#FF5C5C"));
+    } else {
+      if (ctx.hitId != null) menuEl.appendChild(menuItem("Remove line", null, () => window.dispatchEvent(new CustomEvent("gexsync-line-remove", { detail: { id: ctx.hitId } }))));
+      else menuEl.appendChild(menuItem("Add line here", ctx.price.toFixed(2), () => window.dispatchEvent(new CustomEvent("gexsync-line-place", { detail: { price: ctx.price } }))));
+      menuEl.appendChild(sep());
+      menuEl.appendChild(menuItem(ctx.inWatch ? "Remove from watchlist" : "Add to watchlist", ctx.ticker || "", () => window.dispatchEvent(new CustomEvent("gexsync-watchlist-toggle"))));
+      if (ctx.hasLines) menuEl.appendChild(menuItem("Clear lines", ctx.ticker || "", () => window.dispatchEvent(new CustomEvent("gexsync-lines-clear")), "#FF5C5C"));
+    }
     document.body.appendChild(menuEl);
     const r = menuEl.getBoundingClientRect(); // clamp inside the viewport
     menuEl.style.left = Math.min(x, innerWidth - r.width - 6) + "px";
@@ -187,6 +274,6 @@
     const rect = c.canvas.getBoundingClientRect(), py = e.clientY - rect.top, area = c.chartArea;
     if (py < area.top || py > area.bottom) return;
     const cfg = readCfg() || {}, price = +c.scales.y.getValueForPixel(py);
-    buildMenu(e.clientX, e.clientY, { price, hitId: hitLine(py), ticker: cfg.ticker, hasLines: Array.isArray(cfg.lines) && cfg.lines.length > 0, inWatch: !!cfg.inWatch });
+    buildMenu(e.clientX, e.clientY, { price, hitId: hitLine(py), ticker: cfg.ticker, hasLines: Array.isArray(cfg.lines) && cfg.lines.length > 0, inWatch: !!cfg.inWatch, mode: cfg.mode, tool: cfg.tool, scope: cfg.scope });
   }, true);
 })();

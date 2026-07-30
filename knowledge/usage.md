@@ -99,10 +99,15 @@ off Replay, or hit **Exit** in the on-page replay bar.
   week's timestamps. Panels briefly collapse so each chart is captured full-width.
   Off, the camera works as GEXbot's normal single-shot menu.
 
-## Trigger mode — lines & the chart menu
+## Chart tools — trigger & draw modes
 
-The bottom pill has a **trigger button** (a crosshair-circle icon, just after the loop
-mark). Click it to arm **trigger mode**:
+The bottom pill has a **tool button** (a crosshair-circle icon, just after the loop mark).
+Clicking it **cycles** `off → trigger → draw → off`, and the mode is **global** — it turns
+on for every open GEXbot pane at once.
+
+### Trigger mode
+
+The button glows **amber**. Trigger mode is for reading prices and managing lines:
 
 * An amber **reticle** (crosshair + a small ring + a price tag) tracks your cursor over the
   chart, so you can read the exact price at any point.
@@ -121,7 +126,20 @@ While armed, **right-click the chart** for the action menu:
   cycle arrows step through.
 * **Clear lines** — removes all of the current ticker's lines.
 
-With trigger mode off, right-click gives you the browser's normal menu back.
+### Draw mode
+
+Click the button again and it glows **blue** — draw mode. Same locked chart + reticle, but now
+**left-drag on the chart paints** a stroke:
+
+* **Freehand** or **straight arrow** — switch the tool from the right-click menu.
+* Drawings are anchored to **time-of-day + price**. Because GEXbot shows one day at a time, a
+  mark drawn at, say, 11:00 shows at the **11:00 slot every day**, across every DTE package
+  (latest / next / 90d), and tracks zoom, pan, and replay.
+* Drawings persist **per ticker + page** (classic vs state). The right-click menu offers
+  **Undo last**, **Clear drawings**, and **Clone drawings here** (copy the *other* page's
+  drawings onto this one), plus **Copy price** and the tool toggle.
+
+With the tool button off, right-click gives you the browser's normal menu back.
 
 ## Data keys — the chart add-ons
 
