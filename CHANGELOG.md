@@ -320,6 +320,7 @@ All notable changes to GexSync are documented here. The format is based on
   different dates, tickers, and profiles side by side.
 - Bundled README, LICENSE, and OKF knowledge base.
 
+[1.12.0]: https://github.com/dgnsrekt/gexsync/compare/v1.11.1...v1.12.0
 [1.11.1]: https://github.com/dgnsrekt/gexsync/compare/v1.11.0...v1.11.1
 [1.11.0]: https://github.com/dgnsrekt/gexsync/compare/v1.10.0...v1.11.0
 [1.10.0]: https://github.com/dgnsrekt/gexsync/compare/v1.9.0...v1.10.0
