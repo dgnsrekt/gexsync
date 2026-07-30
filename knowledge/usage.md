@@ -99,6 +99,30 @@ off Replay, or hit **Exit** in the on-page replay bar.
   week's timestamps. Panels briefly collapse so each chart is captured full-width.
   Off, the camera works as GEXbot's normal single-shot menu.
 
+## Trigger mode — lines & the chart menu
+
+The bottom pill has a **trigger button** (a crosshair-circle icon, just after the loop
+mark). Click it to arm **trigger mode**:
+
+* An amber **reticle** (crosshair + a small ring + a price tag) tracks your cursor over the
+  chart, so you can read the exact price at any point.
+* The chart's **pan and zoom lock** while armed — a stray drag, scroll, or double-click
+  can't move or reset it. A **"zoom locked"** badge shows in the top-left. Left-click does
+  nothing; leaving trigger mode restores normal pan/zoom.
+* Arming is **global**: it turns on for every open GEXbot pane at once.
+
+While armed, **right-click the chart** for the action menu:
+
+* **Copy price** — the price under the cursor, to your clipboard.
+* **Add line here** — drops a horizontal line at that price (per-ticker, persists across
+  reloads, shows on every chart of that ticker). Right-click *on* a line instead → **Remove
+  line**.
+* **Add to / Remove from watchlist** — the chart's ticker, the same watchlist the pill's
+  cycle arrows step through.
+* **Clear lines** — removes all of the current ticker's lines.
+
+With trigger mode off, right-click gives you the browser's normal menu back.
+
 ## Data keys — the chart add-ons
 
 The popup's second page holds the add-ons that pull in **outside** data, as opposed to

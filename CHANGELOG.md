@@ -4,6 +4,22 @@ All notable changes to GexSync are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and the project follows
 [semantic versioning](https://semver.org/).
 
+## [1.12.0] — 2026-07-30
+
+### Changed
+- **Line drawing is now Trigger mode.** The chart pill's line button became a single
+  **trigger button** (a crosshair-circle icon). Arming it shows an amber **reticle** that
+  tracks your cursor, and **locks pan/zoom** on the chart (with a "zoom locked" badge) so a
+  stray drag or double-click can't move or reset it. Arming is **global** — it turns on for
+  every open GEXbot pane at once. Leaving trigger mode restores normal pan/zoom.
+
+### Added
+- **A right-click action menu on the chart** (while trigger mode is armed): **Copy price**
+  (the price under the cursor, to your clipboard), **Add line here** / **Remove line**
+  (context-aware), **Add to / Remove from watchlist** for the chart's ticker, and **Clear
+  lines**. Placing and removing lines moved here from the old left-click. Right-click with
+  trigger mode off gives you the browser's normal menu back.
+
 ## [1.11.1] — 2026-07-28
 
 ### Fixed

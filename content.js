@@ -54,7 +54,9 @@
   let watchlist = []; // symbols the pill's cycle arrows step through (Ticker mode, 2+); curated in the popup
   const LINES_KEY = "gexsync-lines"; // per-ticker horizontal lines: { TICKER: [line] } in storage
   let lines = {};       // mirror of storage[LINES_KEY] — the source of truth for what renders
-  let lineMode = false; // this tab's horizontal-line draw mode (local, off by default)
+  let triggerMode = false; // "trigger" mode: shows the reticle, locks pan/zoom, and takes over the
+                           // chart's right-click for the action menu. Global across all panes —
+                           // mirrors gexsync-cfg.triggerArmed via storage.onChanged.
   let matrixOn = false; // easter egg: matrix rain behind the panes; off by default, unlocked in the popup
   const readPd = (c) => ({ o: c?.pdO === true, h: c?.pdH === true, l: c?.pdL === true, c: c?.pdC === true });
   const panelKey = () => scopedKey("gexsync-panel", panelScope);
@@ -72,6 +74,7 @@
     buzzOn = r[CFG_KEY]?.buzz === true; // default off (opt-in)
     watchlist = r[CFG_KEY]?.watchlist || [];
     matrixOn = r[CFG_KEY]?.matrix === true; // default off (opt-in easter egg)
+    triggerMode = r[CFG_KEY]?.triggerArmed === true; // arm state is shared across panes
     zHudOn();
   });
   chrome.storage.local.get(LINES_KEY, (r) => { lines = r[LINES_KEY] || {}; writeLinesNode(); });
@@ -540,12 +543,14 @@
   let lastLinesSig = "";
   function writeLinesNode() {
     const tk = baseTicker();
-    const payload = JSON.stringify({ ticker: tk, lines: (tk && lines[tk]) || [], mode: lineMode });
-    if (payload === lastLinesSig) return; // ticker/lines/mode unchanged — skip
+    const payload = JSON.stringify({ ticker: tk, lines: (tk && lines[tk]) || [], armed: triggerMode, inWatch: !!(tk && watchlist.includes(tk)) });
+    if (payload === lastLinesSig) return; // ticker/lines/armed/watch unchanged — skip
     lastLinesSig = payload;
     linesNode().textContent = payload;
   }
   function saveLines(next) { lines = next; chrome.storage.local.set({ [LINES_KEY]: next }); writeLinesNode(); }
+  // Trigger arm is global: write it to cfg so storage.onChanged arms/disarms every pane.
+  const setTriggerArmed = (on) => chrome.storage.local.get(CFG_KEY, (r) => chrome.storage.local.set({ [CFG_KEY]: { ...(r[CFG_KEY] || {}), triggerArmed: !!on } }));
 
   // Easter-egg matrix rain: feed matrix.js (MAIN world) the on-flag + this pane's live
   // context via the #__gxmatrix node, same bridge/sig-guard idiom as writeLinesNode.
@@ -579,11 +584,17 @@
   function clearAllLines() { const n = Object.values(lines).reduce((a, l) => a + l.length, 0); saveLines({}); return { ok: true, cleared: n }; }
   const listLines = (ticker) => (ticker ? (lines[ticker] || []).slice() : { ...lines });
 
-  // MAIN-world (lines.js) → here: a chart click in line mode placed/removed a line.
+  // MAIN-world (lines.js menu) → here: add/remove/clear lines, or toggle the watchlist.
   window.addEventListener("gexsync-line-place", (e) => { const p = e.detail && e.detail.price; if (typeof p === "number") addLine(baseTicker(), { price: p }); });
   window.addEventListener("gexsync-line-remove", (e) => { const id = e.detail && e.detail.id; if (id) removeLine(baseTicker(), id); });
+  window.addEventListener("gexsync-lines-clear", () => clearLines(baseTicker()));
+  window.addEventListener("gexsync-watchlist-toggle", () => {
+    const t = baseTicker(); if (!t) return;
+    const next = watchlist.includes(t) ? watchlist.filter((s) => s !== t) : [...watchlist, t];
+    chrome.storage.local.get(CFG_KEY, (r) => chrome.storage.local.set({ [CFG_KEY]: { ...(r[CFG_KEY] || {}), watchlist: next } }));
+  });
   // Keep the render node pointed at the current ticker (writeLinesNode is sig-guarded,
-  // so this only touches the DOM when the ticker, its lines, or line mode change).
+  // so this only touches the DOM when the ticker, its lines, or trigger mode change).
   setInterval(writeLinesNode, 500);
   // Any tab (or the popup) mutating the store → refresh this tab's cache + render node.
   chrome.storage.onChanged.addListener((c, area) => { if (area === "local" && c[LINES_KEY]) { lines = c[LINES_KEY].newValue || {}; writeLinesNode(); } });
@@ -1032,15 +1043,17 @@
     markSeg.style.cssText = `display:flex;align-items:center;padding:6px 3px 6px 13px;color:${T.muted};transition:color .16s;`;
     markSeg.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="transform-box:fill-box;transform-origin:center"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4.5v5h5"/></svg>`;
 
-    // horizontal-line mode toggle — after the mark, before the label. Click to arm, then
-    // click the chart to drop a line at that price (click a line to remove it). Mint when on.
-    const lineSeg = document.createElement("span");
-    lineSeg.id = "gexsync-chip-line";
-    lineSeg.style.cssText = `display:flex;align-items:center;padding:6px 6px;cursor:pointer;color:${T.muted};transition:color .16s;`;
-    lineSeg.title = "Horizontal line mode — click, then click the chart to drop a line (click a line to remove it)";
-    lineSeg.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><line x1="3" y1="9" x2="21" y2="9"/><line x1="3" y1="15" x2="21" y2="15" stroke-dasharray="3 3" opacity=".55"/></svg>`;
-    const paintLineBtn = () => { lineSeg.style.color = lineMode ? T.mint : T.muted; };
-    lineSeg.addEventListener("click", () => { lineMode = !lineMode; writeLinesNode(); paintLineBtn(); });
+    // "trigger" mode toggle — after the mark, before the label. Click to arm: shows the reticle,
+    // locks pan/zoom, and takes over the chart's right-click for the action menu (copy price,
+    // add/remove line, watchlist, clear lines). Arming is GLOBAL — all panes arm together via
+    // cfg.triggerArmed. Amber (crosshair-circle icon) when on.
+    const trigSeg = document.createElement("span");
+    trigSeg.id = "gexsync-chip-trigger";
+    trigSeg.style.cssText = `display:flex;align-items:center;padding:6px 6px;cursor:pointer;color:${T.muted};transition:color .16s;`;
+    trigSeg.title = "Trigger mode — reticle + locked chart; right-click the chart for the action menu";
+    trigSeg.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="12" cy="12" r="7"/><line x1="12" y1="1.5" x2="12" y2="5.5"/><line x1="12" y1="18.5" x2="12" y2="22.5"/><line x1="1.5" y1="12" x2="5.5" y2="12"/><line x1="18.5" y1="12" x2="22.5" y2="12"/></svg>`;
+    const paintTrigBtn = () => { trigSeg.style.color = triggerMode ? T.amber : T.muted; };
+    trigSeg.addEventListener("click", () => setTriggerArmed(!triggerMode)); // global; onChanged repaints every pane
 
     const modeSeg = document.createElement("span");
     modeSeg.id = "gexsync-chip-mode";
@@ -1087,7 +1100,7 @@
     infoSeg.style.cssText = `display:flex;align-items:center;gap:6px;padding:6px 14px;border-left:1px solid rgba(255,255,255,.12);font:500 12px ${T.mono};letter-spacing:.3px;white-space:nowrap;color:${T.ink};cursor:pointer;transition:background .16s;`;
     infoSeg.title = "Ticker details — hover to peek, click to pin open (Esc closes)";
 
-    chip.append(markSeg, lineSeg, modeSeg, grpSeg, infoSeg);
+    chip.append(markSeg, trigSeg, modeSeg, grpSeg, infoSeg);
 
     // Step to the prev/next watchlist ticker as if the user changed it: in-app
     // hashchange + a group broadcast (immediate, no 400ms poll lag). Pre-set
@@ -1167,7 +1180,7 @@
       paintGroup();
       paintInfo();
       paintCycle();
-      paintLineBtn();
+      paintTrigBtn();
     };
     stack.appendChild(chip);
     stack.appendChild(cycleBar); // below the pill; hidden (out of flow) until Ticker mode + 2+ watchlist
@@ -1584,7 +1597,7 @@
 
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area !== "local") return;
-    if (changes[CFG_KEY]?.newValue) { const c = changes[CFG_KEY].newValue; const pScope = panelScope; if (c.panelScope) panelScope = c.panelScope; watermark = c.watermark !== false; const pSync = zoomSync; zoomSync = c.zoomSync === true; groupShot = c.groupShot === true; const sNav = settingsNav; settingsNav = c.settingsNav === true; if (settingsNav !== sNav) lastNav = null; showDte = c.dte === true; settingsSync = c.settingsSync === true; pdShow = readPd(c); pdLabelPos = c.pdLabel || "left"; buzzOn = c.buzz === true; watchlist = c.watchlist || []; matrixOn = c.matrix === true; writeMatrixNode(); renderChip(); if (!zoomSync) writeHold(null); else if (!pSync || panelScope !== pScope) adoptLive(); zHudOn(); }
+    if (changes[CFG_KEY]?.newValue) { const c = changes[CFG_KEY].newValue; const pScope = panelScope; if (c.panelScope) panelScope = c.panelScope; watermark = c.watermark !== false; const pSync = zoomSync; zoomSync = c.zoomSync === true; groupShot = c.groupShot === true; const sNav = settingsNav; settingsNav = c.settingsNav === true; if (settingsNav !== sNav) lastNav = null; showDte = c.dte === true; settingsSync = c.settingsSync === true; pdShow = readPd(c); pdLabelPos = c.pdLabel || "left"; buzzOn = c.buzz === true; watchlist = c.watchlist || []; matrixOn = c.matrix === true; writeMatrixNode(); triggerMode = c.triggerArmed === true; renderChip(); writeLinesNode(); if (!zoomSync) writeHold(null); else if (!pSync || panelScope !== pScope) adoptLive(); zHudOn(); }
     if (changes[MODE_KEY]?.newValue) { mode = changes[MODE_KEY].newValue === "live" ? "profiles" : changes[MODE_KEY].newValue; renderChip(); }
     if (changes[SESSION_KEY]) { replayLocked = !!changes[SESSION_KEY].newValue && changes[SESSION_KEY].newValue.phase !== "idle"; renderChip(); }
     if (!onSyncPage()) return; // off /classic|/state (SPA nav): don't touch the page
