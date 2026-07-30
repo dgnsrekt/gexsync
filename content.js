@@ -711,7 +711,7 @@
     const paint = (s) => {
       const m = mark(), md = modeEl(); if (!m || !md) return;
       state = s; clearTimeout(decayT);
-      if (s === "idle") { stopSpin(); m.style.color = C.muted; md.style.color = ""; md.textContent = `mode: ${LBL[mode] || "Profiles"}${replayLocked ? " 🔒" : ""}`; }
+      if (s === "idle") { stopSpin(); m.style.color = C.muted; md.style.color = ""; md.textContent = `${LBL[mode] || "Profiles"}${replayLocked ? " 🔒" : ""}`; }
       else if (s === "grab") { stopSpin(); put(m, md, "master", C.mint); pop(); }
       else if (s === "settle") { put(m, md, "setting…", C.amber); spinOnce(); }
       else if (s === "took") { stopSpin(); put(m, md, "synced →", C.mint); pop(); decayT = setTimeout(() => paint("idle"), 850); }
