@@ -4,6 +4,14 @@ All notable changes to GexSync are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and the project follows
 [semantic versioning](https://semver.org/).
 
+## [1.14.1] — 2026-07-31
+
+### Fixed
+- **The chart's right-click menu now closes on click-away in draw mode.** A click on the chart to
+  dismiss the menu was being swallowed (draw mode's pointer capture suppressed the dismiss click),
+  so the menu only closed if you clicked out of the browser entirely. It now closes on any
+  click-away — without leaving a stray mark — plus Escape and scroll.
+
 ## [1.14.0] — 2026-07-30
 
 ### Added
@@ -342,6 +350,7 @@ All notable changes to GexSync are documented here. The format is based on
   different dates, tickers, and profiles side by side.
 - Bundled README, LICENSE, and OKF knowledge base.
 
+[1.14.1]: https://github.com/dgnsrekt/gexsync/compare/v1.14.0...v1.14.1
 [1.14.0]: https://github.com/dgnsrekt/gexsync/compare/v1.13.0...v1.14.0
 [1.13.0]: https://github.com/dgnsrekt/gexsync/compare/v1.12.0...v1.13.0
 [1.12.0]: https://github.com/dgnsrekt/gexsync/compare/v1.11.1...v1.12.0

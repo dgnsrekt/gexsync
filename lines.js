@@ -219,11 +219,11 @@
   document.addEventListener("pointercancel", endCapture, true);
 
   // ---- right-click action menu (only while armed) ----
-  let menuEl = null, onDocDown = null, onKey = null;
+  let menuEl = null, backdrop = null, onKey = null;
   function closeMenu() {
     if (!menuEl) return;
     menuEl.remove(); menuEl = null;
-    document.removeEventListener("mousedown", onDocDown, true);
+    if (backdrop) { backdrop.remove(); backdrop = null; }
     document.removeEventListener("keydown", onKey, true);
     document.removeEventListener("wheel", closeMenu, true);
     window.removeEventListener("blur", closeMenu);
@@ -241,6 +241,17 @@
   const sep = () => { const d = document.createElement("div"); d.style.cssText = "height:1px;margin:4px 0;background:rgba(255,255,255,.08);"; return d; };
   function buildMenu(x, y, ctx) {
     closeMenu();
+    // click-away backdrop: a transparent full-viewport layer just under the menu. It catches the
+    // dismiss on POINTERDOWN (draw mode's pointerdown-capture preventDefault suppresses the
+    // compatibility mousedown, so a mousedown-based dismiss never fires) and absorbs the click so
+    // it can't draw / pan / hit GEXbot underneath.
+    backdrop = document.createElement("div");
+    backdrop.style.cssText = "position:fixed;inset:0;z-index:2147481999;background:transparent;";
+    const dismiss = (e) => { e.preventDefault(); e.stopPropagation(); closeMenu(); };
+    backdrop.addEventListener("pointerdown", dismiss, true);
+    backdrop.addEventListener("mousedown", dismiss, true);
+    backdrop.addEventListener("contextmenu", (e) => e.preventDefault(), true);
+    document.body.appendChild(backdrop);
     menuEl = document.createElement("div");
     menuEl.style.cssText = "position:fixed;z-index:2147482000;min-width:184px;padding:5px 0;background:#12161f;border:1px solid #2a3342;border-radius:8px;box-shadow:0 8px 28px rgba(0,0,0,.5);font:600 12px 'JetBrains Mono',ui-monospace,monospace;user-select:none;";
     menuEl.appendChild(menuItem("Copy price", ctx.price.toFixed(2), () => navigator.clipboard.writeText(ctx.price.toFixed(2))));
@@ -268,9 +279,7 @@
     const r = menuEl.getBoundingClientRect(); // clamp inside the viewport
     menuEl.style.left = Math.min(x, innerWidth - r.width - 6) + "px";
     menuEl.style.top = Math.min(y, innerHeight - r.height - 6) + "px";
-    onDocDown = (e) => { if (!menuEl || !menuEl.contains(e.target)) closeMenu(); };
     onKey = (e) => { if (e.key === "Escape") closeMenu(); };
-    document.addEventListener("mousedown", onDocDown, true);
     document.addEventListener("keydown", onKey, true);
     document.addEventListener("wheel", closeMenu, true);
     window.addEventListener("blur", closeMenu);
