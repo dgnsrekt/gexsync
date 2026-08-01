@@ -4,6 +4,22 @@ All notable changes to GexSync are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and the project follows
 [semantic versioning](https://semver.org/).
 
+## [1.15.0] — 2026-08-01
+
+### Changed
+- **The chart pill is now a plain on/off tools toggle.** It no longer cycles
+  `off → trigger → draw`; one click turns the chart tools on (re-arming the sub-mode you last
+  used) and off. Line vs. Draw is chosen in the right-click menu.
+- **"Trigger mode" is now "Line mode."** The old name came from an earlier idea; the mode is
+  really about reading prices and dropping horizontal lines, so it's renamed everywhere — including
+  the popup's **Line** color row (was Trigger). Existing trigger colors carry over automatically.
+- **The right-click menu uses direct-select segmented controls.** **Line｜Draw**,
+  **Freehand｜Arrow**, and **Page｜Tab｜Global** are now inline pill selectors — pick any value
+  directly instead of clicking through a cycle. Selecting one keeps the menu open.
+- **All three drawing scopes can be cleared at once.** **Clear page / tab / global drawings** are
+  always listed (a scope with nothing to clear is dimmed), so you no longer have to switch to a
+  scope before clearing it. Copy price is available in both Line and Draw modes.
+
 ## [1.14.1] — 2026-07-31
 
 ### Fixed
@@ -350,6 +366,7 @@ All notable changes to GexSync are documented here. The format is based on
   different dates, tickers, and profiles side by side.
 - Bundled README, LICENSE, and OKF knowledge base.
 
+[1.15.0]: https://github.com/dgnsrekt/gexsync/compare/v1.14.1...v1.15.0
 [1.14.1]: https://github.com/dgnsrekt/gexsync/compare/v1.14.0...v1.14.1
 [1.14.0]: https://github.com/dgnsrekt/gexsync/compare/v1.13.0...v1.14.0
 [1.13.0]: https://github.com/dgnsrekt/gexsync/compare/v1.12.0...v1.13.0

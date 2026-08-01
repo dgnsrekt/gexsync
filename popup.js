@@ -128,14 +128,14 @@ wlChips.addEventListener("click", (e) => {
 const LINES_KEY = "gexsync-lines";
 const linesList = document.getElementById("linesList");
 const linesClearAll = document.getElementById("linesClearAll");
-let trigCol = "#FFC24A", drawCol = "#4AA3FF", _linesStore = {}; // chart-tool colors + cached line store
+let lineCol = "#FFC24A", drawCol = "#4AA3FF", _linesStore = {}; // chart-tool colors + cached line store
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 function renderLines(store) {
   const tickers = Object.keys(store || {}).filter((t) => store[t] && store[t].length).sort();
   linesList.innerHTML = tickers.map((tk) => {
     const rows = store[tk].map((l) => {
       const px = l.points && l.points[0] != null ? (+l.points[0].price).toFixed(2) : "?";
-      const col = (l.overrides && l.overrides.linecolor && l.overrides.linecolor !== "#16E0A3") ? l.overrides.linecolor : trigCol;
+      const col = (l.overrides && l.overrides.linecolor && l.overrides.linecolor !== "#16E0A3") ? l.overrides.linecolor : lineCol;
       const txt = l.text ? `<span class="ln-txt">${esc(l.text)}</span>` : "";
       return `<div class="ln-row"><span class="ln-sw" style="background:${esc(col)}"></span><span class="ln-px">${px}</span>${txt}<button class="ln-del" data-tk="${esc(tk)}" data-id="${esc(l.id)}" title="Remove this line">✕</button></div>`;
     }).join("");
@@ -157,7 +157,7 @@ linesClearAll.addEventListener("click", () => { if (confirm("Clear ALL saved lin
 // ---- Chart tool colors: one per mode, from the group palette. Written into gexsync-cfg;
 // content.js reads them and themes the reticle / lines / strokes live. The two can't match. ----
 const GROUP_COLORS = ["#16E0A3", "#FF5C5C", "#4AA3FF", "#FFC24A", "#B57AFF", "#22D3EE", "#FF8C42", "#FF5CC8"];
-const palTrigger = document.getElementById("palTrigger");
+const palLine = document.getElementById("palLine");
 const palDraw = document.getElementById("palDraw");
 function renderPalette() {
   const build = (host, current, other) => {
@@ -165,13 +165,13 @@ function renderPalette() {
       `<span class="cpal-sw${hex === current ? " sel" : ""}${hex === other ? " dis" : ""}" data-hex="${hex}" style="background:${hex};color:${hex}" title="${hex === other ? "used by the other mode" : hex}"></span>`
     ).join("");
   };
-  build(palTrigger, trigCol, drawCol);
-  build(palDraw, drawCol, trigCol);
+  build(palLine, lineCol, drawCol);
+  build(palDraw, drawCol, lineCol);
 }
 const setColor = (which, hex) => chrome.storage.local.get("gexsync-cfg", (r) => chrome.storage.local.set({ "gexsync-cfg": { ...(r["gexsync-cfg"] || {}), [which]: hex } }));
-palTrigger.addEventListener("click", (e) => { const sw = e.target.closest(".cpal-sw"); if (sw && !sw.classList.contains("dis")) setColor("triggerColor", sw.dataset.hex); });
+palLine.addEventListener("click", (e) => { const sw = e.target.closest(".cpal-sw"); if (sw && !sw.classList.contains("dis")) setColor("lineColor", sw.dataset.hex); });
 palDraw.addEventListener("click", (e) => { const sw = e.target.closest(".cpal-sw"); if (sw && !sw.classList.contains("dis")) setColor("drawColor", sw.dataset.hex); });
-const readColors = (g) => { trigCol = g.triggerColor || "#FFC24A"; drawCol = g.drawColor || "#4AA3FF"; renderPalette(); renderLines(_linesStore); };
+const readColors = (g) => { lineCol = g.lineColor || g.triggerColor || "#FFC24A"; drawCol = g.drawColor || "#4AA3FF"; renderPalette(); renderLines(_linesStore); }; // migrate old triggerColor
 chrome.storage.local.get("gexsync-cfg", (r) => readColors(r["gexsync-cfg"] || {}));
 chrome.storage.onChanged.addListener((c, area) => { if (area === "local" && c["gexsync-cfg"]) readColors(c["gexsync-cfg"].newValue || {}); });
 

@@ -99,54 +99,52 @@ off Replay, or hit **Exit** in the on-page replay bar.
   week's timestamps. Panels briefly collapse so each chart is captured full-width.
   Off, the camera works as GEXbot's normal single-shot menu.
 
-## Chart tools — trigger & draw modes
+## Chart tools — line & draw modes
 
 The bottom pill has a **tool button** (a crosshair-circle icon, just after the loop mark).
-Clicking it **cycles** `off → trigger → draw → off`, and the mode is **global** — it turns
-on for every open GEXbot pane at once.
+Clicking it **toggles the chart tools on/off** — it's a plain on/off switch, **global** across
+every open GEXbot pane. When on, it re-arms whichever sub-mode you used last (**Line** or
+**Draw**). Turning tools on:
 
-### Trigger mode
+* Shows a **reticle** (crosshair + a small ring + a price tag) tracking your cursor, so you can
+  read the exact price at any point.
+* **Locks the chart's pan and zoom** — a stray drag, scroll, or double-click can't move or reset
+  it. A **"zoom locked"** badge shows in the top-left. Turning tools off restores normal pan/zoom.
 
-The button glows **amber**. Trigger mode is for reading prices and managing lines:
+**Right-click the chart** for the tool menu. At the top, a **`Line ｜ Draw`** selector switches
+the sub-mode in place (the menu stays open), and **Copy price** — the price under the cursor to
+your clipboard — is available in both.
 
-* An amber **reticle** (crosshair + a small ring + a price tag) tracks your cursor over the
-  chart, so you can read the exact price at any point.
-* The chart's **pan and zoom lock** while armed — a stray drag, scroll, or double-click
-  can't move or reset it. A **"zoom locked"** badge shows in the top-left. Left-click does
-  nothing; leaving trigger mode restores normal pan/zoom.
-* Arming is **global**: it turns on for every open GEXbot pane at once.
+### Line mode
 
-While armed, **right-click the chart** for the action menu:
+For reading prices and dropping horizontal lines. The reticle uses your **Line** color.
 
-* **Copy price** — the price under the cursor, to your clipboard.
-* **Add line here** — drops a horizontal line at that price (per-ticker, persists across
-  reloads, shows on every chart of that ticker). Right-click *on* a line instead → **Remove
-  line**.
-* **Add to / Remove from watchlist** — the chart's ticker, the same watchlist the pill's
-  cycle arrows step through.
+* **Add line here** — drops a horizontal line at the cursor price (per-ticker, persists across
+  reloads, shows on every chart of that ticker). Right-click *on* a line instead → **Remove line**.
+* **Add to / Remove from watchlist** — the chart's ticker, the same watchlist the pill's cycle
+  arrows step through.
 * **Clear lines** — removes all of the current ticker's lines.
 
 ### Draw mode
 
-Click the button again and it glows **blue** — draw mode. Same locked chart + reticle, but now
-**left-drag on the chart paints** a stroke:
+The reticle uses your **Draw** color, and **left-drag on the chart paints** a stroke:
 
-* **Freehand** or **straight arrow** — switch the tool from the right-click menu.
+* **Tool `Freehand ｜ Arrow`** — pick the stroke type directly from the menu.
 * Drawings are anchored to **time-of-day + price**. Because GEXbot shows one day at a time, a
   mark drawn at, say, 11:00 shows at the **11:00 slot every day**, across every DTE package
   (latest / next / 90d), and tracks zoom, pan, and replay.
-* Choose where each drawing lives with the menu's **Scope** — **global** (every chart of the
-  ticker), **page** (this ticker on classic *or* state), or **tab** (just this tab, cleared when
-  you close it). The badge shows the active scope. The menu also has **Undo last** and a
-  scope-aware **Clear** (they act on the active scope only).
+* **Scope `Page ｜ Tab ｜ Global`** — where each *new* drawing lives: **global** (every chart of
+  the ticker), **page** (this ticker on classic *or* state), or **tab** (just this tab, cleared
+  when you close it). Pick any scope directly.
+* **Undo last** removes your most recent stroke. **Clear page / tab / global drawings** are all
+  listed at once — each clears just that scope (no need to switch to it first); a scope with
+  nothing to clear is dimmed.
 
-### Colors & switching
+### Colors
 
-* **Colors** — the popup's **Tools** page gives each mode one color, picked from your group
-  palette: Trigger tints its reticle, price guide, and lines; Draw tints its reticle and strokes.
-  Change one and everything in that mode recolors live. The two can't be the same.
-* **Switch from the menu** — the right-click menu has **Off** and the **other mode**, so you can
-  jump Trigger ⇄ Draw or turn the tools off without cycling the pill.
+The popup's **Tools** page gives each mode one color, picked from your group palette: **Line**
+tints its reticle, price guide, and lines; **Draw** tints its reticle and strokes. Change one and
+everything in that mode recolors live. The two can't be the same.
 
 With the tool button off, right-click gives you the browser's normal menu back.
 

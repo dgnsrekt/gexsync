@@ -54,15 +54,18 @@
   let watchlist = []; // symbols the pill's cycle arrows step through (Ticker mode, 2+); curated in the popup
   const LINES_KEY = "gexsync-lines"; // per-ticker horizontal lines: { TICKER: [line] } in storage
   let lines = {};       // mirror of storage[LINES_KEY] — the source of truth for what renders
-  let chartMode = ""; // "" | "trigger" | "draw" — chart interaction mode, global across panes
-                      // (mirrors gexsync-cfg.chartMode via storage.onChanged). trigger = reticle +
-                      // locked chart + action menu; draw = same but left-drag draws (blue reticle).
+  let chartMode = ""; // "" | "line" | "draw" — chart tools state, global across panes (mirrors
+                      // gexsync-cfg.chartMode via storage.onChanged). "" = off; non-empty = tools on
+                      // (reticle + locked chart + right-click menu). line = horizontal price lines;
+                      // draw = left-drag freehand/arrows.
+  let toolMode = "line"; // "line" | "draw" — remembered sub-mode; the pill re-arms to this (cfg.toolMode)
+  const normMode = (m) => (m === "trigger" ? "line" : (m === "line" || m === "draw") ? m : ""); // legacy "trigger"→"line"
   const DRAW_KEY = "gexsync-drawings"; // durable drawings (localStorage): { TICKER: [{scope,page,...}] }
   let draws = {};     // mirror of storage[DRAW_KEY] — global + page scopes (permanent)
   let tabDraws = {};  // session-lived tab-scoped drawings (sessionStorage): { TICKER: [{scope:"tab",...}] }
   let drawTool = "free"; // "free" | "arrow" — current draw tool (global via cfg.drawTool)
   let activeScope = "page"; // scope for NEW drawings: "global" | "page" | "tab" (global via cfg.drawScope)
-  let triggerColor = "#FFC24A"; // themes all trigger visuals (reticle, badge, lines); via cfg.triggerColor
+  let lineColor = "#FFC24A"; // themes all line-mode visuals (reticle, badge, lines); via cfg.lineColor
   let drawColor = "#4AA3FF"; // themes all draw visuals (reticle, badge, strokes); via cfg.drawColor
   let matrixOn = false; // easter egg: matrix rain behind the panes; off by default, unlocked in the popup
   const readPd = (c) => ({ o: c?.pdO === true, h: c?.pdH === true, l: c?.pdL === true, c: c?.pdC === true });
@@ -81,10 +84,11 @@
     buzzOn = r[CFG_KEY]?.buzz === true; // default off (opt-in)
     watchlist = r[CFG_KEY]?.watchlist || [];
     matrixOn = r[CFG_KEY]?.matrix === true; // default off (opt-in easter egg)
-    chartMode = r[CFG_KEY]?.chartMode ?? (r[CFG_KEY]?.triggerArmed ? "trigger" : ""); // shared across panes
+    chartMode = normMode(r[CFG_KEY]?.chartMode ?? (r[CFG_KEY]?.triggerArmed ? "trigger" : "")); // shared; legacy trigger→line
+    toolMode = r[CFG_KEY]?.toolMode || (chartMode === "draw" ? "draw" : "line");
     drawTool = r[CFG_KEY]?.drawTool || "free";
     activeScope = r[CFG_KEY]?.drawScope || "page";
-    triggerColor = r[CFG_KEY]?.triggerColor || "#FFC24A";
+    lineColor = r[CFG_KEY]?.lineColor || r[CFG_KEY]?.triggerColor || "#FFC24A"; // migrate old triggerColor
     drawColor = r[CFG_KEY]?.drawColor || "#4AA3FF";
     zHudOn();
   });
@@ -561,10 +565,15 @@
     ...((tk && draws[tk]) || []).filter((d) => d.scope === "global" || (d.scope === "page" && d.page === pg)),
     ...((tk && tabDraws[tk]) || []),
   ];
+  // per-scope counts for the current ticker/page, so the menu can dim empty "Clear …" items.
+  const drawCounts = (tk, pg) => {
+    const arr = (tk && draws[tk]) || [];
+    return { global: arr.filter((d) => d.scope === "global").length, page: arr.filter((d) => d.scope === "page" && d.page === pg).length, tab: ((tk && tabDraws[tk]) || []).length };
+  };
   let lastLinesSig = "";
   function writeLinesNode() {
-    const tk = baseTicker();
-    const payload = JSON.stringify({ ticker: tk, lines: (tk && lines[tk]) || [], mode: chartMode, inWatch: !!(tk && watchlist.includes(tk)), draws: tk ? visibleDraws(tk, pageName()) : [], tool: drawTool, scope: activeScope, triggerColor, drawColor });
+    const tk = baseTicker(), pg = pageName();
+    const payload = JSON.stringify({ ticker: tk, lines: (tk && lines[tk]) || [], mode: chartMode, inWatch: !!(tk && watchlist.includes(tk)), draws: tk ? visibleDraws(tk, pg) : [], tool: drawTool, scope: activeScope, lineColor, drawColor, drawCounts: drawCounts(tk, pg) });
     if (payload === lastLinesSig) return; // ticker/lines/mode/watch/draws unchanged — skip
     lastLinesSig = payload;
     linesNode().textContent = payload;
@@ -572,8 +581,9 @@
   function saveLines(next) { lines = next; chrome.storage.local.set({ [LINES_KEY]: next }); writeLinesNode(); }
   function saveDraws(next) { draws = next; chrome.storage.local.set({ [DRAW_KEY]: next }); writeLinesNode(); }
   function saveTabDraws(next) { tabDraws = next; try { sessionStorage["gexsync-draws-tab"] = JSON.stringify(next); } catch (e) {} writeLinesNode(); }
-  // Chart mode is global: write it to cfg so storage.onChanged cycles every pane together.
-  const setChartMode = (m) => chrome.storage.local.get(CFG_KEY, (r) => chrome.storage.local.set({ [CFG_KEY]: { ...(r[CFG_KEY] || {}), chartMode: m } }));
+  // Chart tools state is global: write cfg so storage.onChanged repaints every pane. Setting a
+  // sub-mode (line|draw) also remembers it as toolMode, so the pill re-arms to it after off.
+  const setChartMode = (m) => chrome.storage.local.get(CFG_KEY, (r) => chrome.storage.local.set({ [CFG_KEY]: { ...(r[CFG_KEY] || {}), chartMode: m, ...((m === "line" || m === "draw") ? { toolMode: m } : {}) } }));
   const setDrawTool = (t) => chrome.storage.local.get(CFG_KEY, (r) => chrome.storage.local.set({ [CFG_KEY]: { ...(r[CFG_KEY] || {}), drawTool: t } }));
   const setDrawScope = (s) => chrome.storage.local.get(CFG_KEY, (r) => chrome.storage.local.set({ [CFG_KEY]: { ...(r[CFG_KEY] || {}), drawScope: s } }));
 
@@ -595,7 +605,7 @@
     if (o.shape && o.shape !== "horizontal_line") return { ok: false, error: "unsupported-shape", shape: o.shape };
     const id = Math.random().toString(36).slice(2, 9);
     const line = { id, shape: "horizontal_line", points: [{ time: o.time ?? null, price: o.price }], text: o.text ?? null,
-      // no default linecolor → the line follows the live trigger color; an explicit override wins
+      // no default linecolor → the line follows the live line color; an explicit override wins
       overrides: { linewidth: 1, linestyle: "dashed", ...(o.overrides || {}) } };
     saveLines({ ...lines, [ticker]: [...(lines[ticker] || []), line] });
     return { ok: true, id, ticker };
@@ -621,7 +631,8 @@
   });
   // MAIN-world (lines.js draw capture/menu) → here: add/undo/clear drawings, set tool/scope.
   // Each drawing's points are {tod: ms-since-midnight, p: price} — see lines.js for the anchoring.
-  // Undo/clear act on the ACTIVE scope; a drawing is stamped with the scope it was made in.
+  // Undo acts on the active scope; clear targets the scope the menu passes (defaults to active).
+  // A drawing is stamped with the scope it was made in.
   const scopeMatch = (d, sc, pg) => d.scope === sc && (sc !== "page" || d.page === pg);
   window.addEventListener("gexsync-draw-add", (e) => {
     const d = e.detail, tk = baseTicker(); if (!tk || !d || !Array.isArray(d.points) || !d.points.length) return;
@@ -637,14 +648,15 @@
     let idx = -1; for (let i = arr.length - 1; i >= 0; i--) if (scopeMatch(arr[i], activeScope, pg)) { idx = i; break; }
     if (idx < 0) return; const kept = arr.slice(0, idx).concat(arr.slice(idx + 1)); const next = { ...draws }; if (kept.length) next[tk] = kept; else delete next[tk]; saveDraws(next);
   });
-  window.addEventListener("gexsync-draws-clear", () => {
+  window.addEventListener("gexsync-draws-clear", (e) => {
     const tk = baseTicker(); if (!tk) return; const pg = pageName();
-    if (activeScope === "tab") { if (!tabDraws[tk]) return; const next = { ...tabDraws }; delete next[tk]; return void saveTabDraws(next); }
-    const arr = draws[tk]; if (!arr) return; const kept = arr.filter((d) => !scopeMatch(d, activeScope, pg)); const next = { ...draws }; if (kept.length) next[tk] = kept; else delete next[tk]; saveDraws(next);
+    const sc = (e && e.detail && e.detail.scope) || activeScope; // menu passes the scope to clear
+    if (sc === "tab") { if (!tabDraws[tk]) return; const next = { ...tabDraws }; delete next[tk]; return void saveTabDraws(next); }
+    const arr = draws[tk]; if (!arr) return; const kept = arr.filter((d) => !scopeMatch(d, sc, pg)); const next = { ...draws }; if (kept.length) next[tk] = kept; else delete next[tk]; saveDraws(next);
   });
   window.addEventListener("gexsync-draw-tool", (e) => { const t = e.detail && e.detail.tool; if (t === "free" || t === "arrow") setDrawTool(t); });
   window.addEventListener("gexsync-draw-scope", (e) => { const s = e.detail && e.detail.scope; if (s === "global" || s === "page" || s === "tab") setDrawScope(s); });
-  window.addEventListener("gexsync-chart-mode", (e) => { const m = e.detail && e.detail.mode; if (m === "" || m === "trigger" || m === "draw") setChartMode(m); }); // menu Off / mode-switch
+  window.addEventListener("gexsync-chart-mode", (e) => { const m = normMode(e.detail && e.detail.mode); setChartMode(m); }); // menu Line / Draw / Off (legacy trigger→line)
   // Keep the render node pointed at the current ticker (writeLinesNode is sig-guarded,
   // so this only touches the DOM when the ticker, its lines, mode, or drawings change).
   setInterval(writeLinesNode, 500);
@@ -1099,22 +1111,22 @@
     markSeg.style.cssText = `display:flex;align-items:center;padding:6px 3px 6px 13px;color:${T.muted};transition:color .16s;`;
     markSeg.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="transform-box:fill-box;transform-origin:center"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4.5v5h5"/></svg>`;
 
-    // "trigger" mode toggle — after the mark, before the label. Click to arm: shows the reticle,
-    // locks pan/zoom, and takes over the chart's right-click for the action menu. Click cycles
-    // off → trigger → draw → off; draw mode adds left-drag freehand/arrow (blue reticle + draw
-    // menu). GLOBAL — all panes cycle together via cfg.chartMode. Crosshair-circle icon, tinted
-    // to the chosen trigger/draw color when armed.
+    // chart-tools toggle — after the mark, before the label. Click to arm: shows the reticle,
+    // locks pan/zoom, and takes over the chart's right-click for the tool menu. Plain on/off:
+    // off → on (re-arms to the last sub-mode, cfg.toolMode) → off. Line vs Draw is chosen in the
+    // right-click menu. GLOBAL — all panes toggle together via cfg.chartMode. Crosshair-circle
+    // icon, tinted to the active sub-mode's color when armed.
     const trigSeg = document.createElement("span");
     trigSeg.id = "gexsync-chip-trigger";
     trigSeg.style.cssText = `display:flex;align-items:center;padding:6px 6px;cursor:pointer;color:${T.muted};transition:color .16s;`;
     trigSeg.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="12" cy="12" r="7"/><line x1="12" y1="1.5" x2="12" y2="5.5"/><line x1="12" y1="18.5" x2="12" y2="22.5"/><line x1="1.5" y1="12" x2="5.5" y2="12"/><line x1="18.5" y1="12" x2="22.5" y2="12"/></svg>`;
     const paintTrigBtn = () => {
-      trigSeg.style.color = chartMode === "trigger" ? triggerColor : chartMode === "draw" ? drawColor : T.muted;
-      trigSeg.title = chartMode === "trigger" ? "Trigger mode — reticle + locked chart; right-click for the action menu (click → draw mode)"
-        : chartMode === "draw" ? "Draw mode — left-drag to draw on the chart; right-click for the draw menu (click → off)"
-        : "Chart tools — click to cycle: trigger mode → draw mode → off";
+      trigSeg.style.color = chartMode === "line" ? lineColor : chartMode === "draw" ? drawColor : T.muted;
+      trigSeg.title = chartMode === "line" ? "Chart tools: Line — reticle + locked chart; right-click for the tool menu (click → off)"
+        : chartMode === "draw" ? "Chart tools: Draw — left-drag to draw on the chart; right-click for the tool menu (click → off)"
+        : "Chart tools — click to turn on; right-click the chart to switch Line/Draw, copy a price, and add marks";
     };
-    trigSeg.addEventListener("click", () => setChartMode(chartMode === "" ? "trigger" : chartMode === "trigger" ? "draw" : "")); // global; onChanged repaints every pane
+    trigSeg.addEventListener("click", () => setChartMode(chartMode === "" ? (toolMode || "line") : "")); // toggle on↔off; on re-arms last sub-mode
 
     const modeSeg = document.createElement("span");
     modeSeg.id = "gexsync-chip-mode";
@@ -1658,7 +1670,7 @@
 
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area !== "local") return;
-    if (changes[CFG_KEY]?.newValue) { const c = changes[CFG_KEY].newValue; const pScope = panelScope; if (c.panelScope) panelScope = c.panelScope; watermark = c.watermark !== false; const pSync = zoomSync; zoomSync = c.zoomSync === true; groupShot = c.groupShot === true; const sNav = settingsNav; settingsNav = c.settingsNav === true; if (settingsNav !== sNav) lastNav = null; showDte = c.dte === true; settingsSync = c.settingsSync === true; pdShow = readPd(c); pdLabelPos = c.pdLabel || "left"; buzzOn = c.buzz === true; watchlist = c.watchlist || []; matrixOn = c.matrix === true; writeMatrixNode(); chartMode = c.chartMode ?? (c.triggerArmed ? "trigger" : ""); drawTool = c.drawTool || "free"; activeScope = c.drawScope || "page"; triggerColor = c.triggerColor || "#FFC24A"; drawColor = c.drawColor || "#4AA3FF"; renderChip(); writeLinesNode(); if (!zoomSync) writeHold(null); else if (!pSync || panelScope !== pScope) adoptLive(); zHudOn(); }
+    if (changes[CFG_KEY]?.newValue) { const c = changes[CFG_KEY].newValue; const pScope = panelScope; if (c.panelScope) panelScope = c.panelScope; watermark = c.watermark !== false; const pSync = zoomSync; zoomSync = c.zoomSync === true; groupShot = c.groupShot === true; const sNav = settingsNav; settingsNav = c.settingsNav === true; if (settingsNav !== sNav) lastNav = null; showDte = c.dte === true; settingsSync = c.settingsSync === true; pdShow = readPd(c); pdLabelPos = c.pdLabel || "left"; buzzOn = c.buzz === true; watchlist = c.watchlist || []; matrixOn = c.matrix === true; writeMatrixNode(); chartMode = normMode(c.chartMode ?? (c.triggerArmed ? "trigger" : "")); toolMode = c.toolMode || (chartMode === "draw" ? "draw" : "line"); drawTool = c.drawTool || "free"; activeScope = c.drawScope || "page"; lineColor = c.lineColor || c.triggerColor || "#FFC24A"; drawColor = c.drawColor || "#4AA3FF"; renderChip(); writeLinesNode(); if (!zoomSync) writeHold(null); else if (!pSync || panelScope !== pScope) adoptLive(); zHudOn(); }
     if (changes[MODE_KEY]?.newValue) { mode = changes[MODE_KEY].newValue === "live" ? "profiles" : changes[MODE_KEY].newValue; renderChip(); }
     if (changes[SESSION_KEY]) { replayLocked = !!changes[SESSION_KEY].newValue && changes[SESSION_KEY].newValue.phase !== "idle"; renderChip(); }
     if (!onSyncPage()) return; // off /classic|/state (SPA nav): don't touch the page

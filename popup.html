@@ -81,7 +81,7 @@
   .cpal-sw.dis { opacity: .25; cursor: not-allowed; pointer-events: none; }
 
   /* saved lines */
-  #linesList:empty::after { content: "No lines yet. Arm trigger mode on the chart pill, then right-click the chart to drop one."; color: var(--muted); font-size: 11px; }
+  #linesList:empty::after { content: "No lines yet. Turn on chart tools from the pill, then right-click the chart to drop one."; color: var(--muted); font-size: 11px; }
   .ln-grp { margin-top: 11px; }
   .ln-hd { display: flex; align-items: center; gap: 8px; }
   .ln-tk { font: 700 13px var(--ui); }
@@ -285,11 +285,11 @@
 
   <div data-page="lines" hidden>
   <div class="label">Chart tool colors</div>
-  <div class="hint">One color per mode, from your group palette. <b>Trigger</b> tints its reticle, price guide, and lines; <b>Draw</b> tints its reticle and your strokes. The two can't be the same.</div>
-  <div class="cpal-row"><span class="cpal-lbl">Trigger</span><div class="cpal" id="palTrigger"></div></div>
+  <div class="hint">One color per mode, from your group palette. <b>Line</b> tints its reticle, price guide, and lines; <b>Draw</b> tints its reticle and your strokes. The two can't be the same.</div>
+  <div class="cpal-row"><span class="cpal-lbl">Line</span><div class="cpal" id="palLine"></div></div>
   <div class="cpal-row"><span class="cpal-lbl">Draw</span><div class="cpal" id="palDraw"></div></div>
   <div class="label" style="margin-top:15px">Saved lines</div>
-  <div class="hint">Horizontal lines you've drawn, grouped by ticker — a line shows on charts of that ticker. Drop them from the chart's right-click menu in trigger mode.</div>
+  <div class="hint">Horizontal lines you've drawn, grouped by ticker — a line shows on charts of that ticker. Drop them from the chart's right-click menu in line mode.</div>
   <div id="linesList"></div>
   <div class="btnrow" style="margin-top:9px">
     <button id="linesClearAll" class="btn">Clear all lines</button>

@@ -2,9 +2,10 @@
 // needs the live Chart.js instance to map price/time <-> pixel. content.js (isolated) owns the
 // stores; it writes the current ticker's lines, drawings, and the chart mode to #__gxlines.
 // We render an overlay pinned to the canvas (tracking zoom/pan/refresh, like pdlines.js).
-// Two armed modes (global, cycled from the pill): "trigger" (amber reticle, locked chart,
-// right-click action menu) and "draw" (blue reticle, left-drag paints freehand/arrow strokes,
-// right-click draw menu). Drawings anchor to (time-of-day, price) — see the mapping helpers.
+// Chart tools toggle on/off from the pill (global). Once on, the right-click menu switches
+// between two sub-modes: "line" (line-color reticle, locked chart, horizontal price lines) and
+// "draw" (draw-color reticle, left-drag paints freehand/arrow strokes). The menu carries
+// segmented Line|Draw, Tool, and Scope selectors. Drawings anchor to (time-of-day, price).
 (function () {
   if (window.__gexsyncLines) return;
   window.__gexsyncLines = true;
@@ -33,7 +34,7 @@
   const CFG_ID = "__gxlines";
   const HIT = 6; // px: a right-click within this of a line's price → the menu's "Remove line"
   const readCfg = () => { const n = document.getElementById(CFG_ID); if (!n || !n.textContent) return null; try { return JSON.parse(n.textContent); } catch (e) { return null; } };
-  const AMBER = "#FFB454", AZURE = "#4AA3FF"; // trigger reticle / draw reticle+strokes
+  const AMBER = "#FFB454", AZURE = "#4AA3FF"; // line-mode reticle / draw reticle+strokes
   const SVGNS = "http://www.w3.org/2000/svg";
 
   // Drawings anchor to (time-of-day, price): X is ms-since-midnight so a stroke lands at the same
@@ -62,7 +63,7 @@
     dot.style.cssText = "position:absolute;width:15px;height:15px;border-radius:50%;border:1.5px solid #16E0A3;box-sizing:border-box;transform:translate(-50%,-50%);display:none;";
     guideLbl = document.createElement("div");
     guideLbl.style.cssText = "position:absolute;transform:translateY(-50%);right:3px;font:600 10px 'JetBrains Mono',ui-monospace,monospace;color:#16E0A3;background:rgba(0,0,0,.6);padding:0 4px;border-radius:3px;white-space:nowrap;display:none;";
-    // "zoom locked" badge, pinned to the chart's top-left while trigger mode is armed
+    // "zoom locked" badge, pinned to the chart's top-left while chart tools are armed
     lockBadge = document.createElement("div");
     lockBadge.style.cssText = "position:absolute;display:none;align-items:center;gap:4px;padding:2px 7px;border:1px solid currentColor;border-radius:11px;background:rgba(0,0,0,.6);font:600 10px 'JetBrains Mono',ui-monospace,monospace;white-space:nowrap;";
     lockBadge.innerHTML = `<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><rect x="4.5" y="10.5" width="15" height="10" rx="2"/><path d="M8 10.5V7a4 4 0 0 1 8 0v3.5"/></svg><span>zoom locked</span>`;
@@ -104,8 +105,8 @@
     const cfg = readCfg();
     const list = (cfg && Array.isArray(cfg.lines)) ? cfg.lines : [];
     const mode = (cfg && cfg.mode) || "";
-    const armed = mode === "trigger" || mode === "draw", drawing = mode === "draw";
-    const tCol = (cfg && cfg.triggerColor) || AMBER, dCol = (cfg && cfg.drawColor) || AZURE;
+    const armed = mode === "line" || mode === "draw", drawing = mode === "draw";
+    const tCol = (cfg && cfg.lineColor) || AMBER, dCol = (cfg && cfg.drawColor) || AZURE;
     const drawList = (cfg && Array.isArray(cfg.draws)) ? cfg.draws : [];
     if (!list.length && !armed && !drawList.length) { if (overlay) overlay.style.display = "none"; for (const { line, label } of els.values()) { line.remove(); label.remove(); } els.clear(); if (drawG) drawG.replaceChildren(); lastSig = ""; return; }
     const chart = getChart();
@@ -140,7 +141,7 @@
         e = { line, label }; els.set(ln.id, e);
       }
       const ov = ln.overrides || {};
-      // follow the live trigger color unless the line has an explicit non-default override
+      // follow the live line color unless the line has an explicit non-default override
       const color = (ov.linecolor && ov.linecolor !== "#16E0A3") ? ov.linecolor : tCol, w = ov.linewidth || 1, dash = (ov.linestyle || "dashed") === "solid" ? "" : "border-top-style:dashed;";
       const py = y.getPixelForValue(price);
       if (py < area.top || py > area.bottom) { e.line.style.display = "none"; e.label.style.display = "none"; continue; }
@@ -152,9 +153,9 @@
   function loop() { try { render(); } catch (e) {} requestAnimationFrame(loop); }
   requestAnimationFrame(loop);
 
-  // ---- trigger/draw mode interaction (document-level capture, survives canvas swaps) ----
+  // ---- line/draw mode interaction (document-level capture, survives canvas swaps) ----
   const modeVal = () => { const c = readCfg(); return (c && c.mode) || ""; };
-  const armedOn = () => { const m = modeVal(); return m === "trigger" || m === "draw"; };
+  const armedOn = () => { const m = modeVal(); return m === "line" || m === "draw"; };
   const drawOn = () => modeVal() === "draw";
   const onChartCanvas = (e) => { const c = getChart(); return c && e.target === c.canvas; };
   // nearest stored line to a canvas-y pixel, within HIT px → its id, else null (for the menu)
@@ -171,7 +172,7 @@
     if (!onChartCanvas(e)) { hideGuide(); return; } // left the canvas → don't leave a stuck reticle
     const c = getChart(), rect = c.canvas.getBoundingClientRect(), px = e.clientX - rect.left, py = e.clientY - rect.top, area = c.chartArea;
     if (py < area.top || py > area.bottom) { hideGuide(); return; }
-    const cfg = readCfg() || {}, col = drawOn() ? (cfg.drawColor || AZURE) : (cfg.triggerColor || AMBER);
+    const cfg = readCfg() || {}, col = drawOn() ? (cfg.drawColor || AZURE) : (cfg.lineColor || AMBER);
     guide.style.borderTopColor = col; guide.style.top = py + "px"; guide.style.display = "block";
     vguide.style.borderLeftColor = col; vguide.style.left = px + "px"; vguide.style.display = "block";
     dot.style.borderColor = col; dot.style.left = px + "px"; dot.style.top = py + "px"; dot.style.display = "block";
@@ -179,7 +180,7 @@
   }, true);
   // Lock the chart while armed: block pan-start (mousedown), wheel-zoom, and GEXbot's double-click
   // reset. Left-click does nothing else; all actions come from the right-click menu below. Leaving
-  // trigger mode restores pan/zoom. (Not pointerdown — its preventDefault would kill menu clicks.)
+  // turning tools off restores pan/zoom. (Not pointerdown — its preventDefault would kill menu clicks.)
   const lockEv = (e) => { if (armedOn() && onChartCanvas(e)) { e.stopPropagation(); e.preventDefault(); } };
   document.addEventListener("mousedown", lockEv, true);
   document.addEventListener("dblclick", lockEv, true);
@@ -228,17 +229,38 @@
     document.removeEventListener("wheel", closeMenu, true);
     window.removeEventListener("blur", closeMenu);
   }
-  function menuItem(label, sub, onPick, accent) {
+  function menuItem(label, sub, onPick, accent, disabled) {
     const it = document.createElement("div");
-    it.style.cssText = "display:flex;align-items:center;justify-content:space-between;gap:18px;padding:7px 12px;cursor:pointer;white-space:nowrap;color:#e8ecf3;";
+    it.style.cssText = `display:flex;align-items:center;justify-content:space-between;gap:18px;padding:7px 12px;cursor:${disabled ? "default" : "pointer"};white-space:nowrap;color:#e8ecf3;${disabled ? "opacity:.32;" : ""}`;
     const l = document.createElement("span"); l.textContent = label; if (accent) l.style.color = accent; it.appendChild(l);
     if (sub) { const s = document.createElement("span"); s.textContent = sub; s.style.cssText = "color:#7c8698;font-size:11px;"; it.appendChild(s); }
+    if (disabled) { it.addEventListener("click", (e) => e.stopPropagation()); return it; } // dimmed → no-op, menu stays open
     it.addEventListener("mouseenter", () => (it.style.background = "rgba(255,255,255,.06)"));
     it.addEventListener("mouseleave", () => (it.style.background = "transparent"));
     it.addEventListener("click", (e) => { e.stopPropagation(); try { onPick(); } catch (err) {} closeMenu(); });
     return it;
   }
   const sep = () => { const d = document.createElement("div"); d.style.cssText = "height:1px;margin:4px 0;background:rgba(255,255,255,.08);"; return d; };
+  // segmented control row: label + inline pills (active = mint). onPick(value) does NOT close the
+  // menu — the caller re-renders it in place so selection is a live toggle, not a dismiss.
+  function segRow(label, opts, current, onPick) {
+    const row = document.createElement("div");
+    row.style.cssText = "display:flex;align-items:center;gap:9px;padding:6px 12px;white-space:nowrap;";
+    if (label) { const l = document.createElement("span"); l.textContent = label; l.style.cssText = "color:#7c8698;font-size:11px;min-width:38px;"; row.appendChild(l); }
+    const seg = document.createElement("div");
+    seg.style.cssText = "display:flex;gap:3px;padding:2px;border-radius:8px;background:#0c0f16;border:1px solid #2a3342;";
+    for (const [val, text] of opts) {
+      const b = document.createElement("span");
+      const on = val === current;
+      b.textContent = text;
+      b.style.cssText = `padding:4px 10px;border-radius:6px;cursor:pointer;font-size:11px;transition:background .12s,color .12s;${on ? "background:#16E0A3;color:#08110c;" : "color:#9aa0aa;"}`;
+      if (!on) { b.addEventListener("mouseenter", () => (b.style.color = "#e8ecf3")); b.addEventListener("mouseleave", () => (b.style.color = "#9aa0aa")); }
+      b.addEventListener("click", (e) => { e.stopPropagation(); if (val !== current) { try { onPick(val); } catch (err) {} } });
+      seg.appendChild(b);
+    }
+    row.appendChild(seg);
+    return row;
+  }
   function buildMenu(x, y, ctx) {
     closeMenu();
     // click-away backdrop: a transparent full-viewport layer just under the menu. It catches the
@@ -254,27 +276,36 @@
     document.body.appendChild(backdrop);
     menuEl = document.createElement("div");
     menuEl.style.cssText = "position:fixed;z-index:2147482000;min-width:184px;padding:5px 0;background:#12161f;border:1px solid #2a3342;border-radius:8px;box-shadow:0 8px 28px rgba(0,0,0,.5);font:600 12px 'JetBrains Mono',ui-monospace,monospace;user-select:none;";
+    const mode = ctx.mode === "draw" ? "draw" : "line"; // "" never opens a menu; default to line
+    // header: Line | Draw — switches sub-mode in place (dispatch + rebuild body, menu stays open)
+    menuEl.appendChild(segRow("", [["line", "Line"], ["draw", "Draw"]], mode, (m) => {
+      window.dispatchEvent(new CustomEvent("gexsync-chart-mode", { detail: { mode: m } }));
+      buildMenu(x, y, { ...ctx, mode: m });
+    }));
+    menuEl.appendChild(sep());
+    // shared: read the price under the cursor (works in both modes)
     menuEl.appendChild(menuItem("Copy price", ctx.price.toFixed(2), () => navigator.clipboard.writeText(ctx.price.toFixed(2))));
-    if (ctx.mode === "draw") {
-      const scopes = ["global", "page", "tab"], cur = ctx.scope || "page", next = scopes[(scopes.indexOf(cur) + 1) % 3];
-      menuEl.appendChild(menuItem(ctx.tool === "arrow" ? "Tool: Arrow → Freehand" : "Tool: Freehand → Arrow", null, () => window.dispatchEvent(new CustomEvent("gexsync-draw-tool", { detail: { tool: ctx.tool === "arrow" ? "free" : "arrow" } }))));
-      menuEl.appendChild(menuItem(`Scope: ${cur}`, `→ ${next}`, () => window.dispatchEvent(new CustomEvent("gexsync-draw-scope", { detail: { scope: next } }))));
+    menuEl.appendChild(sep());
+    if (mode === "draw") {
+      menuEl.appendChild(segRow("Tool", [["free", "Freehand"], ["arrow", "Arrow"]], ctx.tool || "free", (t) => { window.dispatchEvent(new CustomEvent("gexsync-draw-tool", { detail: { tool: t } })); buildMenu(x, y, { ...ctx, tool: t }); }));
+      menuEl.appendChild(segRow("Scope", [["page", "Page"], ["tab", "Tab"], ["global", "Global"]], ctx.scope || "page", (s) => { window.dispatchEvent(new CustomEvent("gexsync-draw-scope", { detail: { scope: s } })); buildMenu(x, y, { ...ctx, scope: s }); }));
       menuEl.appendChild(sep());
       menuEl.appendChild(menuItem("Undo last", null, () => window.dispatchEvent(new CustomEvent("gexsync-draw-undo"))));
-      menuEl.appendChild(menuItem(`Clear ${cur} drawings`, null, () => window.dispatchEvent(new CustomEvent("gexsync-draws-clear")), "#FF5C5C"));
-      menuEl.appendChild(sep());
-      menuEl.appendChild(menuItem("Trigger mode", null, () => window.dispatchEvent(new CustomEvent("gexsync-chart-mode", { detail: { mode: "trigger" } }))));
-      menuEl.appendChild(menuItem("Off", null, () => window.dispatchEvent(new CustomEvent("gexsync-chart-mode", { detail: { mode: "" } }))));
+      // all three scope-clears always present; a scope with no drawings is dimmed. Each targets its
+      // own scope (no need to switch scope first) — content.js reads detail.scope.
+      const counts = ctx.drawCounts || {};
+      for (const sc of ["page", "tab", "global"]) {
+        const n = counts[sc] || 0;
+        menuEl.appendChild(menuItem(`Clear ${sc} drawings`, n ? String(n) : null, () => window.dispatchEvent(new CustomEvent("gexsync-draws-clear", { detail: { scope: sc } })), "#FF5C5C", n === 0));
+      }
     } else {
       if (ctx.hitId != null) menuEl.appendChild(menuItem("Remove line", null, () => window.dispatchEvent(new CustomEvent("gexsync-line-remove", { detail: { id: ctx.hitId } }))));
       else menuEl.appendChild(menuItem("Add line here", ctx.price.toFixed(2), () => window.dispatchEvent(new CustomEvent("gexsync-line-place", { detail: { price: ctx.price } }))));
-      menuEl.appendChild(sep());
       menuEl.appendChild(menuItem(ctx.inWatch ? "Remove from watchlist" : "Add to watchlist", ctx.ticker || "", () => window.dispatchEvent(new CustomEvent("gexsync-watchlist-toggle"))));
       if (ctx.hasLines) menuEl.appendChild(menuItem("Clear lines", ctx.ticker || "", () => window.dispatchEvent(new CustomEvent("gexsync-lines-clear")), "#FF5C5C"));
-      menuEl.appendChild(sep());
-      menuEl.appendChild(menuItem("Draw mode", null, () => window.dispatchEvent(new CustomEvent("gexsync-chart-mode", { detail: { mode: "draw" } }))));
-      menuEl.appendChild(menuItem("Off", null, () => window.dispatchEvent(new CustomEvent("gexsync-chart-mode", { detail: { mode: "" } }))));
     }
+    menuEl.appendChild(sep());
+    menuEl.appendChild(menuItem("Off", null, () => window.dispatchEvent(new CustomEvent("gexsync-chart-mode", { detail: { mode: "" } }))));
     document.body.appendChild(menuEl);
     const r = menuEl.getBoundingClientRect(); // clamp inside the viewport
     menuEl.style.left = Math.min(x, innerWidth - r.width - 6) + "px";
@@ -291,6 +322,6 @@
     const rect = c.canvas.getBoundingClientRect(), py = e.clientY - rect.top, area = c.chartArea;
     if (py < area.top || py > area.bottom) return;
     const cfg = readCfg() || {}, price = +c.scales.y.getValueForPixel(py);
-    buildMenu(e.clientX, e.clientY, { price, hitId: hitLine(py), ticker: cfg.ticker, hasLines: Array.isArray(cfg.lines) && cfg.lines.length > 0, inWatch: !!cfg.inWatch, mode: cfg.mode, tool: cfg.tool, scope: cfg.scope });
+    buildMenu(e.clientX, e.clientY, { price, hitId: hitLine(py), ticker: cfg.ticker, hasLines: Array.isArray(cfg.lines) && cfg.lines.length > 0, inWatch: !!cfg.inWatch, mode: cfg.mode, tool: cfg.tool, scope: cfg.scope, drawCounts: cfg.drawCounts });
   }, true);
 })();
