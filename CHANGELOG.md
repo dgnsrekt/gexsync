@@ -4,6 +4,17 @@ All notable changes to GexSync are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and the project follows
 [semantic versioning](https://semver.org/).
 
+## [1.15.1] — 2026-08-04
+
+### Fixed
+- **Ticker sync no longer drops the options profile.** In Ticker mode, when a synced ticker change
+  reached a `/state` tab showing the **options profile** at `latest`/`next` with **no greek toggle**
+  selected, that tab flipped back to the **gex** profile. (The tab's profile is carried into
+  GEXbot's URL hash to switch ticker without a reload; the no-greek options case emitted a bare
+  `latest`/`next`, which GEXbot reads as the gex profile.) It now uses the same non-gex `option#…`
+  hash form the greek views already used, so the options profile survives the switch. The source
+  pane and greek-selected panes were already unaffected.
+
 ## [1.15.0] — 2026-08-01
 
 ### Changed
@@ -374,6 +385,7 @@ All notable changes to GexSync are documented here. The format is based on
 [1.11.1]: https://github.com/dgnsrekt/gexsync/compare/v1.11.0...v1.11.1
 [1.11.0]: https://github.com/dgnsrekt/gexsync/compare/v1.10.0...v1.11.0
 [1.10.0]: https://github.com/dgnsrekt/gexsync/compare/v1.9.0...v1.10.0
+[1.15.1]: https://github.com/dgnsrekt/gexsync/compare/v1.15.0...v1.15.1
 [1.9.0]: https://github.com/dgnsrekt/gexsync/compare/v1.8.1...v1.9.0
 [1.8.1]: https://github.com/dgnsrekt/gexsync/compare/v1.8.0...v1.8.1
 [1.8.0]: https://github.com/dgnsrekt/gexsync/compare/v1.7.0...v1.8.0
