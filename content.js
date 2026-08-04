@@ -517,7 +517,8 @@
     const o = selectedKeyword(options), sw = getSwitches();
     const greek = OPTS.find((k) => sw[k]?.checked);
     if (o && greek) return `option#${o}#greek:${greek}`; // options mode
-    return o || "latest";
+    return `option#${o || "latest"}`; // options mode, no greek — keep the non-gex form so a hash-driven
+    // ticker switch (applyTicker) doesn't get read as the GEX profile and flip the tab out of options.
   }
   // Per-tab id for the group-count presence beacon + the chip. Regenerate on every
   // load so duplicated tabs (which copy sessionStorage) get distinct ids.
