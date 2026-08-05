@@ -8,6 +8,8 @@ timestamp: 2026-08-05T00:00:00Z
 
 # GEXbot levels on TradingView
 
+> 🇪🇸 **En español:** [Niveles de GEXbot en TradingView](es/tradingview.md).
+
 New in **1.16**. Enter your GEXbot API key and any open **`tradingview.com/chart`** whose
 symbol is a GEXbot ticker gets GEXbot's **Classic + State major levels** drawn right onto it —
 plus an optional per-strike **GEX histogram** and **click-a-level → price alert**. Three steps.

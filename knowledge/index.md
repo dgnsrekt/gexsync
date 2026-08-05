@@ -12,3 +12,7 @@ it is safe.
 * [TradingView overlay](tradingview.md) - connect a GEXbot API key and draw GEXbot's gamma levels (+ histogram, alerts, packages) right on your TradingView chart
 * [Data add-ons](data-addons.md) - the opt-in outside-data features (company details, previous-day levels, Reddit mention rank), what each needs, and when it makes a request
 * [Safety](safety.md) - permissions, when it does and doesn't touch the network, stored data, and how to audit it yourself
+
+## Español
+
+* [Base de conocimiento en español](es/index.md) — Qué es GexSync, Instalación, y **Niveles de GEXbot en TradingView** (guía de configuración)
