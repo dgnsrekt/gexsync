@@ -4,6 +4,19 @@ All notable changes to GexSync are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and the project follows
 [semantic versioning](https://semver.org/).
 
+## [1.18.0] — 2026-08-05
+
+### Added
+- **Español — the on-page chart UI now speaks Spanish too.** Following the popup toggle in 1.17.0,
+  the injected on-page interface now follows the same **EN | ES** setting: the mode pill and its
+  ticker-details panel (including the Massive·Reddit enrichment), the right-click **Line / Draw**
+  tool menu, the **replay** transport bar (roster, the review + exit dialogs, and the panel-lock
+  notice), and the **TradingView GEX pill** (alert toasts, level tooltips, and the quick-toggles).
+  Flipping the language in the popup updates every open GEXbot and TradingView tab live. Proper nouns
+  still stay English so they match the chart — GEXbot, TradingView, the tier names
+  (Classic/State/Orderflow/Quant), the GEX level names (Zero Gamma, Major ±Vol), the package labels
+  (latest/next/90d), and units (DTE). This completes the localization started in 1.17.0.
+
 ## [1.17.0] — 2026-08-05
 
 ### Added
@@ -422,6 +435,7 @@ All notable changes to GexSync are documented here. The format is based on
 [1.11.1]: https://github.com/dgnsrekt/gexsync/compare/v1.11.0...v1.11.1
 [1.11.0]: https://github.com/dgnsrekt/gexsync/compare/v1.10.0...v1.11.0
 [1.10.0]: https://github.com/dgnsrekt/gexsync/compare/v1.9.0...v1.10.0
+[1.18.0]: https://github.com/dgnsrekt/gexsync/compare/v1.17.0...v1.18.0
 [1.17.0]: https://github.com/dgnsrekt/gexsync/compare/v1.16.1...v1.17.0
 [1.16.1]: https://github.com/dgnsrekt/gexsync/compare/v1.16.0...v1.16.1
 [1.16.0]: https://github.com/dgnsrekt/gexsync/compare/v1.15.1...v1.16.0
