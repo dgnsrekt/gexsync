@@ -4,6 +4,18 @@ All notable changes to GexSync are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and the project follows
 [semantic versioning](https://semver.org/).
 
+## [1.17.0] — 2026-08-05
+
+### Added
+- **Español — a language toggle for the popup.** A new **EN | ES** switch in Sync → Global settings
+  flips the entire popup between English and Spanish — every setting label, description, button, and
+  placeholder. Your choice is saved (in `gexsync-cfg`) and defaults to your browser's language the
+  first time. Proper nouns stay put on purpose so they match the chart: GEXbot, TradingView, the tier
+  names (Classic/State/Orderflow/Quant), the level names (Zero Gamma, Major ±Vol), the package labels
+  (Latest/Next/90 Days), and time units. The on-page chart UI (the pill, right-click menus, TV overlay)
+  stays English for now — localizing it is the next step. Under the hood, a small shared `i18n.js`
+  string table is bundled (and loaded by the content scripts) so that follow-up is a clean swap.
+
 ## [1.16.1] — 2026-08-04
 
 ### Fixed
@@ -410,6 +422,7 @@ All notable changes to GexSync are documented here. The format is based on
 [1.11.1]: https://github.com/dgnsrekt/gexsync/compare/v1.11.0...v1.11.1
 [1.11.0]: https://github.com/dgnsrekt/gexsync/compare/v1.10.0...v1.11.0
 [1.10.0]: https://github.com/dgnsrekt/gexsync/compare/v1.9.0...v1.10.0
+[1.17.0]: https://github.com/dgnsrekt/gexsync/compare/v1.16.1...v1.17.0
 [1.16.1]: https://github.com/dgnsrekt/gexsync/compare/v1.16.0...v1.16.1
 [1.16.0]: https://github.com/dgnsrekt/gexsync/compare/v1.15.1...v1.16.0
 [1.15.1]: https://github.com/dgnsrekt/gexsync/compare/v1.15.0...v1.15.1
