@@ -4,6 +4,8 @@
 <link rel="stylesheet" href="theme.css">
 <style>
   * { box-sizing: border-box; }
+  /* Chrome sizes the popup to <html>; pin it (not just body) or a stray wide child latches the window wide. */
+  html { width: 384px; overflow-x: hidden; }
   body { margin: 0; width: 384px; padding: 10px 14px; background: var(--void); color: var(--ink); font: 13px/1.4 var(--ui); }
 
   /* header */

@@ -7,11 +7,11 @@ All notable changes to GexSync are documented here. The format is based on
 ## [1.16.1] — 2026-08-04
 
 ### Fixed
-- **Popup no longer stretches extra-wide.** The popup body had a `min-width` floor but no ceiling,
-  so the non-wrapping **Current state · tabs** dump (`white-space: pre`) could drag the whole popup
-  past 700px when a few tickers were open and the section was expanded. The body is now a fixed
-  384px, so that dump scrolls within its own box (it already had `overflow-x: auto`) instead of
-  widening everything.
+- **Popup no longer stretches extra-wide.** The popup had a `min-width` floor but no ceiling, so the
+  non-wrapping **Current state · tabs** dump (`white-space: pre`) could drag the whole popup past
+  700px when a few tickers were open and the section was expanded. Both `<html>` and `<body>` are now
+  pinned to 384px (Chrome sizes the popup window to `<html>`), so that dump scrolls within its own box
+  (it already had `overflow-x: auto`) instead of widening everything.
 
 ## [1.16.0] — 2026-08-04
 
