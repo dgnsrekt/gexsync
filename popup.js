@@ -1,3 +1,7 @@
+// i18n: current language + a short lookup helper (i18n.js loads before this script).
+let LANG = "en";
+const T = (k) => (self.GXI18N ? self.GXI18N.t(k, LANG) : k);
+
 const count = (page) =>
   new Promise((r) => chrome.tabs.query({ url: `https://www.gexbot.com/${page}*` }, (t) => r(t.length)));
 
@@ -27,7 +31,7 @@ chrome.tabs.query({ url: "https://www.gexbot.com/*" }, async (tabs) => {
     return extra.length ? `${cols} · ${extra.join(" · ")}` : cols.trimEnd();
   }));
   document.getElementById("tabs").innerHTML =
-    rows.length ? rows.map((r) => `<div>${r}</div>`).join("") : `<span class="muted">no gexbot tabs</span>`;
+    rows.length ? rows.map((r) => `<div>${r}</div>`).join("") : `<span class="muted">${T("dyn.noTabs")}</span>`;
 });
 
 // Pages: sync | keys. Same show/hide-by-attribute trick as Mode below (only the
@@ -221,7 +225,7 @@ verTap.addEventListener("click", () => {
   _taps = 0;
   matrixRow.hidden = false;
   chrome.storage.local.get("gexsync-cfg", (r) => chrome.storage.local.set({ "gexsync-cfg": { ...(r["gexsync-cfg"] || {}), unlocked: true } }));
-  verTap.textContent = "✨ unlocked";
+  verTap.textContent = T("dyn.unlocked");
   setTimeout(() => { verTap.textContent = "MV3 · gexbot.com"; }, 1600);
 });
 
@@ -290,8 +294,8 @@ async function copyState() {
   const text = await stateSnapshot();
   try { await navigator.clipboard.writeText(text); }
   catch (e) { const ta = document.createElement("textarea"); ta.value = text; document.body.appendChild(ta); ta.select(); try { document.execCommand("copy"); } catch (_) {} ta.remove(); }
-  copyBtn.textContent = "copied ✓"; copyBtn.classList.add("done");
-  setTimeout(() => { copyBtn.textContent = "⧉ copy"; copyBtn.classList.remove("done"); }, 1400);
+  copyBtn.textContent = T("dyn.copied"); copyBtn.classList.add("done");
+  setTimeout(() => { copyBtn.textContent = T("dyn.copy"); copyBtn.classList.remove("done"); }, 1400);
 }
 copyBtn.addEventListener("click", (e) => { e.stopPropagation(); copyState(); }); // don't toggle the <details>
 document.getElementById("tabs").addEventListener("click", copyState);
@@ -306,7 +310,7 @@ const ago = (t) => { const s = Math.max(0, Math.round((Date.now() - t) / 1000));
 function renderZoomStatus() {
   zoomStatus.textContent = layoutMeta && layoutMeta.count
     ? `Saved ${layoutMeta.count} ticker${layoutMeta.count === 1 ? "" : "s"} · ${ago(layoutMeta.t)}`
-    : "No saved layout yet";
+    : T("dyn.noLayout");
   zoomSaveBtn.disabled = sessionLocked;
   zoomRecallBtn.disabled = sessionLocked || !(layoutMeta && layoutMeta.count);
 }
@@ -327,14 +331,14 @@ async function saveLayout() {
 }
 zoomSaveBtn.addEventListener("click", async () => {
   const n = await saveLayout();
-  zoomSaveBtn.textContent = n ? "Saved ✓" : "no charts";
+  zoomSaveBtn.textContent = n ? T("dyn.zoomSaved") : T("dyn.zoomNoCharts");
   if (n) zoomSaveBtn.classList.add("done");
-  setTimeout(() => { zoomSaveBtn.textContent = "⭳ Save"; zoomSaveBtn.classList.remove("done"); }, 1400);
+  setTimeout(() => { zoomSaveBtn.textContent = T("dyn.zoomSave"); zoomSaveBtn.classList.remove("done"); }, 1400);
 });
 zoomRecallBtn.addEventListener("click", () => {
   chrome.storage.local.set({ "gexsync-zoom-recall": { t: Date.now() } });
-  zoomRecallBtn.textContent = "Recalled ✓"; zoomRecallBtn.classList.add("done");
-  setTimeout(() => { zoomRecallBtn.textContent = "⭱ Recall"; zoomRecallBtn.classList.remove("done"); }, 1400);
+  zoomRecallBtn.textContent = T("dyn.zoomRecalled"); zoomRecallBtn.classList.add("done");
+  setTimeout(() => { zoomRecallBtn.textContent = T("dyn.zoomRecall"); zoomRecallBtn.classList.remove("done"); }, 1400);
 });
 
 // ---- Massive.com API key: enter → save → mask ----
@@ -347,7 +351,7 @@ const mvMask = document.getElementById("mvMask");
 const mvShow = (key) => {
   const has = !!key;
   mvKeyEl.hidden = has; mvMask.hidden = !has;
-  if (has) mvMask.textContent = "🔒 Saved · ····" + String(key).slice(-4);
+  if (has) mvMask.textContent = T("dyn.savedPrefix") + "····" + String(key).slice(-4);
   else mvKeyEl.value = "";
 };
 chrome.storage.local.get(MV_KEY, (r) => mvShow(r[MV_KEY]?.key));
@@ -369,7 +373,7 @@ const gxTabBtn = () => document.querySelector('#pageSeg .seg-btn[data-page="tv"]
 const gxShow = (key) => {
   const has = !!key;
   gxKeyEl.hidden = has; gxMask.hidden = !has;
-  if (has) gxMask.textContent = "🔒 Saved · ····" + String(key).slice(-4);
+  if (has) gxMask.textContent = T("dyn.savedPrefix") + "····" + String(key).slice(-4);
   else gxKeyEl.value = "";
   const tb = gxTabBtn(); if (tb) tb.hidden = !has; // show/hide the TV tab with the key
 };
@@ -470,3 +474,34 @@ for (const k of TV_KEYS) {
 [...document.querySelectorAll("#tvRefreshSeg .seg-btn")].forEach((b) => b.addEventListener("click", () => { if (b.disabled) return; tvRefresh = +b.dataset.refresh; tvPaint(); tvSaveCfg(); }));
 [...document.querySelectorAll("#gexTierSeg .seg-btn")].forEach((b) => b.addEventListener("click", () => { if (b.disabled) return; gexTier = b.dataset.tval; applyTierGate(); tvPaint(); tvSaveCfg(); })); // tier → gate features + refetch
 chrome.storage.local.get("gexsync-cfg", (r) => tvLoad(r["gexsync-cfg"] || {}));
+
+// ---- Language (EN | ES). Stored in gexsync-cfg.lang; defaults to the browser's on first run.
+// applyI18n handles the static popup text; relocalizeDynamic re-renders the JS-set strings. ----
+const langSeg = document.getElementById("langSeg");
+function relocalizeDynamic() {
+  zoomSaveBtn.textContent = T("dyn.zoomSave");
+  zoomRecallBtn.textContent = T("dyn.zoomRecall");
+  copyBtn.textContent = T("dyn.copy");
+  renderZoomStatus();
+  chrome.storage.local.get([MV_KEY, GX_KEY], (r) => { // re-mask saved keys in the new language
+    if (r[MV_KEY]?.key) mvShow(r[MV_KEY].key);
+    if (r[GX_KEY]?.key) gxShow(r[GX_KEY].key);
+  });
+}
+function applyLangUI() {
+  if (self.GXI18N) self.GXI18N.applyI18n(document, LANG);
+  if (langSeg) [...langSeg.children].forEach((b) => b.setAttribute("aria-selected", b.dataset.lang === LANG ? "true" : "false"));
+  relocalizeDynamic();
+}
+chrome.storage.local.get("gexsync-cfg", (r) => {
+  const g = r["gexsync-cfg"] || {};
+  LANG = self.GXI18N ? self.GXI18N.normLang(g.lang || navigator.language) : "en";
+  applyLangUI();
+});
+if (langSeg) langSeg.addEventListener("click", (e) => {
+  const b = e.target.closest("button[data-lang]");
+  if (!b || b.dataset.lang === LANG) return;
+  LANG = b.dataset.lang;
+  chrome.storage.local.get("gexsync-cfg", (r) => chrome.storage.local.set({ "gexsync-cfg": { ...(r["gexsync-cfg"] || {}), lang: LANG } }));
+  applyLangUI();
+});

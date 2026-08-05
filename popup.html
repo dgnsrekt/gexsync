@@ -141,6 +141,15 @@
   #stateWrap > summary:hover .ss-caret { color: var(--mint); }
   #stateWrap[open] > summary .ss-caret { transform: rotate(180deg); }
   #stateWrap[open] > summary { border-color: var(--line-strong); border-bottom-left-radius: 0; border-bottom-right-radius: 0; }
+
+  /* i18n — Spanish overrides for the CSS-driven empty states (English is the default content above) */
+  html[data-lang="es"] .wl-chips:empty::after { content: "Aún no hay tickers — añade 2+ para habilitar el ciclado."; }
+  html[data-lang="es"] #linesList:empty::after { content: "Aún no hay líneas. Activa las herramientas desde la píldora y haz clic derecho en el gráfico para soltar una."; }
+
+  /* language toggle (EN | ES) — compact segmented control */
+  .lang-seg { display: inline-flex; gap: 2px; padding: 2px; border-radius: 8px; background: var(--raised); border: 1px solid var(--line); }
+  .lang-seg button { border: none; border-radius: 6px; cursor: pointer; padding: 3px 9px; background: transparent; color: var(--muted); font: 600 11px var(--mono); letter-spacing: .04em; }
+  .lang-seg button[aria-selected="true"] { background: var(--mint); color: #08110c; }
 </style>
 <body>
   <div class="head">
@@ -157,207 +166,208 @@
 
   <div class="seg" id="pageSeg" role="tablist">
     <button class="seg-btn" data-page="sync" role="tab">Sync</button>
-    <button class="seg-btn" data-page="keys" role="tab">Keys</button>
-    <button class="seg-btn" data-page="watchlist" role="tab">Watchlist</button>
+    <button class="seg-btn" data-page="keys" role="tab" data-i18n="tab.keys">Keys</button>
+    <button class="seg-btn" data-page="watchlist" role="tab" data-i18n="tab.watchlist">Watchlist</button>
     <button class="seg-btn" data-page="lines" role="tab">Tools</button>
     <button class="seg-btn" data-page="tv" role="tab" hidden>TV</button><!-- revealed once a GEXbot key is saved -->
   </div>
 
   <div data-page="sync">
-  <div class="label">Global settings</div>
+  <div class="label" data-i18n="sync.global">Global settings</div>
+  <div class="cpal-row" style="justify-content:space-between;margin-top:8px">
+    <span class="cpal-lbl" style="width:auto" data-i18n="sync.lang">Language</span>
+    <div class="lang-seg" id="langSeg" role="tablist"><button data-lang="en" role="tab">EN</button><button data-lang="es" role="tab">ES</button></div>
+  </div>
   <label class="row">
-    Cross-page scope
+    <span data-i18n="sync.crossScope">Cross-page scope</span>
     <select id="panelScope">
-      <option value="all">All tabs (state + classic together)</option>
-      <option value="page">By page (state / classic separate)</option>
+      <option value="all" data-i18n="opt.scope.all">All tabs (state + classic together)</option>
+      <option value="page" data-i18n="opt.scope.page">By page (state / classic separate)</option>
     </select>
   </label>
-  <div class="hint" style="margin-top:5px">Treats state &amp; classic as one pool or two — governs panel-collapse sync and live zoom sync.</div>
+  <div class="hint" style="margin-top:5px" data-i18n-html="sync.crossScope.hint">Treats state &amp; classic as one pool or two — governs panel-collapse sync and live zoom sync.</div>
   <label class="switch">
     <input type="checkbox" id="watermark"><span class="track"></span>
-    <span>Add profile to chart watermark</span>
+    <span data-i18n="sync.watermark">Add profile to chart watermark</span>
   </label>
   <label class="switch">
     <input type="checkbox" id="dte"><span class="track"></span>
-    <span>Show days to expiry (DTE)</span>
+    <span data-i18n="sync.dte">Show days to expiry (DTE)</span>
   </label>
-  <div class="hint" style="margin-top:5px">Appends the profile's DTE to the watermark (<b>latest/next</b> → e.g. <b>3DTE</b>; <b>90d</b> → <b>(AGG)</b>). Counts from the chart's update date, so it follows replay. Needs the watermark on.</div>
+  <div class="hint" style="margin-top:5px" data-i18n-html="sync.dte.hint">Appends the profile's DTE to the watermark (<b>latest/next</b> → e.g. <b>3DTE</b>; <b>90d</b> → <b>(AGG)</b>). Counts from the chart's update date, so it follows replay. Needs the watermark on.</div>
   <label class="switch">
     <input type="checkbox" id="zoomSync"><span class="track"></span>
-    <span>Live zoom sync</span>
+    <span data-i18n="sync.zoomSync">Live zoom sync</span>
   </label>
-  <div class="hint" style="margin-top:5px">Same-ticker charts stay zoom-matched through GEXbot's refresh. Stuck? Double-click a chart to reset its zoom.</div>
+  <div class="hint" style="margin-top:5px" data-i18n-html="sync.zoomSync.hint">Same-ticker charts stay zoom-matched through GEXbot's refresh. Stuck? Double-click a chart to reset its zoom.</div>
 
-  <div class="label">Zoom layout</div>
+  <div class="label" data-i18n="sync.zoomLayout">Zoom layout</div>
   <div class="btnrow">
-    <button id="zoomSave" class="btn" title="Snapshot every open ticker's current zoom">⭳ Save</button>
-    <button id="zoomRecall" class="btn" title="Restore the saved zoom for every ticker">⭱ Recall</button>
+    <button id="zoomSave" class="btn" data-i18n-title="title.zoomSave" title="Snapshot every open ticker's current zoom">⭳ Save</button>
+    <button id="zoomRecall" class="btn" data-i18n-title="title.zoomRecall" title="Restore the saved zoom for every ticker">⭱ Recall</button>
   </div>
   <div id="zoomLayoutStatus" class="hint" style="margin-top:5px">No saved layout yet</div>
 
   <label class="switch">
     <input type="checkbox" id="groupShot"><span class="track"></span>
-    <span>Group screenshot</span>
+    <span data-i18n="sync.groupShot">Group screenshot</span>
   </label>
-  <div class="hint" style="margin-top:5px">Camera captures every synced pane → one ZIP (grid + panes + a manifest with each pane's data time). Off → GEXbot's single-shot menu.</div>
+  <div class="hint" style="margin-top:5px" data-i18n-html="sync.groupShot.hint">Camera captures every synced pane → one ZIP (grid + panes + a manifest with each pane's data time). Off → GEXbot's single-shot menu.</div>
 
   <label class="switch">
     <input type="checkbox" id="settingsNav"><span class="track"></span>
-    <span>Sync settings navigation</span>
+    <span data-i18n="sync.settingsNav">Sync settings navigation</span>
   </label>
-  <div class="hint" style="margin-top:5px">Opening Settings and moving between Alerts, History &amp; Home mirrors across synced tabs (follows Cross-page scope).</div>
+  <div class="hint" style="margin-top:5px" data-i18n-html="sync.settingsNav.hint">Opening Settings and moving between Alerts, History &amp; Home mirrors across synced tabs (follows Cross-page scope).</div>
 
   <label class="switch">
     <input type="checkbox" id="settingsSync"><span class="track"></span>
-    <span>Sync chart settings</span>
+    <span data-i18n="sync.settingsSync">Sync chart settings</span>
   </label>
-  <div class="hint" style="margin-top:5px">Mirrors the Settings panel's <b>Chart Type</b>, <b>Profile Alignment</b> &amp; <b>Time Zone</b> across tabs (follows Cross-page scope). Because GEXbot only shows these while Settings is open, it syncs <b>only when every in-scope panel is open</b> — a colored box marks the synced area; otherwise a "N/M panels open" hint shows why it's waiting.</div>
+  <div class="hint" style="margin-top:5px" data-i18n-html="sync.settingsSync.hint">Mirrors the Settings panel's <b>Chart Type</b>, <b>Profile Alignment</b> &amp; <b>Time Zone</b> across tabs (follows Cross-page scope). Because GEXbot only shows these while Settings is open, it syncs <b>only when every in-scope panel is open</b> — a colored box marks the synced area; otherwise a "N/M panels open" hint shows why it's waiting.</div>
 
   <div id="matrixRow" hidden>
-    <div class="label">✨ Secrets</div>
+    <div class="label" data-i18n="sync.secrets">✨ Secrets</div>
     <label class="switch">
       <input type="checkbox" id="matrix"><span class="track"></span>
-      <span>Matrix rain</span>
+      <span data-i18n="sync.matrix">Matrix rain</span>
     </label>
-    <div class="hint" style="margin-top:5px">Digital rain behind every pane, tinted to the group color, seeded with this pane's ticker &amp; the GEXbot lexicon. Purely cosmetic.</div>
+    <div class="hint" style="margin-top:5px" data-i18n-html="sync.matrix.hint">Digital rain behind every pane, tinted to the group color, seeded with this pane's ticker &amp; the GEXbot lexicon. Purely cosmetic.</div>
   </div>
 
-  <div class="label">Mode</div>
+  <div class="label" data-i18n="sync.mode">Mode</div>
   <div class="seg" id="modeSeg" role="tablist">
-    <button class="seg-btn" data-mode="profiles" role="tab">Profiles</button>
+    <button class="seg-btn" data-mode="profiles" role="tab" data-i18n="mode.profiles">Profiles</button>
     <button class="seg-btn" data-mode="ticker" role="tab">Ticker</button>
     <button class="seg-btn" data-mode="replay" role="tab">Replay</button>
   </div>
-  <div id="lockNote" hidden>🔒 Replay session active — settings are locked. Switch Mode off Replay (or hit Exit in the replay bar) to end it.</div>
+  <div id="lockNote" hidden data-i18n="sync.lockNote">🔒 Replay session active — settings are locked. Switch Mode off Replay (or hit Exit in the replay bar) to end it.</div>
 
   <div data-mode="profiles" hidden></div>
   <div data-mode="ticker" hidden></div>
   <div data-mode="replay" hidden>
     <label class="row">
-      Play tracking
+      <span data-i18n="replay.track">Play tracking</span>
       <select id="replayTrack">
-        <option value="heartbeat">Heartbeat — master pushes time (~2s), tight</option>
-        <option value="onpause">On pause — resync only when paused, quiet</option>
+        <option value="heartbeat" data-i18n="opt.track.heartbeat">Heartbeat — master pushes time (~2s), tight</option>
+        <option value="onpause" data-i18n="opt.track.onpause">On pause — resync only when paused, quiet</option>
       </select>
     </label>
     <label class="switch">
       <input type="checkbox" id="replayDebug"><span class="track"></span>
-      <span>Debug — show master/client role in pill</span>
+      <span data-i18n="replay.debug">Debug — show master/client role in pill</span>
     </label>
   </div>
 
   </div><!-- /page: sync -->
 
   <div data-page="keys" hidden>
-  <div class="label">Reddit buzz <span style="color:var(--muted);text-transform:none;letter-spacing:0">· opt-in · no key</span></div>
+  <div class="label"><span data-i18n="keys.buzz">Reddit buzz</span> <span style="color:var(--muted);text-transform:none;letter-spacing:0" data-i18n="meta.optin.nokey">· opt-in · no key</span></div>
   <label class="switch">
     <input type="checkbox" id="buzz"><span class="track"></span>
-    <span>Show Reddit mention rank</span>
+    <span data-i18n="keys.buzz.toggle">Show Reddit mention rank</span>
   </label>
-  <div class="hint" style="margin-top:5px">Adds the current ticker's Reddit mention rank and count to the pill's details panel, plus where it ranks among the tickers you have open, from <b>apewisdom.io</b> — no signup, no key. Covers roughly the 300 most-mentioned tickers, refreshed hourly; quieter symbols show as unranked. Off by default.</div>
+  <div class="hint" style="margin-top:5px" data-i18n-html="keys.buzz.hint">Adds the current ticker's Reddit mention rank and count to the pill's details panel, plus where it ranks among the tickers you have open, from <b>apewisdom.io</b> — no signup, no key. Covers roughly the 300 most-mentioned tickers, refreshed hourly; quieter symbols show as unranked. Off by default.</div>
 
-  <div class="label">Massive.com data <span style="color:var(--muted);text-transform:none;letter-spacing:0">· opt-in</span></div>
-  <input id="mvKey" type="password" spellcheck="false" autocomplete="off" placeholder="Massive (Polygon) API key"
+  <div class="label"><span data-i18n="keys.massive">Massive.com data</span> <span style="color:var(--muted);text-transform:none;letter-spacing:0" data-i18n="meta.optin">· opt-in</span></div>
+  <input id="mvKey" type="password" spellcheck="false" autocomplete="off" placeholder="Massive (Polygon) API key" data-i18n-ph="ph.massive"
     style="width:100%;margin-top:2px;padding:7px 10px;border-radius:9px;background:var(--raised);color:var(--ink);border:1px solid var(--line);font:12px var(--mono)">
   <div id="mvMask" hidden style="margin-top:2px;padding:7px 10px;border-radius:9px;background:var(--raised);border:1px solid var(--line);font:12px var(--mono);color:var(--mint)"></div>
   <div class="btnrow" style="gap:8px;margin-top:6px">
-    <button id="mvSave" class="btn" style="flex:1">Save</button>
-    <button id="mvClear" class="btn" style="flex:1">Clear</button>
+    <button id="mvSave" class="btn" style="flex:1" data-i18n="btn.save">Save</button>
+    <button id="mvClear" class="btn" style="flex:1" data-i18n="btn.clear">Clear</button>
   </div>
-  <div class="hint" style="margin-top:5px">Shows the current ticker's company details (name, market cap, exchange) in a small panel on the chart. Your key is stored locally and masked after saving — it's sent only to Massive, never anywhere else.</div>
-  <!-- Both add-ons run on either plan, so there's nothing to select — the plans differ
-       only in speed and history depth. Stated once, here, instead of a tier toggle
-       that could disagree with the key. -->
-  <div class="hint" style="margin-top:6px;padding:7px 10px;border-radius:9px;background:var(--raised);border:1px solid var(--line)">
+  <div class="hint" style="margin-top:5px" data-i18n-html="keys.massive.hint">Shows the current ticker's company details (name, market cap, exchange) in a small panel on the chart. Your key is stored locally and masked after saving — it's sent only to Massive, never anywhere else.</div>
+  <div class="hint" style="margin-top:6px;padding:7px 10px;border-radius:9px;background:var(--raised);border:1px solid var(--line)" data-i18n-html="keys.freeKey">
     <b>Free key</b> — 5 calls/min, end-of-day data, 2 years of history. Both add-ons below work. Replay further back than ~2 years shows no levels, and opening several new tickers at once can throttle briefly; it retries on its own.<br>
     <b>Paid key</b> — unlimited calls, longer history. Same add-ons, no throttling.
   </div>
 
-  <div class="label">GEXbot data <span style="color:var(--muted);text-transform:none;letter-spacing:0">· opt-in</span></div>
-  <input id="gxKey" type="password" spellcheck="false" autocomplete="off" placeholder="GEXbot API key"
+  <div class="label"><span data-i18n="keys.gexbot">GEXbot data</span> <span style="color:var(--muted);text-transform:none;letter-spacing:0" data-i18n="meta.optin">· opt-in</span></div>
+  <input id="gxKey" type="password" spellcheck="false" autocomplete="off" placeholder="GEXbot API key" data-i18n-ph="ph.gexbot"
     style="width:100%;margin-top:2px;padding:7px 10px;border-radius:9px;background:var(--raised);color:var(--ink);border:1px solid var(--line);font:12px var(--mono)">
   <div id="gxMask" hidden style="margin-top:2px;padding:7px 10px;border-radius:9px;background:var(--raised);border:1px solid var(--line);font:12px var(--mono);color:var(--mint)"></div>
   <div class="btnrow" style="gap:8px;margin-top:6px">
-    <button id="gxSave" class="btn" style="flex:1">Save</button>
-    <button id="gxClear" class="btn" style="flex:1">Clear</button>
+    <button id="gxSave" class="btn" style="flex:1" data-i18n="btn.save">Save</button>
+    <button id="gxClear" class="btn" style="flex:1" data-i18n="btn.clear">Clear</button>
   </div>
-  <div class="hint" style="margin-top:5px">Draws GEXbot's Classic + State major levels on your open TradingView charts — see the <b>TV</b> tab, which appears once a key is saved. Your key is stored locally and masked after saving; it's sent only to GEXbot, never anywhere else.</div>
+  <div class="hint" style="margin-top:5px" data-i18n-html="keys.gexbot.hint">Draws GEXbot's Classic + State major levels on your open TradingView charts — see the <b>TV</b> tab, which appears once a key is saved. Your key is stored locally and masked after saving; it's sent only to GEXbot, never anywhere else.</div>
 
-  <div class="label">Previous-day levels <span style="color:var(--muted);text-transform:none;letter-spacing:0">· opt-in</span></div>
+  <div class="label"><span data-i18n="keys.pd">Previous-day levels</span> <span style="color:var(--muted);text-transform:none;letter-spacing:0" data-i18n="meta.optin">· opt-in</span></div>
   <div class="btnrow" style="gap:14px;margin-top:2px;flex-wrap:wrap">
-    <label class="switch" style="margin-top:0"><input type="checkbox" id="pdO"><span class="track"></span><span>Open</span></label>
-    <label class="switch" style="margin-top:0"><input type="checkbox" id="pdH"><span class="track"></span><span>High</span></label>
-    <label class="switch" style="margin-top:0"><input type="checkbox" id="pdL"><span class="track"></span><span>Low</span></label>
-    <label class="switch" style="margin-top:0"><input type="checkbox" id="pdC"><span class="track"></span><span>Close</span></label>
+    <label class="switch" style="margin-top:0"><input type="checkbox" id="pdO"><span class="track"></span><span data-i18n="pd.open">Open</span></label>
+    <label class="switch" style="margin-top:0"><input type="checkbox" id="pdH"><span class="track"></span><span data-i18n="pd.high">High</span></label>
+    <label class="switch" style="margin-top:0"><input type="checkbox" id="pdL"><span class="track"></span><span data-i18n="pd.low">Low</span></label>
+    <label class="switch" style="margin-top:0"><input type="checkbox" id="pdC"><span class="track"></span><span data-i18n="pd.close">Close</span></label>
   </div>
   <div class="seg" id="pdLabelSeg" role="tablist" style="margin-top:6px">
-    <button class="seg-btn" data-pos="left" role="tab">Label left</button>
-    <button class="seg-btn" data-pos="center" role="tab">Center</button>
-    <button class="seg-btn" data-pos="right" role="tab">Right</button>
+    <button class="seg-btn" data-pos="left" role="tab" data-i18n="pd.labelLeft">Label left</button>
+    <button class="seg-btn" data-pos="center" role="tab" data-i18n="pd.center">Center</button>
+    <button class="seg-btn" data-pos="right" role="tab" data-i18n="pd.right">Right</button>
   </div>
-  <div class="hint" style="margin-top:5px">Draws white horizontal lines on the chart at the previous trading day's Open/High/Low/Close (labeled PDO/PDH/PDL/PDC). Each independent; off by default. Uses the Massive key and follows replay. Stocks &amp; ETFs only.</div>
+  <div class="hint" style="margin-top:5px" data-i18n-html="keys.pd.hint">Draws white horizontal lines on the chart at the previous trading day's Open/High/Low/Close (labeled PDO/PDH/PDL/PDC). Each independent; off by default. Uses the Massive key and follows replay. Stocks &amp; ETFs only.</div>
   </div><!-- /page: keys -->
 
   <div data-page="lines" hidden>
-  <div class="label">Chart tool colors</div>
-  <div class="hint">One color per mode, from your group palette. <b>Line</b> tints its reticle, price guide, and lines; <b>Draw</b> tints its reticle and your strokes. The two can't be the same.</div>
+  <div class="label" data-i18n="tools.colors">Chart tool colors</div>
+  <div class="hint" data-i18n-html="tools.colors.hint">One color per mode, from your group palette. <b>Line</b> tints its reticle, price guide, and lines; <b>Draw</b> tints its reticle and your strokes. The two can't be the same.</div>
   <div class="cpal-row"><span class="cpal-lbl">Line</span><div class="cpal" id="palLine"></div></div>
   <div class="cpal-row"><span class="cpal-lbl">Draw</span><div class="cpal" id="palDraw"></div></div>
-  <div class="label" style="margin-top:15px">Saved lines</div>
-  <div class="hint">Horizontal lines you've drawn, grouped by ticker — a line shows on charts of that ticker. Drop them from the chart's right-click menu in line mode.</div>
+  <div class="label" style="margin-top:15px" data-i18n="tools.savedLines">Saved lines</div>
+  <div class="hint" data-i18n-html="tools.savedLines.hint">Horizontal lines you've drawn, grouped by ticker — a line shows on charts of that ticker. Drop them from the chart's right-click menu in line mode.</div>
   <div id="linesList"></div>
   <div class="btnrow" style="margin-top:9px">
-    <button id="linesClearAll" class="btn">Clear all lines</button>
+    <button id="linesClearAll" class="btn" data-i18n="btn.clearAllLines">Clear all lines</button>
   </div>
   </div><!-- /page: tools -->
 
   <div data-page="tv" hidden>
-  <div class="label">TradingView levels</div>
+  <div class="label" data-i18n="tv.levels">TradingView levels</div>
   <label class="switch">
     <input type="checkbox" id="tvEnabled"><span class="track"></span>
-    <span>Activate GEXbot data</span>
+    <span data-i18n="tv.activate">Activate GEXbot data</span>
   </label>
-  <div class="hint" style="margin-top:5px">Master switch — on any open <b>tradingview.com</b> chart whose symbol is a GEXbot ticker, it fetches the data and shows the status pill. The <b>lines</b> and <b>histogram</b> below have their own toggles (also on the pill). Off = nothing runs.</div>
-  <div class="label" style="margin-top:14px">API tier</div>
+  <div class="hint" style="margin-top:5px" data-i18n-html="tv.activate.hint">Master switch — on any open <b>tradingview.com</b> chart whose symbol is a GEXbot ticker, it fetches the data and shows the status pill. The <b>lines</b> and <b>histogram</b> below have their own toggles (also on the pill). Off = nothing runs.</div>
+  <div class="label" style="margin-top:14px" data-i18n="tv.apiTier">API tier</div>
   <div class="seg" id="gexTierSeg" role="tablist">
     <button class="seg-btn" data-tval="classic" role="tab">Classic</button>
     <button class="seg-btn" data-tval="state" role="tab">State</button>
     <button class="seg-btn" data-tval="orderflow" role="tab">Orderflow</button>
     <button class="seg-btn" data-tval="quant" role="tab">Quant</button>
   </div>
-  <div class="hint" style="margin-top:5px">Pick the tier your GEXbot key has — features above it are disabled (so nothing 401s). Tiers are cumulative (Classic ⊂ State ⊂ Orderflow ⊂ Quant).</div>
-  <label class="switch" style="margin-top:12px"><input type="checkbox" id="tvLinesOn"><span class="track"></span><span>Show lines</span></label>
-  <div class="hint" style="margin-top:5px">Show/hide all the level lines without losing your per-line toggles &amp; colors below. Also the <b>≡</b> quick-toggle on the pill.</div>
+  <div class="hint" style="margin-top:5px" data-i18n-html="tv.tier.hint">Pick the tier your GEXbot key has — features above it are disabled (so nothing 401s). Tiers are cumulative (Classic ⊂ State ⊂ Orderflow ⊂ Quant).</div>
+  <label class="switch" style="margin-top:12px"><input type="checkbox" id="tvLinesOn"><span class="track"></span><span data-i18n="tv.showLines">Show lines</span></label>
+  <div class="hint" style="margin-top:5px" data-i18n-html="tv.showLines.hint">Show/hide all the level lines without losing your per-line toggles &amp; colors below. Also the <b>≡</b> quick-toggle on the pill.</div>
   <div class="tv-lvl"><label class="switch" style="margin:0"><input type="checkbox" id="tvCzgOn"><span class="track"></span><span>Classic Zero Gamma</span></label><div class="cpal" id="tvPalCzg"></div></div>
   <div class="tv-lvl"><label class="switch" style="margin:0"><input type="checkbox" id="tvCposOn"><span class="track"></span><span>Classic Major +Vol</span></label><div class="cpal" id="tvPalCpos"></div></div>
   <div class="tv-lvl"><label class="switch" style="margin:0"><input type="checkbox" id="tvCnegOn"><span class="track"></span><span>Classic Major −Vol</span></label><div class="cpal" id="tvPalCneg"></div></div>
   <div class="tv-lvl" data-tier="state"><label class="switch" style="margin:0"><input type="checkbox" id="tvSposOn"><span class="track"></span><span>State Major +Vol</span></label><div class="cpal" id="tvPalSpos"></div></div>
   <div class="tv-lvl" data-tier="state"><label class="switch" style="margin:0"><input type="checkbox" id="tvSnegOn"><span class="track"></span><span>State Major −Vol</span></label><div class="cpal" id="tvPalSneg"></div></div>
-  <div class="label" style="margin-top:14px">Line &amp; label opacity <span id="tvLineOpVal" style="opacity:.6;font-weight:400">100%</span></div>
+  <div class="label" style="margin-top:14px"><span data-i18n="tv.opacity">Line &amp; label opacity</span> <span id="tvLineOpVal" style="opacity:.6;font-weight:400">100%</span></div>
   <input type="range" id="tvLineOpacity" min="0" max="100" value="100" style="width:100%">
-  <div class="label" style="margin-top:14px">Package</div>
+  <div class="label" style="margin-top:14px" data-i18n="tv.package">Package</div>
   <div class="seg" id="tvPkgSeg" role="tablist">
     <button class="seg-btn" data-pkg="gex_zero" role="tab" style="line-height:1.15"><b>Latest</b><br><span style="opacity:.6;font-size:10px">zero</span></button>
     <button class="seg-btn" data-pkg="gex_one" role="tab" style="line-height:1.15"><b>Next</b><br><span style="opacity:.6;font-size:10px">one</span></button>
     <button class="seg-btn" data-pkg="gex_full" role="tab" style="line-height:1.15"><b>90 Days</b><br><span style="opacity:.6;font-size:10px">full</span></button>
   </div>
-  <div class="hint" style="margin-top:5px">Which GEXbot expiry to draw — one choice, applied to every level above (Latest = nearest expiry, not always 0dte). The chart pill shows the package's days-to-expiry for Latest &amp; Next; 90 Days spans a range so it shows none.</div>
-  <div class="label" style="margin-top:14px">GEX Profile</div>
-  <label class="switch" style="margin:0"><input type="checkbox" id="tvHistOn"><span class="track"></span><span>Show strike histogram</span></label>
+  <div class="hint" style="margin-top:5px" data-i18n-html="tv.package.hint">Which GEXbot expiry to draw — one choice, applied to every level above (Latest = nearest expiry, not always 0dte). The chart pill shows the package's days-to-expiry for Latest &amp; Next; 90 Days spans a range so it shows none.</div>
+  <div class="label" style="margin-top:14px" data-i18n="tv.gexProfile">GEX Profile</div>
+  <label class="switch" style="margin:0"><input type="checkbox" id="tvHistOn"><span class="track"></span><span data-i18n="tv.showHist">Show strike histogram</span></label>
   <div class="seg" id="tvHistSrcSeg" role="tablist" style="margin-top:8px">
     <button class="seg-btn" data-hsrc="classic" role="tab">Classic</button>
     <button class="seg-btn" data-hsrc="state" data-tier="state" role="tab">State</button>
   </div>
-  <div class="hint" style="margin-top:5px">Per-strike net GEX as a right-anchored profile (green +, red −) with the recent prior-reading dots, for the selected source at the current package. One source at a time.</div>
-  <div class="label" style="margin-top:10px">Histogram opacity <span id="tvHistOpVal" style="opacity:.6;font-weight:400">100%</span></div>
+  <div class="hint" style="margin-top:5px" data-i18n-html="tv.hist.hint">Per-strike net GEX as a right-anchored profile (green +, red −) with the recent prior-reading dots, for the selected source at the current package. One source at a time.</div>
+  <div class="label" style="margin-top:10px"><span data-i18n="tv.histOpacity">Histogram opacity</span> <span id="tvHistOpVal" style="opacity:.6;font-weight:400">100%</span></div>
   <input type="range" id="tvHistOpacity" min="0" max="100" value="100" style="width:100%">
-  <div class="label" style="margin-top:14px">Updates</div>
+  <div class="label" style="margin-top:14px" data-i18n="tv.updates">Updates</div>
   <div class="seg" id="tvSrcSeg" role="tablist">
-    <button class="seg-btn" data-src="poll" role="tab">Poll</button>
-    <button class="seg-btn" data-src="ws" role="tab" disabled title="live WebSocket — coming soon (Quant tier)" style="opacity:.45;cursor:default">Live · soon</button>
+    <button class="seg-btn" data-src="poll" role="tab" data-i18n="tv.src.poll">Poll</button>
+    <button class="seg-btn" data-src="ws" role="tab" disabled title="live WebSocket — coming soon (Quant tier)" style="opacity:.45;cursor:default" data-i18n="tv.src.live">Live · soon</button>
   </div>
-  <div class="hint" style="margin-top:5px">Poll refetches on the wall-clock marks below. Live (WebSocket) streaming is coming later.</div>
-  <div class="label" style="margin-top:14px">Refresh rate</div>
+  <div class="hint" style="margin-top:5px" data-i18n-html="tv.src.hint">Poll refetches on the wall-clock marks below. Live (WebSocket) streaming is coming later.</div>
+  <div class="label" style="margin-top:14px" data-i18n="tv.refresh">Refresh rate</div>
   <div class="seg" id="tvRefreshSeg" role="tablist">
     <button class="seg-btn" data-refresh="1" role="tab">1s</button>
     <button class="seg-btn" data-refresh="5" role="tab">5s</button>
@@ -365,28 +375,29 @@
     <button class="seg-btn" data-refresh="30" role="tab">30s</button>
     <button class="seg-btn" data-refresh="60" role="tab">60s</button>
   </div>
-  <div class="hint" style="margin-top:5px">How often to poll, aligned to the wall clock (e.g. 5s → :00/:05/:10…, 30s → :00/:30). The pill ring counts down to the next mark. 1s/5s poll hard — mind GEXbot's rate limits.</div>
+  <div class="hint" style="margin-top:5px" data-i18n-html="tv.refresh.hint">How often to poll, aligned to the wall clock (e.g. 5s → :00/:05/:10…, 30s → :00/:30). The pill ring counts down to the next mark. 1s/5s poll hard — mind GEXbot's rate limits.</div>
   </div><!-- /page: tv -->
 
   <div data-page="watchlist" hidden>
-  <div class="label">Watchlist</div>
-  <div class="hint">One click on the chart pill cycles your Ticker-mode group through these. Needs 2+ tickers.</div>
+  <div class="label" data-i18n="wl.title">Watchlist</div>
+  <div class="hint" data-i18n="wl.hint">One click on the chart pill cycles your Ticker-mode group through these. Needs 2+ tickers.</div>
   <div class="wl-add">
-    <input id="wlInput" list="wlAll" placeholder="Add ticker (e.g. NVDA)" spellcheck="false" autocomplete="off" autocapitalize="characters">
+    <input id="wlInput" list="wlAll" placeholder="Add ticker (e.g. NVDA)" data-i18n-ph="ph.wlInput" spellcheck="false" autocomplete="off" autocapitalize="characters">
     <datalist id="wlAll"></datalist>
-    <button id="wlAdd" class="btn">Add</button>
+    <button id="wlAdd" class="btn" data-i18n="btn.add">Add</button>
   </div>
   <div id="wlChips" class="wl-chips"></div>
   </div><!-- /page: watchlist -->
 
   <details id="stateWrap">
     <summary>
-      <span class="ss-label">Current state · tabs</span>
-      <button id="copyState" title="Copy the full plugin state (settings + tabs) to the clipboard">⧉ copy</button>
+      <span class="ss-label" data-i18n="state.label">Current state · tabs</span>
+      <button id="copyState" data-i18n-title="title.copyState" title="Copy the full plugin state (settings + tabs) to the clipboard">⧉ copy</button>
       <span class="ss-caret" aria-hidden="true">▾</span>
     </summary>
     <div id="count" style="margin-top:9px">counting…</div>
     <div id="tabs" title="Click to copy the full plugin state"></div>
   </details>
+  <script src="i18n.js"></script>
   <script src="popup.js"></script>
 </body>

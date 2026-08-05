@@ -1,4 +1,6 @@
 todo.txt
+todo.md
+*.bak
 .claude/
 graphify-out/
 .env
