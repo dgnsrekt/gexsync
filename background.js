@@ -28,6 +28,14 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
     buzzUniverse(msg.ticker).then(reply).catch((e) => reply({ ok: false, error: String(e && e.message || e) }));
     return true; // async reply
   }
+  if (msg.type === "gexsync-gexbot-majors" && msg.ticker) { // GEXbot major levels for the TV overlay (classic/state × package, per msg.need + msg.cat)
+    gexbotMajors(msg.ticker, msg.need, msg.cat).then(reply).catch((e) => reply({ ok: false, error: String(e && e.message || e) }));
+    return true; // async reply
+  }
+  if (msg.type === "gexsync-gexbot-tickers") { // GEXbot ticker universe (keyless)
+    gexbotTickers().then(reply).catch((e) => reply({ ok: false, error: String(e && e.message || e) }));
+    return true; // async reply
+  }
 });
 
 // ---- Massive.com (Polygon) ticker fundamentals -----------------------------
@@ -85,6 +93,88 @@ async function massiveFetch(t) {
     desc: r.description || null,
     ccy: r.currency_name || null,
   } };
+}
+
+// ---- GEXbot: CLASSIC/LATEST major levels for the TradingView overlay --------
+// The public quant API (Bearer key), NOT the app.gexbot.com UI backend. host_permissions
+// covers api.gex.bot, so the worker's fetch isn't subject to the TradingView page's CORS/CSP.
+// Full-chain endpoint /{ticker}/{src}/{cat} (NOT /majors) — carries the same levels PLUS
+// min_dte/sec_min_dte, which /majors lacks. We read only the top-level fields (ignore strikes).
+const GEXBOT_KEY = "gexsync-gexbot";
+const GEXBOT_BASE = "https://api.gex.bot";
+let gxTickersHot = null; // GEXbot ticker universe — read once from the packaged tickers.json
+// Dedupe per (ticker, source, category): a short cache + in-flight coalescing so several
+// TradingView windows on the same ticker (their :00/:30 marks fire together) share ONE call each
+// instead of hammering the key. Keyed "TICKER:src:cat" so classic/state AND each package
+// (latest/next/90d) cache independently — switching package can't reuse the other's data.
+const gxHot = new Map();      // "TICKER:src:cat" -> { res, at }
+const gxInflight = new Map(); // "TICKER:src:cat" -> Promise
+const GX_TTL = 500;          // 0.5s anti-stampede only (in-flight coalescing dedups simultaneous
+                             // multi-window calls); low enough that a 1s/5s refresh actually refetches
+async function pkgMajors(t, src, cat) {
+  const k = t + ":" + src + ":" + cat;
+  const hot = gxHot.get(k);
+  if (hot && Date.now() - hot.at < GX_TTL) return hot.res;
+  if (gxInflight.has(k)) return gxInflight.get(k);
+  const p = pkgFetch(t, src, cat).then((res) => {
+    if (res.levels) gxHot.set(k, { res, at: Date.now() });   // cache successes only; errors stay retryable
+    gxInflight.delete(k);
+    return res;
+  }, (e) => { gxInflight.delete(k); return { levels: null, error: String(e && e.message || e) }; });
+  gxInflight.set(k, p);
+  return p;
+}
+// One full-chain call for a source (classic|state) at a category (gex_zero=latest, gex_one=next,
+// gex_full=90d). Shape { zero_gamma, major_pos_vol, major_neg_vol, spot, min_dte, sec_min_dte, ... }.
+async function pkgFetch(t, src, cat) {
+  const cfg = await new Promise((r) => chrome.storage.local.get(GEXBOT_KEY, (x) => r(x[GEXBOT_KEY] || null)));
+  if (!cfg || !cfg.key) return { levels: null, error: "no API key" };
+  let resp;
+  try {
+    resp = await fetch(`${GEXBOT_BASE}/${encodeURIComponent(t)}/${src}/${cat}`, {
+      headers: { Authorization: "Bearer " + cfg.key, Accept: "application/json" },
+    });
+  } catch { return { levels: null, error: "network error" }; }
+  if (resp.status === 401 || resp.status === 403) return { levels: null, error: "bad key" };
+  if (resp.status === 429) return { levels: null, error: "rate limited" };
+  if (resp.status === 404) return { levels: null, error: "not found" };
+  if (!resp.ok) return { levels: null, error: `HTTP ${resp.status}` };
+  const j = await resp.json().catch(() => null);
+  if (!j) return { levels: null, error: "no data" };
+  const num = (v) => (typeof v === "number" && isFinite(v) ? v : null);
+  // strikes tuple is [strike, netGEX_vol, netGEX_oi, [5 prior vol readings]] — keep a compact
+  // [strike, vol, priors[]] for the histogram (OI unused → dropped to shrink the payload).
+  const strikes = Array.isArray(j.strikes) ? j.strikes.map((s) => [s[0], s[1], Array.isArray(s[3]) ? s[3] : []]) : null;
+  return { levels: { zeroGamma: num(j.zero_gamma), majorPos: num(j.major_pos_vol), majorNeg: num(j.major_neg_vol), spot: num(j.spot), minDte: num(j.min_dte), secDte: num(j.sec_min_dte), strikes }, error: null };
+}
+// Fetch the requested sources (classic and/or state — only what's toggled on) at the chosen
+// package category. cat: gex_zero=latest (nearest expiry, not literally 0dte — VIX has its own
+// calendar), gex_one=next, gex_full=90d. Defaults to latest.
+async function gexbotMajors(raw, need, cat) {
+  const t = String(raw).replace(/[^A-Za-z0-9.]/g, "").toUpperCase();
+  if (!t) return { ok: false, error: "no ticker" };
+  need = need || { classic: true, state: false };
+  cat = ["gex_zero", "gex_one", "gex_full"].includes(cat) ? cat : "gex_zero";
+  const [c, s] = await Promise.all([
+    need.classic ? pkgMajors(t, "classic", cat) : null,
+    need.state ? pkgMajors(t, "state", cat) : null,
+  ]);
+  const err = (c && c.error) || (s && s.error) || null;
+  const lv = (c && c.levels) || (s && s.levels) || null; // DTE is per-ticker, same on both sources
+  const dte = lv ? { min: lv.minDte, sec: lv.secDte } : null;
+  return { ok: true, data: { classic: c ? c.levels : null, state: s ? s.levels : null, dte }, err };
+}
+async function gexbotTickers() {
+  if (gxTickersHot) return { ok: true, tickers: gxTickersHot }; // packaged list — no network, read once
+  let j;
+  // tickers.json is GEXbot's own /tickers list ({ stocks, indexes, futures }), bundled with the
+  // extension (same source the popup's watchlist uses) — no API call to know the universe.
+  try { j = await fetch(chrome.runtime.getURL("tickers.json")).then((r) => r.json()); }
+  catch { return { ok: false, error: "no ticker list" }; }
+  const list = [].concat(j.stocks || [], j.indexes || [], j.futures || []).map((s) => String(s).toUpperCase());
+  if (!list.length) return { ok: false, error: "empty ticker list" };
+  gxTickersHot = list;
+  return { ok: true, tickers: list };
 }
 
 // ---- Massive previous trading day OHLCV -------------------------------------

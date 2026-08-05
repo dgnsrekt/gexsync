@@ -360,3 +360,113 @@ mvKeyEl.addEventListener("keydown", (e) => { if (e.key === "Enter") document.get
 document.getElementById("mvClear").addEventListener("click", () => {
   chrome.storage.local.remove(MV_KEY, () => mvShow(null)); // content.js clears its cache on the change
 });
+
+// ---- GEXbot API key: enter → save → mask (same pattern as Massive). Gates the TV tab. ----
+const GX_KEY = "gexsync-gexbot";
+const gxKeyEl = document.getElementById("gxKey");
+const gxMask = document.getElementById("gxMask");
+const gxTabBtn = () => document.querySelector('#pageSeg .seg-btn[data-page="tv"]'); // revealed only with a key
+const gxShow = (key) => {
+  const has = !!key;
+  gxKeyEl.hidden = has; gxMask.hidden = !has;
+  if (has) gxMask.textContent = "🔒 Saved · ····" + String(key).slice(-4);
+  else gxKeyEl.value = "";
+  const tb = gxTabBtn(); if (tb) tb.hidden = !has; // show/hide the TV tab with the key
+};
+chrome.storage.local.get(GX_KEY, (r) => gxShow(r[GX_KEY]?.key));
+document.getElementById("gxSave").addEventListener("click", () => {
+  const key = gxKeyEl.value.trim();
+  if (!key) return;
+  chrome.storage.local.set({ [GX_KEY]: { key } }, () => gxShow(key));
+});
+gxKeyEl.addEventListener("keydown", (e) => { if (e.key === "Enter") document.getElementById("gxSave").click(); });
+document.getElementById("gxClear").addEventListener("click", () => {
+  chrome.storage.local.remove(GX_KEY, () => gxShow(null));
+});
+
+// ---- TV overlay settings (TV tab; the tab itself is revealed by gxShow) ----
+// 5 lines: classic zg/+vol/-vol, state +vol/-vol. Ids follow tv<Key>On / tvPal<Key>.
+const TV_KEYS = ["czg", "cpos", "cneg", "spos", "sneg"];
+const tvCap = (k) => k[0].toUpperCase() + k.slice(1);
+const tvEnabledEl = document.getElementById("tvEnabled");
+const tvLinesOnEl = document.getElementById("tvLinesOn");
+const tvHistOnEl = document.getElementById("tvHistOn");
+let tvHistSrc = "classic"; // GEX profile source: classic | state
+const tvLineOpEl = document.getElementById("tvLineOpacity"), tvHistOpEl = document.getElementById("tvHistOpacity");
+const tvLineOpVal = document.getElementById("tvLineOpVal"), tvHistOpVal = document.getElementById("tvHistOpVal");
+const tvLevelEls = {}, tvPalEls = {};
+for (const k of TV_KEYS) { tvLevelEls[k] = document.getElementById(`tv${tvCap(k)}On`); tvPalEls[k] = document.getElementById(`tvPal${tvCap(k)}`); }
+const TV_DEFCOL = { czg: "#FFC24A", cpos: "#16E0A3", cneg: "#FF5C5C", spos: "#22D3EE", sneg: "#FF8C42" };
+let tvLevels = {}; for (const k of TV_KEYS) tvLevels[k] = { on: true, color: TV_DEFCOL[k] };
+let tvSource = "poll";
+let tvPackage = "gex_zero"; // latest | next | 90d (gex_zero | gex_one | gex_full)
+let tvRefresh = 30; // refresh cadence seconds: 15 | 30 | 60
+const TIER_RANK = { classic: 1, state: 2, orderflow: 3, quant: 4 }; // GEXbot tiers (cumulative)
+let gexTier = "classic"; // which tier the user's key has — controls above it are disabled
+const tvExpanded = {}; for (const k of TV_KEYS) tvExpanded[k] = false; // palette collapsed → shows only the current color until clicked
+const tvSaveCfg = () => chrome.storage.local.get("gexsync-cfg", (r) => chrome.storage.local.set({ "gexsync-cfg": { ...(r["gexsync-cfg"] || {}), tvEnabled: tvEnabledEl.checked, tvLinesOn: tvLinesOnEl.checked, gexTier, tvSource, tvPackage, tvLevels, tvHistogram: tvHistOnEl.checked, tvHistSrc, tvLineOpacity: tvLineOpEl.value / 100, tvHistOpacity: tvHistOpEl.value / 100, tvRefresh } }));
+const tvPaint = () => {
+  for (const k of TV_KEYS) {
+    tvLevelEls[k].checked = tvLevels[k].on !== false;
+    const cur = tvLevels[k].color;
+    tvPalEls[k].innerHTML = tvExpanded[k]
+      ? GROUP_COLORS.map((hex) => `<span class="cpal-sw${hex === cur ? " sel" : ""}" data-hex="${hex}" style="background:${hex};color:${hex}" title="${hex}"></span>`).join("")
+      : `<span class="cpal-sw sel" data-hex="${cur}" style="background:${cur};color:${cur}" title="click to change color"></span>`;
+  }
+  [...document.querySelectorAll("#tvSrcSeg .seg-btn")].forEach((b) => b.setAttribute("aria-selected", b.dataset.src === tvSource ? "true" : "false"));
+  [...document.querySelectorAll("#tvPkgSeg .seg-btn")].forEach((b) => b.setAttribute("aria-selected", b.dataset.pkg === tvPackage ? "true" : "false"));
+  [...document.querySelectorAll("#tvHistSrcSeg .seg-btn")].forEach((b) => b.setAttribute("aria-selected", b.dataset.hsrc === tvHistSrc ? "true" : "false"));
+  [...document.querySelectorAll("#tvRefreshSeg .seg-btn")].forEach((b) => b.setAttribute("aria-selected", +b.dataset.refresh === tvRefresh ? "true" : "false"));
+  [...document.querySelectorAll("#gexTierSeg .seg-btn")].forEach((b) => b.setAttribute("aria-selected", b.dataset.tval === gexTier ? "true" : "false"));
+};
+// Disable every [data-tier] control above the chosen tier (declarative gate — future features just
+// add data-tier="<tier>" in the HTML). Classic is the floor (no attribute needed).
+const applyTierGate = () => {
+  const rank = TIER_RANK[gexTier] || 1;
+  if (rank < TIER_RANK.state && tvHistSrc === "state") { tvHistSrc = "classic"; } // clamp: no State profile below State tier
+  for (const el of document.querySelectorAll("[data-tier]")) {
+    const locked = (TIER_RANK[el.dataset.tier] || 99) > rank;
+    const ctl = el.matches("input,button") ? el : el.querySelector("input,button");
+    if (ctl) ctl.disabled = locked;
+    el.style.opacity = locked ? ".4" : "";
+    el.title = locked ? `Requires ${el.dataset.tier[0].toUpperCase() + el.dataset.tier.slice(1)} tier` : "";
+  }
+};
+const tvLoad = (g) => {
+  tvEnabledEl.checked = g.tvEnabled !== false; // default on once a key exists
+  tvLinesOnEl.checked = g.tvLinesOn !== false; // lines visible by default
+  tvSource = g.tvSource === "ws" ? "ws" : "poll";
+  tvPackage = ["gex_zero", "gex_one", "gex_full"].includes(g.tvPackage) ? g.tvPackage : "gex_zero";
+  tvHistOnEl.checked = g.tvHistogram === true; // GEX profile off by default
+  tvHistSrc = g.tvHistSrc === "state" ? "state" : "classic";
+  gexTier = ["classic", "state", "orderflow", "quant"].includes(g.gexTier) ? g.gexTier : "classic";
+  tvRefresh = [1, 5, 15, 30, 60].includes(g.tvRefresh) ? g.tvRefresh : 30;
+  tvLineOpEl.value = Math.round((g.tvLineOpacity != null ? g.tvLineOpacity : 1) * 100);
+  tvHistOpEl.value = Math.round((g.tvHistOpacity != null ? g.tvHistOpacity : 1) * 100);
+  tvOpPaint();
+  const s = g.tvLevels || {};
+  const lvl = (k, old) => ({ on: (s[k]?.on ?? (old && s[old]?.on)) !== false, color: s[k]?.color || (old && s[old]?.color) || TV_DEFCOL[k] }); // migrate old {zg,pos,neg}
+  tvLevels = { czg: lvl("czg", "zg"), cpos: lvl("cpos", "pos"), cneg: lvl("cneg", "neg"), spos: lvl("spos"), sneg: lvl("sneg") };
+  applyTierGate(); // clamp state→classic if below tier + disable locked controls
+  tvPaint();
+};
+const tvOpPaint = () => { tvLineOpVal.textContent = tvLineOpEl.value + "%"; tvHistOpVal.textContent = tvHistOpEl.value + "%"; };
+tvEnabledEl.addEventListener("change", tvSaveCfg);
+tvLinesOnEl.addEventListener("change", tvSaveCfg);
+tvHistOnEl.addEventListener("change", tvSaveCfg);
+for (const el of [tvLineOpEl, tvHistOpEl]) el.addEventListener("input", () => { tvOpPaint(); tvSaveCfg(); }); // live blend
+[...document.querySelectorAll("#tvHistSrcSeg .seg-btn")].forEach((b) => b.addEventListener("click", () => { if (b.disabled) return; tvHistSrc = b.dataset.hsrc; tvPaint(); tvSaveCfg(); }));
+for (const k of TV_KEYS) {
+  tvLevelEls[k].addEventListener("change", () => { tvLevels[k].on = tvLevelEls[k].checked; tvSaveCfg(); });
+  tvPalEls[k].addEventListener("click", (e) => {
+    const sw = e.target.closest(".cpal-sw"); if (!sw) return;
+    if (!tvExpanded[k]) { for (const kk of TV_KEYS) tvExpanded[kk] = kk === k; tvPaint(); return; } // open (collapse the others)
+    if (sw.dataset.hex && sw.dataset.hex !== tvLevels[k].color) { tvLevels[k].color = sw.dataset.hex; tvSaveCfg(); } // pick a new color
+    tvExpanded[k] = false; tvPaint(); // collapse back to just the current color
+  });
+}
+[...document.querySelectorAll("#tvSrcSeg .seg-btn")].forEach((b) => b.addEventListener("click", () => { if (b.disabled) return; tvSource = b.dataset.src; tvPaint(); tvSaveCfg(); }));
+[...document.querySelectorAll("#tvPkgSeg .seg-btn")].forEach((b) => b.addEventListener("click", () => { if (b.disabled) return; tvPackage = b.dataset.pkg; tvPaint(); tvSaveCfg(); })); // package switch → cfg change → tv.js refetches
+[...document.querySelectorAll("#tvRefreshSeg .seg-btn")].forEach((b) => b.addEventListener("click", () => { if (b.disabled) return; tvRefresh = +b.dataset.refresh; tvPaint(); tvSaveCfg(); }));
+[...document.querySelectorAll("#gexTierSeg .seg-btn")].forEach((b) => b.addEventListener("click", () => { if (b.disabled) return; gexTier = b.dataset.tval; applyTierGate(); tvPaint(); tvSaveCfg(); })); // tier → gate features + refetch
+chrome.storage.local.get("gexsync-cfg", (r) => tvLoad(r["gexsync-cfg"] || {}));

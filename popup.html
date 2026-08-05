@@ -79,6 +79,8 @@
   .cpal-sw:hover { transform: scale(1.12); }
   .cpal-sw.sel { box-shadow: 0 0 0 2px #0b0e14, 0 0 0 4px #e6edf3; }
   .cpal-sw.dis { opacity: .25; cursor: not-allowed; pointer-events: none; }
+  /* TV level row: label + palette on one line when collapsed; the full palette wraps to its own line when expanded */
+  .tv-lvl { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; margin-top: 12px; }
 
   /* saved lines */
   #linesList:empty::after { content: "No lines yet. Turn on chart tools from the pill, then right-click the chart to drop one."; color: var(--muted); font-size: 11px; }
@@ -153,9 +155,10 @@
 
   <div class="seg" id="pageSeg" role="tablist">
     <button class="seg-btn" data-page="sync" role="tab">Sync</button>
-    <button class="seg-btn" data-page="keys" role="tab">Data keys</button>
+    <button class="seg-btn" data-page="keys" role="tab">Keys</button>
     <button class="seg-btn" data-page="watchlist" role="tab">Watchlist</button>
     <button class="seg-btn" data-page="lines" role="tab">Tools</button>
+    <button class="seg-btn" data-page="tv" role="tab" hidden>TV</button><!-- revealed once a GEXbot key is saved -->
   </div>
 
   <div data-page="sync">
@@ -268,6 +271,16 @@
     <b>Paid key</b> — unlimited calls, longer history. Same add-ons, no throttling.
   </div>
 
+  <div class="label">GEXbot data <span style="color:var(--muted);text-transform:none;letter-spacing:0">· opt-in</span></div>
+  <input id="gxKey" type="password" spellcheck="false" autocomplete="off" placeholder="GEXbot API key"
+    style="width:100%;margin-top:2px;padding:7px 10px;border-radius:9px;background:var(--raised);color:var(--ink);border:1px solid var(--line);font:12px var(--mono)">
+  <div id="gxMask" hidden style="margin-top:2px;padding:7px 10px;border-radius:9px;background:var(--raised);border:1px solid var(--line);font:12px var(--mono);color:var(--mint)"></div>
+  <div class="btnrow" style="gap:8px;margin-top:6px">
+    <button id="gxSave" class="btn" style="flex:1">Save</button>
+    <button id="gxClear" class="btn" style="flex:1">Clear</button>
+  </div>
+  <div class="hint" style="margin-top:5px">Draws GEXbot's Classic + State major levels on your open TradingView charts — see the <b>TV</b> tab, which appears once a key is saved. Your key is stored locally and masked after saving; it's sent only to GEXbot, never anywhere else.</div>
+
   <div class="label">Previous-day levels <span style="color:var(--muted);text-transform:none;letter-spacing:0">· opt-in</span></div>
   <div class="btnrow" style="gap:14px;margin-top:2px;flex-wrap:wrap">
     <label class="switch" style="margin-top:0"><input type="checkbox" id="pdO"><span class="track"></span><span>Open</span></label>
@@ -295,6 +308,63 @@
     <button id="linesClearAll" class="btn">Clear all lines</button>
   </div>
   </div><!-- /page: tools -->
+
+  <div data-page="tv" hidden>
+  <div class="label">TradingView levels</div>
+  <label class="switch">
+    <input type="checkbox" id="tvEnabled"><span class="track"></span>
+    <span>Activate GEXbot data</span>
+  </label>
+  <div class="hint" style="margin-top:5px">Master switch — on any open <b>tradingview.com</b> chart whose symbol is a GEXbot ticker, it fetches the data and shows the status pill. The <b>lines</b> and <b>histogram</b> below have their own toggles (also on the pill). Off = nothing runs.</div>
+  <div class="label" style="margin-top:14px">API tier</div>
+  <div class="seg" id="gexTierSeg" role="tablist">
+    <button class="seg-btn" data-tval="classic" role="tab">Classic</button>
+    <button class="seg-btn" data-tval="state" role="tab">State</button>
+    <button class="seg-btn" data-tval="orderflow" role="tab">Orderflow</button>
+    <button class="seg-btn" data-tval="quant" role="tab">Quant</button>
+  </div>
+  <div class="hint" style="margin-top:5px">Pick the tier your GEXbot key has — features above it are disabled (so nothing 401s). Tiers are cumulative (Classic ⊂ State ⊂ Orderflow ⊂ Quant).</div>
+  <label class="switch" style="margin-top:12px"><input type="checkbox" id="tvLinesOn"><span class="track"></span><span>Show lines</span></label>
+  <div class="hint" style="margin-top:5px">Show/hide all the level lines without losing your per-line toggles &amp; colors below. Also the <b>≡</b> quick-toggle on the pill.</div>
+  <div class="tv-lvl"><label class="switch" style="margin:0"><input type="checkbox" id="tvCzgOn"><span class="track"></span><span>Classic Zero Gamma</span></label><div class="cpal" id="tvPalCzg"></div></div>
+  <div class="tv-lvl"><label class="switch" style="margin:0"><input type="checkbox" id="tvCposOn"><span class="track"></span><span>Classic Major +Vol</span></label><div class="cpal" id="tvPalCpos"></div></div>
+  <div class="tv-lvl"><label class="switch" style="margin:0"><input type="checkbox" id="tvCnegOn"><span class="track"></span><span>Classic Major −Vol</span></label><div class="cpal" id="tvPalCneg"></div></div>
+  <div class="tv-lvl" data-tier="state"><label class="switch" style="margin:0"><input type="checkbox" id="tvSposOn"><span class="track"></span><span>State Major +Vol</span></label><div class="cpal" id="tvPalSpos"></div></div>
+  <div class="tv-lvl" data-tier="state"><label class="switch" style="margin:0"><input type="checkbox" id="tvSnegOn"><span class="track"></span><span>State Major −Vol</span></label><div class="cpal" id="tvPalSneg"></div></div>
+  <div class="label" style="margin-top:14px">Line &amp; label opacity <span id="tvLineOpVal" style="opacity:.6;font-weight:400">100%</span></div>
+  <input type="range" id="tvLineOpacity" min="0" max="100" value="100" style="width:100%">
+  <div class="label" style="margin-top:14px">Package</div>
+  <div class="seg" id="tvPkgSeg" role="tablist">
+    <button class="seg-btn" data-pkg="gex_zero" role="tab" style="line-height:1.15"><b>Latest</b><br><span style="opacity:.6;font-size:10px">zero</span></button>
+    <button class="seg-btn" data-pkg="gex_one" role="tab" style="line-height:1.15"><b>Next</b><br><span style="opacity:.6;font-size:10px">one</span></button>
+    <button class="seg-btn" data-pkg="gex_full" role="tab" style="line-height:1.15"><b>90 Days</b><br><span style="opacity:.6;font-size:10px">full</span></button>
+  </div>
+  <div class="hint" style="margin-top:5px">Which GEXbot expiry to draw — one choice, applied to every level above (Latest = nearest expiry, not always 0dte). The chart pill shows the package's days-to-expiry for Latest &amp; Next; 90 Days spans a range so it shows none.</div>
+  <div class="label" style="margin-top:14px">GEX Profile</div>
+  <label class="switch" style="margin:0"><input type="checkbox" id="tvHistOn"><span class="track"></span><span>Show strike histogram</span></label>
+  <div class="seg" id="tvHistSrcSeg" role="tablist" style="margin-top:8px">
+    <button class="seg-btn" data-hsrc="classic" role="tab">Classic</button>
+    <button class="seg-btn" data-hsrc="state" data-tier="state" role="tab">State</button>
+  </div>
+  <div class="hint" style="margin-top:5px">Per-strike net GEX as a right-anchored profile (green +, red −) with the recent prior-reading dots, for the selected source at the current package. One source at a time.</div>
+  <div class="label" style="margin-top:10px">Histogram opacity <span id="tvHistOpVal" style="opacity:.6;font-weight:400">100%</span></div>
+  <input type="range" id="tvHistOpacity" min="0" max="100" value="100" style="width:100%">
+  <div class="label" style="margin-top:14px">Updates</div>
+  <div class="seg" id="tvSrcSeg" role="tablist">
+    <button class="seg-btn" data-src="poll" role="tab">Poll</button>
+    <button class="seg-btn" data-src="ws" role="tab" disabled title="live WebSocket — coming soon (Quant tier)" style="opacity:.45;cursor:default">Live · soon</button>
+  </div>
+  <div class="hint" style="margin-top:5px">Poll refetches on the wall-clock marks below. Live (WebSocket) streaming is coming later.</div>
+  <div class="label" style="margin-top:14px">Refresh rate</div>
+  <div class="seg" id="tvRefreshSeg" role="tablist">
+    <button class="seg-btn" data-refresh="1" role="tab">1s</button>
+    <button class="seg-btn" data-refresh="5" role="tab">5s</button>
+    <button class="seg-btn" data-refresh="15" role="tab">15s</button>
+    <button class="seg-btn" data-refresh="30" role="tab">30s</button>
+    <button class="seg-btn" data-refresh="60" role="tab">60s</button>
+  </div>
+  <div class="hint" style="margin-top:5px">How often to poll, aligned to the wall clock (e.g. 5s → :00/:05/:10…, 30s → :00/:30). The pill ring counts down to the next mark. 1s/5s poll hard — mind GEXbot's rate limits.</div>
+  </div><!-- /page: tv -->
 
   <div data-page="watchlist" hidden>
   <div class="label">Watchlist</div>
