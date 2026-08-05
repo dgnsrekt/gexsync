@@ -4,6 +4,22 @@ All notable changes to GexSync are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and the project follows
 [semantic versioning](https://semver.org/).
 
+## [1.16.0] — 2026-08-04
+
+### Added
+- **GEXbot levels on TradingView.** A new opt-in overlay for open `tradingview.com/chart` pages
+  whose symbol is a GEXbot ticker. Enter a **GEXbot API key** in the Keys tab to reveal a **TV**
+  settings tab, and the chart gains:
+  - GEXbot's **Classic + State major levels** (Zero Gamma, Major +Vol/−Vol) as horizontal lines,
+    each with its own toggle + color, plus a status pill with a live refresh countdown.
+  - A per-strike **GEX profile histogram** (right-anchored bars + recent prior-reading dots),
+    switchable Classic/State.
+  - **Click a level to create a TradingView price alert** at it — single, bulk (add/remove all for
+    a ticker), and package-aware (a trash on the shown package, a cue when it's on another).
+  - Controls for the **package** (Latest / Next / 90 Days), an **API-tier** selector that disables
+    features your key can't power, **opacity** sliders for lines and histogram, and a tunable
+    **refresh rate** (1/5/15/30/60s). Your key is stored locally and sent only to GEXbot.
+
 ## [1.15.1] — 2026-08-04
 
 ### Fixed
@@ -385,6 +401,7 @@ All notable changes to GexSync are documented here. The format is based on
 [1.11.1]: https://github.com/dgnsrekt/gexsync/compare/v1.11.0...v1.11.1
 [1.11.0]: https://github.com/dgnsrekt/gexsync/compare/v1.10.0...v1.11.0
 [1.10.0]: https://github.com/dgnsrekt/gexsync/compare/v1.9.0...v1.10.0
+[1.16.0]: https://github.com/dgnsrekt/gexsync/compare/v1.15.1...v1.16.0
 [1.15.1]: https://github.com/dgnsrekt/gexsync/compare/v1.15.0...v1.15.1
 [1.9.0]: https://github.com/dgnsrekt/gexsync/compare/v1.8.1...v1.9.0
 [1.8.1]: https://github.com/dgnsrekt/gexsync/compare/v1.8.0...v1.8.1
