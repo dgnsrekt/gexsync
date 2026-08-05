@@ -4,6 +4,15 @@ All notable changes to GexSync are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and the project follows
 [semantic versioning](https://semver.org/).
 
+## [1.16.1] — 2026-08-04
+
+### Fixed
+- **Popup no longer stretches extra-wide.** The popup body had a `min-width` floor but no ceiling,
+  so the non-wrapping **Current state · tabs** dump (`white-space: pre`) could drag the whole popup
+  past 700px when a few tickers were open and the section was expanded. The body is now a fixed
+  384px, so that dump scrolls within its own box (it already had `overflow-x: auto`) instead of
+  widening everything.
+
 ## [1.16.0] — 2026-08-04
 
 ### Added
@@ -401,6 +410,7 @@ All notable changes to GexSync are documented here. The format is based on
 [1.11.1]: https://github.com/dgnsrekt/gexsync/compare/v1.11.0...v1.11.1
 [1.11.0]: https://github.com/dgnsrekt/gexsync/compare/v1.10.0...v1.11.0
 [1.10.0]: https://github.com/dgnsrekt/gexsync/compare/v1.9.0...v1.10.0
+[1.16.1]: https://github.com/dgnsrekt/gexsync/compare/v1.16.0...v1.16.1
 [1.16.0]: https://github.com/dgnsrekt/gexsync/compare/v1.15.1...v1.16.0
 [1.15.1]: https://github.com/dgnsrekt/gexsync/compare/v1.15.0...v1.15.1
 [1.9.0]: https://github.com/dgnsrekt/gexsync/compare/v1.8.1...v1.9.0
