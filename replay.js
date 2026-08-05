@@ -50,6 +50,15 @@
   let masterSeen = Date.now();
   let barUI = null, renderBar = () => {}, resetTickCache = () => {};
 
+  // i18n: this script runs ISOLATED, so it reads the UI language straight from gexsync-cfg (it does
+  // not share content.js's LANG). GXI18N is bundled first in this content-script entry. TR = static,
+  // TRI = interpolated. English is the default/fallback.
+  const GXCFG_KEY = "gexsync-cfg";
+  let LANG = "en";
+  const GXI = self.GXI18N;
+  const TR = (k) => (GXI ? GXI.t(k, LANG) : k);
+  const TRI = (k, v) => (GXI ? GXI.ti(k, v, LANG) : k);
+
   // ---- session helpers ----
   const isMaster = () => active() && session.master === ME;
   const isClient = () => active() && session.clients.includes(ME);
@@ -63,10 +72,11 @@
   const writeSession = (patch) => { try { if (alive()) chrome.storage.local.set({ [SESSION_KEY]: { ...session, ...patch } }); } catch (e) { /* orphaned */ } };
   const writeCfg = (patch) => { try { if (alive()) chrome.storage.local.set({ [CFG_KEY]: { ...cfg, ...patch } }); } catch (e) {} };
 
-  chrome.storage.local.get([CFG_KEY, SESSION_KEY, MODE_KEY], (r) => {
+  chrome.storage.local.get([CFG_KEY, SESSION_KEY, MODE_KEY, GXCFG_KEY], (r) => {
     if (r[CFG_KEY]) cfg = { ...cfg, ...r[CFG_KEY] };
     if (r[SESSION_KEY]) session = r[SESSION_KEY];
     if (r[MODE_KEY]) mode = r[MODE_KEY] === "live" ? "live" : r[MODE_KEY];
+    LANG = GXI ? GXI.normLang(r[GXCFG_KEY]?.lang) : "en";
     renderBar();
   });
 
@@ -281,6 +291,7 @@
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area !== "local") return;
     if (changes[CFG_KEY]?.newValue) cfg = { ...cfg, ...changes[CFG_KEY].newValue };
+    if (changes[GXCFG_KEY]?.newValue) { LANG = GXI ? GXI.normLang(changes[GXCFG_KEY].newValue.lang) : "en"; renderBar(); }
     if (changes[SESSION_KEY]) {
       const wasPart = participating();
       const prevPhase = session.phase;
@@ -392,11 +403,11 @@
       // visible amber scrim (amber = the brand "locked" role) + a message so the
       // user knows GexSync locked the panel on purpose — not a GEXbot bug.
       blocker.style.cssText = "position:fixed;z-index:2147482500;display:flex;align-items:center;justify-content:center;cursor:not-allowed;background:rgba(10,8,16,.42);backdrop-filter:saturate(.5);-webkit-backdrop-filter:saturate(.5);box-shadow:inset 0 0 0 1.5px rgba(255,180,84,.4);font-family:'IBM Plex Sans',system-ui,-apple-system,sans-serif;";
-      blocker.title = "Locked by GexSync for replay sync — Exit the replay bar to unlock";
+      blocker.title = TR("rp.blockerTitle");
       blocker.innerHTML = `<div style="display:flex;flex-direction:column;align-items:center;gap:7px;padding:14px 16px;border-radius:14px;background:rgba(22,20,31,.95);border:1px solid rgba(255,180,84,.5);box-shadow:0 12px 34px rgba(0,0,0,.55);max-width:210px;text-align:center">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#FFB454" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>
-        <div style="color:#FFB454;font:700 12.5px 'IBM Plex Sans',system-ui">Locked for replay sync</div>
-        <div style="color:#9AA0AA;font:500 11px 'IBM Plex Sans',system-ui;line-height:1.4">GexSync locked this panel so the tabs stay in sync. Hit <b style="color:#E7E9EA">Exit</b> in the replay bar to unlock.</div></div>`;
+        <div style="color:#FFB454;font:700 12.5px 'IBM Plex Sans',system-ui">${TR("rp.blockerHead")}</div>
+        <div style="color:#9AA0AA;font:500 11px 'IBM Plex Sans',system-ui;line-height:1.4">${TR("rp.blockerBody")}</div></div>`;
       document.documentElement.appendChild(blocker);
     }
     blocker.style.display = "flex";
@@ -413,7 +424,7 @@
     m.innerHTML = `<div style="min-width:320px;max-width:560px;padding:24px 28px;border-radius:18px;background:rgba(22,20,31,.97);border:1px solid rgba(255,255,255,.14);box-shadow:0 30px 80px rgba(0,0,0,.65)">
         ${bodyHtml}
         <div style="margin-top:22px;display:flex;gap:10px;justify-content:flex-end">
-          <button data-x="cancel" style="${btn}background:transparent;color:#E7E9EA">Cancel</button>
+          <button data-x="cancel" style="${btn}background:transparent;color:#E7E9EA">${TR("rp.cancel")}</button>
           <button data-x="ok"${okDisabled ? " disabled" : ""} style="${okStyle}">${okLabel}</button>
         </div></div>`;
     m.style.display = "flex";
@@ -437,7 +448,7 @@
     const hcell = "padding:6px 11px;border-bottom:1px solid rgba(255,255,255,.12);font:500 10px 'JetBrains Mono',ui-monospace,monospace;letter-spacing:.12em;text-transform:uppercase;color:#9AA0AA";
     let anyLive = false, anyConverted = false;
     const rows = r.map((e) => {
-      const role = e.role === "master" ? `<span style="color:#16E0A3">★ master</span>` : `<span style="color:#4AA3FF">client</span>`;
+      const role = e.role === "master" ? `<span style="color:#16E0A3">${TR("rp.revMaster")}</span>` : `<span style="color:#4AA3FF">${TR("rp.revClient")}</span>`;
       const live = isLiveDate(e.date); if (live) anyLive = true;
       // es-future "converted" ticker (SPY⇒ES): GEXbot disables deep history for
       // these (FAQ #41). Our load bypasses their lock, so block it — flag the tab.
@@ -451,17 +462,17 @@
         <td style="${cell}">${e.profile || "?"}</td>
         ${dateCell}</tr>`;
     }).join("");
-    const convWarn = anyConverted ? `<div style="margin:0 0 12px;padding:9px 12px;border-radius:9px;background:rgba(255,92,92,.14);border:1px solid rgba(255,92,92,.55);color:#FF9D9D;font:500 11.5px 'IBM Plex Sans',system-ui;line-height:1.4">⛔ A highlighted tab uses an <b>es-future conversion</b> (⇒). GEXbot disables deep history for converted tickers (<b>FAQ&nbsp;#41</b>) — a replay load would pull the wrong data. Switch those tabs from <b>es future</b> back to <b>spot price</b>, then reopen this.</div>` : "";
-    const warn = anyLive ? `<div style="margin:0 0 12px;padding:9px 12px;border-radius:9px;background:rgba(255,180,84,.13);border:1px solid rgba(255,180,84,.5);color:#FFB454;font:500 11.5px 'IBM Plex Sans',system-ui;line-height:1.4">⚠ A highlighted tab is on a <b>live date (today)</b> — replay needs past dates. During market hours it won't finish calibrating.</div>` : "";
-    modal(`<div style="font:600 17px 'IBM Plex Sans',system-ui;margin-bottom:4px">Start replay session?</div>
-      <div style="color:#9AA0AA;font-size:12px;margin-bottom:14px">Review every tab — loading locks all of these until you Exit.</div>
+    const convWarn = anyConverted ? `<div style="margin:0 0 12px;padding:9px 12px;border-radius:9px;background:rgba(255,92,92,.14);border:1px solid rgba(255,92,92,.55);color:#FF9D9D;font:500 11.5px 'IBM Plex Sans',system-ui;line-height:1.4">${TR("rp.convWarn")}</div>` : "";
+    const warn = anyLive ? `<div style="margin:0 0 12px;padding:9px 12px;border-radius:9px;background:rgba(255,180,84,.13);border:1px solid rgba(255,180,84,.5);color:#FFB454;font:500 11.5px 'IBM Plex Sans',system-ui;line-height:1.4">${TR("rp.liveWarn")}</div>` : "";
+    modal(`<div style="font:600 17px 'IBM Plex Sans',system-ui;margin-bottom:4px">${TR("rp.startTitle")}</div>
+      <div style="color:#9AA0AA;font-size:12px;margin-bottom:14px">${TR("rp.startBody")}</div>
       ${convWarn}${warn}<table style="border-collapse:collapse;width:100%">
         <thead><tr style="text-align:left">
-          <th style="${hcell}">role</th><th style="${hcell}">page</th><th style="${hcell}">ticker</th><th style="${hcell}">profile</th><th style="${hcell}">date</th></tr></thead>
-        <tbody>${rows}</tbody></table>`, "Confirm &amp; load", loadAll, "#16E0A3", "#08110c", anyConverted);
+          <th style="${hcell}">${TR("rp.hRole")}</th><th style="${hcell}">${TR("rp.hPage")}</th><th style="${hcell}">${TR("rp.hTicker")}</th><th style="${hcell}">${TR("rp.hProfile")}</th><th style="${hcell}">${TR("rp.hDate")}</th></tr></thead>
+        <tbody>${rows}</tbody></table>`, TR("rp.confirmLoad"), loadAll, "#16E0A3", "#08110c", anyConverted);
   }
-  const confirmExit = () => modal(`<div style="font:600 17px 'IBM Plex Sans',system-ui">Exit replay session?</div>
-    <div style="color:#9AA0AA;font-size:12px;margin-top:8px">Unlocks every tab and ends the session for everyone.</div>`, "Exit replay", exitSession, "#FF5C5C", "#2a0808");
+  const confirmExit = () => modal(`<div style="font:600 17px 'IBM Plex Sans',system-ui">${TR("rp.exitTitle")}</div>
+    <div style="color:#9AA0AA;font-size:12px;margin-top:8px">${TR("rp.exitBody")}</div>`, TR("rp.exitOk"), exitSession, "#FF5C5C", "#2a0808");
 
   // ---- floating bar (shadow DOM, corner-anchored expand) ----
   const s = (inner, o = "") => `<svg viewBox="0 0 24 24" width="16" height="16" ${o}>${inner}</svg>`;
@@ -484,43 +495,43 @@
     if (session.phase === "idle") {
       if (role === "master") {
         const n = session.clients.length;
-        return `<span class="tag master">★ master</span><span class="cnt">${n} client${n === 1 ? "" : "s"} joined</span>
+        return `<span class="tag master">${TR("rp.restMaster")}</span><span class="cnt">${TRI("rp.clientsJoined", { n, s: n === 1 ? "" : "s" })}</span>
           <span class="sep"></span>
-          <button class="b act" data-cmd="loadall"${n < 1 ? " disabled" : ""}>Load All</button>
-          <button class="b ex" data-cmd="exit">Exit</button>`;
+          <button class="b act" data-cmd="loadall"${n < 1 ? " disabled" : ""}>${TR("rp.loadAll")}</button>
+          <button class="b ex" data-cmd="exit">${TR("rp.exit")}</button>`;
       }
       if (role === "client")
-        return `<span class="tag client">● client</span><span class="cnt">joined — waiting for master</span>
-          <span class="sep"></span><button class="b" data-cmd="leave">Leave</button>`;
+        return `<span class="tag client">${TR("rp.restClient")}</span><span class="cnt">${TR("rp.waitingMaster")}</span>
+          <span class="sep"></span><button class="b" data-cmd="leave">${TR("rp.leave")}</button>`;
       if (!session.master)
-        return `<button class="b act" data-cmd="bemaster">Be master</button><span class="hint">set this tab's ticker &amp; profile first</span>`;
-      return `<button class="b act" data-cmd="joinclient">Join as client</button><span class="hint">master ready — join to sync this tab</span>`;
+        return `<button class="b act" data-cmd="bemaster">${TR("rp.beMaster")}</button><span class="hint">${TR("rp.beMasterHint")}</span>`;
+      return `<button class="b act" data-cmd="joinclient">${TR("rp.joinClient")}</button><span class="hint">${TR("rp.joinHint")}</span>`;
     }
     // active session (loading/running) but this tab never joined → bystander:
     // no transport, no data touched, just a note. It can leave via the popup.
     if (!role)
-      return `<span class="tag">replay in progress</span><span class="hint">not joined — this tab stays live</span>`;
+      return `<span class="tag">${TR("rp.inProgress")}</span><span class="hint">${TR("rp.notJoined")}</span>`;
     if (session.phase === "loading")
-      return `<span class="tag">syncing…</span><span class="cnt">calibrating tabs — please wait</span>
-        <span class="sep"></span><button class="b ex" data-cmd="exit">Exit</button>`;
+      return `<span class="tag">${TR("rp.syncing")}</span><span class="cnt">${TR("rp.calibrating")}</span>
+        <span class="sep"></span><button class="b ex" data-cmd="exit">${TR("rp.exit")}</button>`;
     // running
     if (role === "master")
-      return `<button class="b" data-cmd="restart" title="Restart">${IC.restart}</button>
-        <button class="b" data-cmd="back30" title="30s back">${IC.back30}</button>
-        <button class="b" data-cmd="back1" title="1s back">${IC.back1}</button>
-        <button class="b pp" data-cmd="play" title="Play / pause">${IC.play}</button>
-        <button class="b" data-cmd="fwd1" title="1s forward">${IC.fwd1}</button>
-        <button class="b" data-cmd="fwd30" title="30s forward">${IC.fwd30}</button>
+      return `<button class="b" data-cmd="restart" title="${TR("rp.tRestart")}">${IC.restart}</button>
+        <button class="b" data-cmd="back30" title="${TR("rp.tBack30")}">${IC.back30}</button>
+        <button class="b" data-cmd="back1" title="${TR("rp.tBack1")}">${IC.back1}</button>
+        <button class="b pp" data-cmd="play" title="${TR("rp.tPlay")}">${IC.play}</button>
+        <button class="b" data-cmd="fwd1" title="${TR("rp.tFwd1")}">${IC.fwd1}</button>
+        <button class="b" data-cmd="fwd30" title="${TR("rp.tFwd30")}">${IC.fwd30}</button>
         <span class="sep"></span>
-        <button class="b speed" data-cmd="speed" title="Speed">1x</button>
+        <button class="b speed" data-cmd="speed" title="${TR("rp.tSpeed")}">1x</button>
         <span class="sep"></span>
-        <input class="scrub" type="range" min="0" max="100" value="0" title="Scrub position">
-        <b class="mtime" title="Replay time">—</b>
+        <input class="scrub" type="range" min="0" max="100" value="0" title="${TR("rp.tScrub")}">
+        <b class="mtime" title="${TR("rp.tTime")}">—</b>
         <span class="sep"></span>
-        <button class="b ex" data-cmd="exit">Exit</button>`;
-    return `<span class="foll">following</span><b class="ftime">—</b>
-      <button class="b" data-cmd="take">Take control</button>
-      <button class="b ex" data-cmd="exit">Exit</button>`;
+        <button class="b ex" data-cmd="exit">${TR("rp.exit")}</button>`;
+    return `<span class="foll">${TR("rp.following")}</span><b class="ftime">—</b>
+      <button class="b" data-cmd="take">${TR("rp.takeControl")}</button>
+      <button class="b ex" data-cmd="exit">${TR("rp.exit")}</button>`;
   }
 
   let lastKey = "";
@@ -574,7 +585,7 @@
         .bar.nodata .foll, .bar.nodata .ftime { color:#FFB454; }
       </style>
       <div class="bar" data-open="0" data-role="none">
-        <button class="anchor" title="GexSync replay">${IC.replay}</button>
+        <button class="anchor" title="${TR("rp.anchorTitle")}">${IC.replay}</button>
         <div class="rest"></div>
       </div>`;
     (document.body || document.documentElement).appendChild(host);
@@ -585,9 +596,9 @@
     // z-index sits BELOW the bar (2147483000) so the loading-phase Exit stays clickable if a sync hangs
     overlay.style.cssText = "position:fixed;inset:0;z-index:2147482900;display:none;align-items:center;justify-content:center;background:rgba(12,8,18,.6);backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px);font-family:'IBM Plex Sans',system-ui,-apple-system,sans-serif;color:#E7E9EA;";
     overlay.innerHTML = `<div style="padding:24px 32px;border-radius:16px;background:rgba(22,20,31,.92);border:1px solid rgba(255,255,255,.14);box-shadow:0 24px 70px rgba(0,0,0,.6);text-align:center">
-      <div style="font:600 15px 'IBM Plex Sans',system-ui">Syncing replay…</div>
+      <div style="font:600 15px 'IBM Plex Sans',system-ui">${TR("rp.syncingOverlay")}</div>
       <div class="calprog" style="margin-top:12px;color:#16E0A3;font:700 28px 'JetBrains Mono',ui-monospace,monospace">0 / 0</div>
-      <div style="margin-top:8px;color:#9AA0AA;font-size:12px">loading history + building time maps — please wait</div></div>`;
+      <div style="margin-top:8px;color:#9AA0AA;font-size:12px">${TR("rp.calSub")}</div></div>`;
     document.documentElement.appendChild(overlay);
 
     const bar = root.querySelector(".bar");

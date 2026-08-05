@@ -34,6 +34,7 @@
   let tvLineOp = 1, tvHistOp = 1; // opacity 0..1 for lines+labels / the whole histogram (blend with the user's chart)
   let tvRefresh = 30; // refresh cadence in seconds: 15 | 30 | 60
   let universe = null, curTicker = "", valid = null, lastLevels = null, lastErr = null;
+  let LANG = "en"; // popup UI language (gexsync-cfg.lang); carried to tv-overlay.js via #__gxtv
 
   // MV3 orphan guard: when the extension is reloaded/updated, this content script keeps living in
   // any not-yet-reloaded tab, but its chrome.* context is torn down — any use throws "Extension
@@ -63,6 +64,7 @@
       const op = (v) => (typeof v === "number" && v >= 0 && v <= 1 ? v : 1); // default fully opaque
       tvLineOp = op(g.tvLineOpacity); tvHistOp = op(g.tvHistOpacity);
       tvRefresh = [1, 5, 15, 30, 60].includes(g.tvRefresh) ? g.tvRefresh : 30;
+      LANG = self.GXI18N ? self.GXI18N.normLang(g.lang) : "en";
       const s = g.tvLevels || {};
       const lvl = (k, old) => ({ on: (s[k]?.on ?? (old && s[old]?.on)) !== false, color: s[k]?.color || (old && s[old]?.color) || DEFCOL[k] });
       tvLevels = { // 5 lines: classic zg/+vol/-vol, state +vol/-vol. Migrate old 3-key {zg,pos,neg}.
@@ -102,6 +104,7 @@
       dte: (valid !== false && hasData && lastLevels.dte) ? PKG_DTE[tvPackage](lastLevels.dte) : null,
       hgen, hist: { on: tvHistogram, src }, // GEX profile: strikes-version + on/off + effective source (src computed above)
       refreshMs: tvRefresh * 1000, // countdown/fetch cadence for the MAIN overlay
+      lang: LANG, // popup UI language for the overlay's pill/toasts/labels
       cfg: { enabled: true, linesOn: tvLinesOn, levels: tvLevels, lineOpacity: tvLineOp, histOpacity: tvHistOp, tier: gexTier, caps: caps() },
     });
     if (n.textContent !== payload) n.textContent = payload;

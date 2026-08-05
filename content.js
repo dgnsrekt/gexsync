@@ -6,6 +6,14 @@
   const MASSIVE_KEY = "gexsync-massive"; // Massive.com API key + fundamentals cfg
   let applyingRemote = false; // suppress re-broadcast during programmatic click
 
+  // i18n: LANG mirrors gexsync-cfg.lang (kept live via onChanged). GXI18N is bundled first in
+  // every content-script world, so t()/ti() resolve here and in the MAIN-world scripts alike.
+  // TR = static string, TRI = interpolated ({placeholder}). English is the default/fallback.
+  let LANG = "en";
+  const GXI = self.GXI18N;
+  const TR = (k) => (GXI ? GXI.t(k, LANG) : k);
+  const TRI = (k, v) => (GXI ? GXI.ti(k, v, LANG) : k);
+
   // chrome.runtime?.id is falsy once this content script is orphaned by an
   // extension reload/update; guard reads/writes so orphans don't throw uncaught.
   const alive = () => !!chrome.runtime?.id;
@@ -84,6 +92,7 @@
     buzzOn = r[CFG_KEY]?.buzz === true; // default off (opt-in)
     watchlist = r[CFG_KEY]?.watchlist || [];
     matrixOn = r[CFG_KEY]?.matrix === true; // default off (opt-in easter egg)
+    LANG = GXI ? GXI.normLang(r[CFG_KEY]?.lang) : "en"; // popup UI language; carried to lines.js via #__gxlines
     chartMode = normMode(r[CFG_KEY]?.chartMode ?? (r[CFG_KEY]?.triggerArmed ? "trigger" : "")); // shared; legacy trigger→line
     toolMode = r[CFG_KEY]?.toolMode || (chartMode === "draw" ? "draw" : "line");
     drawTool = r[CFG_KEY]?.drawTool || "free";
@@ -355,7 +364,7 @@
   }, 1000);
 
   // Box (all open) or "N/M panels open" hint (not all open), drawn around the section.
-  const scopeWord = () => panelScope === "all" ? "all your GEXbot tabs" : (onState() ? "your /state tabs" : "your /classic tabs");
+  const scopeWord = () => TR(panelScope === "all" ? "scope.all" : onState() ? "scope.state" : "scope.classic");
   const boxColor = () => panelScope === "all" ? T.mint : (onState() ? T.azure : T.amber);
   let boxEl = null, badgeEl = null, hintEl = null;
   function ssRect() {
@@ -382,8 +391,8 @@
     boxEl.style.left = (r.left - pad) + "px"; boxEl.style.top = (r.top - pad) + "px";
     boxEl.style.width = (r.right - r.left + pad * 2) + "px"; boxEl.style.height = (r.bottom - r.top + pad * 2) + "px";
     boxEl.style.border = `1.5px solid ${c}`;
-    badgeEl.style.background = c; badgeEl.style.color = "#08110c"; badgeEl.textContent = "⟳ GexSync synced";
-    badgeEl.title = `GexSync is syncing these settings across ${scopeWord()} (Cross-page scope: ${panelScope === "all" ? "All tabs" : "By page"}). Turn off “Sync chart settings” in the GexSync popup to stop.`;
+    badgeEl.style.background = c; badgeEl.style.color = "#08110c"; badgeEl.textContent = TR("box.synced");
+    badgeEl.title = TRI("box.syncTitle", { scope: scopeWord(), cross: TR(panelScope === "all" ? "scope.allTabs" : "scope.byPage") });
     boxEl.style.display = "block";
   }
   function hideBox() { if (boxEl) boxEl.style.display = "none"; }
@@ -395,8 +404,8 @@
       (document.body || document.documentElement).appendChild(hintEl);
     }
     hintEl.style.left = (r.left - 6) + "px"; hintEl.style.top = (r.top - 26) + "px";
-    hintEl.textContent = `GexSync settings sync · ${spOpen}/${spTotal} panels open`;
-    hintEl.title = `Settings sync waits until every ${panelScope === "all" ? "GEXbot tab" : (onState() ? "/state tab" : "/classic tab")} has its Settings panel open. Open them all to sync; turn off “Sync chart settings” in the popup to disable.`;
+    hintEl.textContent = TRI("hint.text", { open: spOpen, total: spTotal });
+    hintEl.title = TRI("hint.title", { tab: TR(panelScope === "all" ? "hint.tabAll" : onState() ? "hint.tabState" : "hint.tabClassic") });
     hintEl.style.display = "block";
   }
   function hideHint() { if (hintEl) hintEl.style.display = "none"; }
@@ -532,7 +541,7 @@
     // fetch — hist/<ticker>/spot; the in-app hashchange fires it reliably.)
     location.hash = `#${ticker}#${profileSegment()}`;
     window.dispatchEvent(new HashChangeEvent("hashchange"));
-    flashSync(`to ${ticker}`); // brief non-blocking "syncing <group> to <ticker>"
+    flashSync(TRI("flash.to", { ticker })); // brief non-blocking "syncing <group> to <ticker>"
     setTimeout(() => { applyingRemote = false; }, 1500); // outlast the switch so we don't echo
   }
 
@@ -574,7 +583,7 @@
   let lastLinesSig = "";
   function writeLinesNode() {
     const tk = baseTicker(), pg = pageName();
-    const payload = JSON.stringify({ ticker: tk, lines: (tk && lines[tk]) || [], mode: chartMode, inWatch: !!(tk && watchlist.includes(tk)), draws: tk ? visibleDraws(tk, pg) : [], tool: drawTool, scope: activeScope, lineColor, drawColor, drawCounts: drawCounts(tk, pg) });
+    const payload = JSON.stringify({ ticker: tk, lines: (tk && lines[tk]) || [], mode: chartMode, inWatch: !!(tk && watchlist.includes(tk)), draws: tk ? visibleDraws(tk, pg) : [], tool: drawTool, scope: activeScope, lineColor, drawColor, drawCounts: drawCounts(tk, pg), lang: LANG });
     if (payload === lastLinesSig) return; // ticker/lines/mode/watch/draws unchanged — skip
     lastLinesSig = payload;
     linesNode().textContent = payload;
@@ -739,7 +748,7 @@
     if (t && t !== lastTicker) {
       lastTicker = t;
       send({ [tickerChan()]: { ticker: t, t: performance.now() } });
-      flashSync(`to ${t}`); // flash on the tab that changed the ticker, too
+      flashSync(TRI("flash.to", { ticker: t })); // flash on the tab that changed the ticker, too
     }
   }, 400);
 
@@ -768,7 +777,7 @@
   // + a debug-record session are noted for the next release (see the vault).
   const ZHUD = (() => {
     const C = { mint: T.mint, azure: T.azure, amber: T.amber, muted: T.muted };
-    const LBL = { profiles: "Profiles", ticker: "Ticker", replay: "Replay" };
+    const LBL = () => ({ profiles: TR("mode.profiles"), ticker: TR("mode.ticker"), replay: TR("mode.replay") });
     let state = "idle", decayT = 0, stopT = 0, spin = null;
     const mark = () => document.getElementById("gexsync-chip-mark");
     const modeEl = () => document.getElementById("gexsync-chip-mode");
@@ -780,11 +789,11 @@
     const paint = (s) => {
       const m = mark(), md = modeEl(); if (!m || !md) return;
       state = s; clearTimeout(decayT);
-      if (s === "idle") { stopSpin(); m.style.color = C.muted; md.style.color = ""; md.textContent = `${LBL[mode] || "Profiles"}${replayLocked ? " 🔒" : ""}`; }
-      else if (s === "grab") { stopSpin(); put(m, md, "master", C.mint); pop(); }
-      else if (s === "settle") { put(m, md, "setting…", C.amber); spinOnce(); }
-      else if (s === "took") { stopSpin(); put(m, md, "synced →", C.mint); pop(); decayT = setTimeout(() => paint("idle"), 850); }
-      else if (s === "follow") { stopSpin(); put(m, md, "← synced", C.azure); pop(); decayT = setTimeout(() => paint("idle"), 850); }
+      if (s === "idle") { stopSpin(); m.style.color = C.muted; md.style.color = ""; md.textContent = `${LBL()[mode] || TR("mode.profiles")}${replayLocked ? " 🔒" : ""}`; }
+      else if (s === "grab") { stopSpin(); put(m, md, TR("hud.master"), C.mint); pop(); }
+      else if (s === "settle") { put(m, md, TR("hud.setting"), C.amber); spinOnce(); }
+      else if (s === "took") { stopSpin(); put(m, md, TR("hud.syncedTo"), C.mint); pop(); decayT = setTimeout(() => paint("idle"), 850); }
+      else if (s === "follow") { stopSpin(); put(m, md, TR("hud.syncedFrom"), C.azure); pop(); decayT = setTimeout(() => paint("idle"), 850); }
     };
     return {
       show: (on) => { if (!on) paint("idle"); },
@@ -979,7 +988,7 @@
     send({ [SHOOT_REQ]: { seq: Date.now() + ":" + Math.random().toString(36).slice(2, 6), t: Date.now() } });
     const seq = (await new Promise((r) => get(SHOOT_REQ, (x) => r(x[SHOOT_REQ])))).seq;
     const shots = await collectShots(seq);
-    if (!shots.length) { showToast("GexSync: no charts captured for the group shot."); return; }
+    if (!shots.length) { showToast(TR("toast.noCharts")); return; }
     const grid = await stitch(shots);
     const entries = [];
     if (grid) entries.push({ name: "grid.png", bytes: dataUrlBytes(grid) });
@@ -1024,7 +1033,7 @@
         <div class="sub" style="margin-top:8px;color:#9aa0aa;font-size:12px"></div></div>`;
       (document.body || document.documentElement).appendChild(flashEl);
     }
-    flashEl.querySelector(".msg").innerHTML = `syncing <span style="color:${g.color}">${g.name}</span>`;
+    flashEl.querySelector(".msg").innerHTML = TRI("flash.syncing", { group: `<span style="color:${g.color}">${g.name}</span>` });
     flashEl.querySelector(".sub").textContent = detail;
     flashEl.style.display = "flex";
     flashEl.style.opacity = "1";
@@ -1037,7 +1046,7 @@
   }
   function flashEsSync(on) {
     const futLabel = (esToggleBtn(true)?.textContent.trim().toLowerCase()) || "es future";
-    flashSync(on ? `spot price → ${futLabel}` : `${futLabel} → spot price`);
+    flashSync(TRI(on ? "flash.spotToFut" : "flash.futToSpot", { label: futLabel }));
   }
   function applyEs(on) {
     const cur = esFutureOn();
@@ -1081,7 +1090,7 @@
   }
   window.addEventListener("gexsync-429", (e) => {
     const path = String(e.detail?.url || "").replace(/^https?:\/\/[^/]+/, "").split("?")[0];
-    showToast(`GexSync: GEXbot rate limit (${e.detail?.status}) on ${path || "API"} — cool off on reloads.`);
+    showToast(TRI("toast.rateLimit", { status: e.detail?.status, path: path || "API" }));
   });
 
   // ---- persistent chip: mode segment (click cycles mode) + group segment
@@ -1103,7 +1112,7 @@
     stack.id = "gexsync-stack";
     stack.style.cssText = "position:fixed;left:16px;bottom:72px;z-index:2147482000;display:flex;flex-direction:column;align-items:flex-start;gap:8px;width:max-content;";
     const MODES = ["profiles", "ticker", "replay"];
-    const LABEL = { profiles: "Profiles", ticker: "Ticker", replay: "Replay" };
+    const LABEL = () => ({ profiles: TR("mode.profiles"), ticker: TR("mode.ticker"), replay: TR("mode.replay") });
 
     // brand mark glyph (the sync loop) at the far left, muted so it reads as
     // identity, not status
@@ -1123,9 +1132,9 @@
     trigSeg.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="12" cy="12" r="7"/><line x1="12" y1="1.5" x2="12" y2="5.5"/><line x1="12" y1="18.5" x2="12" y2="22.5"/><line x1="1.5" y1="12" x2="5.5" y2="12"/><line x1="18.5" y1="12" x2="22.5" y2="12"/></svg>`;
     const paintTrigBtn = () => {
       trigSeg.style.color = chartMode === "line" ? lineColor : chartMode === "draw" ? drawColor : T.muted;
-      trigSeg.title = chartMode === "line" ? "Chart tools: Line — reticle + locked chart; right-click for the tool menu (click → off)"
-        : chartMode === "draw" ? "Chart tools: Draw — left-drag to draw on the chart; right-click for the tool menu (click → off)"
-        : "Chart tools — click to turn on; right-click the chart to switch Line/Draw, copy a price, and add marks";
+      trigSeg.title = chartMode === "line" ? TR("chip.toolsLine")
+        : chartMode === "draw" ? TR("chip.toolsDraw")
+        : TR("chip.toolsOff");
     };
     trigSeg.addEventListener("click", () => setChartMode(chartMode === "" ? (toolMode || "line") : "")); // toggle on↔off; on re-arms last sub-mode
 
@@ -1134,12 +1143,12 @@
     // snug to the label now that "mode:" is gone (the pill already resizes between modes
     // when the group segment appears in Ticker, so a fixed width bought us nothing)
     modeSeg.style.cssText = "display:flex;align-items:center;gap:7px;padding:6px 13px 6px 7px;cursor:pointer;box-sizing:border-box;transition:color .16s;";
-    modeSeg.title = "GexSync mode — click to cycle (Profiles / Ticker / Replay)";
+    modeSeg.title = TR("chip.modeCycle");
     modeSeg.addEventListener("click", () => { if (replayLocked) return; send({ [MODE_KEY]: MODES[(MODES.indexOf(mode) + 1) % MODES.length] }); });
 
     const grpSeg = document.createElement("span");
     grpSeg.style.cssText = "display:flex;align-items:center;gap:6px;padding:6px 13px;cursor:pointer;border-left:1px solid rgba(255,255,255,.12);";
-    grpSeg.title = "Ticker group — click to cycle color; only same-color tabs sync";
+    grpSeg.title = TR("chip.group");
     grpSeg.addEventListener("click", () => {
       const i = GROUPS.findIndex((g) => g.name === groupName());
       sessionStorage.gexsyncGroup = GROUPS[(i + 1) % GROUPS.length].name;
@@ -1172,7 +1181,7 @@
     // …and it doubles as the details panel's handle: hover opens, click pins.
     const infoSeg = document.createElement("span");
     infoSeg.style.cssText = `display:flex;align-items:center;gap:6px;padding:6px 14px;border-left:1px solid rgba(255,255,255,.12);font:500 12px ${T.mono};letter-spacing:.3px;white-space:nowrap;color:${T.ink};cursor:pointer;transition:background .16s;`;
-    infoSeg.title = "Ticker details — hover to peek, click to pin open (Esc closes)";
+    infoSeg.title = TR("chip.infoDetails");
 
     chip.append(markSeg, trigSeg, modeSeg, grpSeg, infoSeg);
 
@@ -1187,7 +1196,7 @@
       window.dispatchEvent(new HashChangeEvent("hashchange"));
       lastTicker = target;
       send({ [tickerChan()]: { ticker: target, t: performance.now() } });
-      flashSync(`to ${target}`);
+      flashSync(TRI("flash.to", { ticker: target }));
       setTimeout(paintCycle, 120); // relabel prev/next off the new current
     };
     const paintCycle = () => {
@@ -1204,14 +1213,14 @@
       if (!t) return;
       cycleBar.style.color = (GROUPS.find((x) => x.name === groupName()) || GROUPS[0]).color; // group-tinted like the pill
       cPrev.textContent = t.prev; cNext.textContent = t.next;
-      cBack.title = `Previous ticker: ${t.prev}`; cFwd.title = `Next ticker: ${t.next}`;
+      cBack.title = TRI("chip.prevTicker", { ticker: t.prev }); cFwd.title = TRI("chip.nextTicker", { ticker: t.next });
     };
     const shortId = TAB.slice(0, 3).toUpperCase();
     const sep = `<span style="color:${T.muted}">·</span>`;
     const paintInfo = () => {
       // role: MASTER in mint, client in azure (fed by replay.js)
       const r = mode === "replay" && chip.dataset.replayRole;
-      const role = r ? ` ${sep} <span style="color:${r === "MASTER" ? T.mint : T.azure}">${r}</span>` : "";
+      const role = r ? ` ${sep} <span style="color:${r === "MASTER" ? T.mint : T.azure}">${r === "MASTER" ? TR("role.master") : TR("role.client")}</span>` : "";
       const page = location.pathname.replace(/^\//, "").toUpperCase();
       const prof = profileLabel().replace("90d", "90 days").toUpperCase();
       // Panel state rides the same dataset channel replay.js uses for the role:
@@ -1222,12 +1231,10 @@
       // hovering); mint = just the open/pinned state. The panel says which and why.
       const warn = chip.dataset.mvWarn === "1";
       const cue = st === "lock" ? "🔒" : st ? "▴" : warn ? "●" : "";
-      infoSeg.title = warn
-        ? "A data source is failing — open for the reason"
-        : "Ticker details — hover to peek, click to pin open (Esc closes)";
+      infoSeg.title = warn ? TR("chip.sourceFailing") : TR("chip.infoDetails");
       infoSeg.style.background = st ? "rgba(22,224,163,.15)" : warn ? "rgba(255,180,84,.12)" : "transparent";
       // order: ticker · CLASSIC/STATE · profile [· role] · tab-id (titled, muted)
-      infoSeg.innerHTML = `${tickerValue() || "?"} ${sep} ${page} ${sep} ${prof}${role} ${sep} <span title="tab id" style="cursor:help;color:${T.muted}">#${shortId}</span>` +
+      infoSeg.innerHTML = `${tickerValue() || "?"} ${sep} ${page} ${sep} ${prof}${role} ${sep} <span title="${TR("chip.tabId")}" style="cursor:help;color:${T.muted}">#${shortId}</span>` +
         (cue ? `<span style="color:${warn ? T.amber : T.mint};font-size:11px">${cue}</span>` : "");
     };
     // swatch + how many tabs share this group (min-width holds 2 digits steady)
@@ -1239,9 +1246,9 @@
     renderChip = () => {
       const m = MODES.includes(mode) ? mode : "profiles";
       // locked replay session → pill can't switch modes (Exit via the replay bar)
-      modeSeg.textContent = `${LABEL[m]}${replayLocked ? " 🔒" : ""}`;
+      modeSeg.textContent = `${LABEL()[m]}${replayLocked ? " 🔒" : ""}`;
       modeSeg.style.cursor = replayLocked ? "default" : "pointer";
-      modeSeg.title = replayLocked ? "Locked during replay session — Exit via the replay bar" : "GexSync mode — click to cycle (Profiles / Ticker / Replay)";
+      modeSeg.title = replayLocked ? TR("chip.lockedReplay") : TR("chip.modeCycle");
       const g = GROUPS.find((x) => x.name === groupName()) || GROUPS[0];
       // tint the pill by group only in Ticker mode (groups are inert otherwise)
       chip.style.color = m === "ticker" ? g.color : T.ink;
@@ -1412,21 +1419,14 @@
   // just pasted an API key and doesn't know what any of this means.
   function mvErrMsg(err, tk) {
     switch (err) {
-      case "no API key":
-        return `No Massive.com key added yet. Open the GexSync popup, paste your key under <b>“Massive.com data,”</b> and details appear here.`;
-      case "bad API key":
-        return `Massive.com didn’t accept this API key. Re-check it copied correctly and that your Massive plan is active, then save it again in the popup.`;
-      case "rate limited":
-        return `Massive.com is briefly throttling requests (too many at once). This clears on its own in a minute — nothing to fix.`;
+      case "no API key": return TR("mv.noKey");
+      case "bad API key": return TR("mv.badKey");
+      case "rate limited": return TR("mv.rateLimited");
       case "not found":
-      case "no data":
-        return `No company data for <b>${tk}</b>. Massive covers <b>stocks &amp; ETFs</b> (SPY, AAPL, QQQ…), not indexes like <b>SPX</b> or <b>VIX</b>. Nothing’s broken — there’s just nothing to show for this symbol.`;
-      case "not entitled":
-        return `Your Massive plan won’t return daily bars for <b>${tk}</b> here. On the free plan that means either an index (bars cover <b>stocks &amp; ETFs</b> only) or a replay date more than about <b>2 years</b> back. Nothing’s broken — the rest of the panel still works.`;
-      case "network error":
-        return `Couldn’t reach Massive.com — looks like a network/connection hiccup. It’ll retry.`;
-      default:
-        return `Massive.com couldn’t return data (${err}).`;
+      case "no data": return TRI("mv.noData", { tk });
+      case "not entitled": return TRI("mv.notEntitled", { tk });
+      case "network error": return TR("mv.networkError");
+      default: return TRI("mv.default", { err });
     }
   }
 
@@ -1447,13 +1447,13 @@
     const d = bzCache.get(tk);
     if (!d) return ""; // still in flight
     if (d.error) return `<div style="margin-top:4px;color:${T.amber}">Reddit · ${mvErrShort(d.error)}</div>`;
-    if (d.rank == null) return `<div style="margin-top:4px;color:${T.muted}">Reddit · not in today's top ${d.of}</div>`;
+    if (d.rank == null) return `<div style="margin-top:4px;color:${T.muted}">${TRI("bz.notTop", { of: d.of })}</div>`;
     // Only worth saying with something to compare against, and only for a ticker that
     // has a rank at all (an unranked one already says so on the line above).
     const uni = bzUni && bzUni.tk === tk && bzUni.rank && bzUni.of > 1
-      ? `<div style="color:${T.muted}">#${bzUni.rank} most-discussed of your ${bzUni.of} open tickers</div>` : "";
-    return `<div style="margin-top:4px;color:${T.muted}">Reddit #${d.rank} of ${d.of}${bzArrow(d)}</div>` +
-      `<div style="font-family:${T.mono}">${d.mentions} mentions</div>` + uni;
+      ? `<div style="color:${T.muted}">${TRI("bz.uni", { rank: bzUni.rank, of: bzUni.of })}</div>` : "";
+    return `<div style="margin-top:4px;color:${T.muted}">Reddit #${d.rank} ${TR("bz.of")} ${d.of}${bzArrow(d)}</div>` +
+      `<div style="font-family:${T.mono}">${TRI("bz.mentions", { n: d.mentions })}</div>` + uni;
   }
 
   // Same glass, border, blur and shadow as the pill, so the two read as one object.
@@ -1464,14 +1464,14 @@
   // where the full paragraph above would swamp the panel.
   function mvErrShort(err) {
     switch (err) {
-      case "rate limited": return "throttled, retrying";
-      case "not entitled": return "not on your plan — index, or past ~2 years";
-      case "bad API key": return "key rejected";
-      case "no API key": return "no key saved";
+      case "rate limited": return TR("mvs.throttled");
+      case "not entitled": return TR("mvs.notEntitled");
+      case "bad API key": return TR("mvs.keyRejected");
+      case "no API key": return TR("mvs.noKey");
       case "network error":
-      case "fetch failed": return "network hiccup, retrying";
+      case "fetch failed": return TR("mvs.network");
       case "not found":
-      case "no data": return "nothing for this symbol";
+      case "no data": return TR("mvs.nothing");
       default: return err;
     }
   }
@@ -1499,8 +1499,8 @@
   // What the popover shows for the current state, or null = nothing (hide).
   function mvContent() {
     if (profileLabel() === "?") // Settings/Alerts: the retired native title tip, restyled
-      return `<div style="font:700 12px ${T.ui};color:${T.amber}">No chart profile</div>` +
-        `<div style="margin-top:2px">This tab is on Settings/Alerts — click the home (⌂) icon in the panel to return to the chart.</div>`;
+      return `<div style="font:700 12px ${T.ui};color:${T.amber}">${TR("mv.noProfile")}</div>` +
+        `<div style="margin-top:2px">${TR("mv.settingsTab")}</div>`;
     if (!mvKeyReady && !buzzOn) return null; // on a chart with no enrichment source on
     const tk = baseTicker();
     if (!tk) return null;
@@ -1513,7 +1513,7 @@
       return `<div style="font:700 12px ${T.ui};color:${T.amber}">Massive · ${tk}</div>` +
         `<div style="margin-top:3px;line-height:1.45">${mvErrMsg(d.error, tk)}</div>` + buzz;
     const bits = [];
-    if (d.mcap != null) bits.push(`${mvCap(d.mcap)} mkt cap`);
+    if (d.mcap != null) bits.push(TRI("mv.mktCap", { v: mvCap(d.mcap) }));
     if (d.sh != null) bits.push(mvSh(d.sh));
     if (!bits.length) { // ETFs/indices have no mkt cap or share count — show what we do have
       if (d.type) bits.push(d.type);
@@ -1527,8 +1527,8 @@
     // out-of-window replay date look identical to "still loading".
     const prev = !pd ? ""
       : pd.error
-        ? `<div style="margin-top:4px;color:${T.amber}">Prev day · ${mvErrShort(pd.error)}</div>`
-        : `<div style="margin-top:4px;color:${T.muted}">Prev day ${mvMD(pd.date)}${pd.v != null ? ` · ${mvVol(pd.v)} vol` : ""}</div>` +
+        ? `<div style="margin-top:4px;color:${T.amber}">${TR("mv.prevDay")} · ${mvErrShort(pd.error)}</div>`
+        : `<div style="margin-top:4px;color:${T.muted}">${TR("mv.prevDay")} ${mvMD(pd.date)}${pd.v != null ? ` · ${mvVol(pd.v)} ${TR("mv.vol")}` : ""}</div>` +
           `<div style="font-family:${T.mono}">O${mvPx(pd.o)} H${mvPx(pd.h)} L${mvPx(pd.l)} C${mvPx(pd.c)}</div>`;
     return `<div style="font:700 12px ${T.ui};color:${T.mint};letter-spacing:.02em">${tk}${d.exch ? ` · ${d.exch}` : ""}</div>` +
       `<div style="margin-top:2px">${d.name || "—"}</div>` +
@@ -1671,7 +1671,7 @@
 
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area !== "local") return;
-    if (changes[CFG_KEY]?.newValue) { const c = changes[CFG_KEY].newValue; const pScope = panelScope; if (c.panelScope) panelScope = c.panelScope; watermark = c.watermark !== false; const pSync = zoomSync; zoomSync = c.zoomSync === true; groupShot = c.groupShot === true; const sNav = settingsNav; settingsNav = c.settingsNav === true; if (settingsNav !== sNav) lastNav = null; showDte = c.dte === true; settingsSync = c.settingsSync === true; pdShow = readPd(c); pdLabelPos = c.pdLabel || "left"; buzzOn = c.buzz === true; watchlist = c.watchlist || []; matrixOn = c.matrix === true; writeMatrixNode(); chartMode = normMode(c.chartMode ?? (c.triggerArmed ? "trigger" : "")); toolMode = c.toolMode || (chartMode === "draw" ? "draw" : "line"); drawTool = c.drawTool || "free"; activeScope = c.drawScope || "page"; lineColor = c.lineColor || c.triggerColor || "#FFC24A"; drawColor = c.drawColor || "#4AA3FF"; renderChip(); writeLinesNode(); if (!zoomSync) writeHold(null); else if (!pSync || panelScope !== pScope) adoptLive(); zHudOn(); }
+    if (changes[CFG_KEY]?.newValue) { const c = changes[CFG_KEY].newValue; const pScope = panelScope; if (c.panelScope) panelScope = c.panelScope; watermark = c.watermark !== false; const pSync = zoomSync; zoomSync = c.zoomSync === true; groupShot = c.groupShot === true; const sNav = settingsNav; settingsNav = c.settingsNav === true; if (settingsNav !== sNav) lastNav = null; showDte = c.dte === true; settingsSync = c.settingsSync === true; pdShow = readPd(c); pdLabelPos = c.pdLabel || "left"; buzzOn = c.buzz === true; watchlist = c.watchlist || []; matrixOn = c.matrix === true; writeMatrixNode(); LANG = GXI ? GXI.normLang(c.lang) : "en"; chartMode = normMode(c.chartMode ?? (c.triggerArmed ? "trigger" : "")); toolMode = c.toolMode || (chartMode === "draw" ? "draw" : "line"); drawTool = c.drawTool || "free"; activeScope = c.drawScope || "page"; lineColor = c.lineColor || c.triggerColor || "#FFC24A"; drawColor = c.drawColor || "#4AA3FF"; renderChip(); writeLinesNode(); if (!zoomSync) writeHold(null); else if (!pSync || panelScope !== pScope) adoptLive(); zHudOn(); }
     if (changes[MODE_KEY]?.newValue) { mode = changes[MODE_KEY].newValue === "live" ? "profiles" : changes[MODE_KEY].newValue; renderChip(); }
     if (changes[SESSION_KEY]) { replayLocked = !!changes[SESSION_KEY].newValue && changes[SESSION_KEY].newValue.phase !== "idle"; renderChip(); }
     if (!onSyncPage()) return; // off /classic|/state (SPA nav): don't touch the page

@@ -34,6 +34,13 @@
   const CFG_ID = "__gxlines";
   const HIT = 6; // px: a right-click within this of a line's price → the menu's "Remove line"
   const readCfg = () => { const n = document.getElementById(CFG_ID); if (!n || !n.textContent) return null; try { return JSON.parse(n.textContent); } catch (e) { return null; } };
+  // i18n: content.js rides the UI language over on the #__gxlines payload (cfg.lang). GXI18N is
+  // bundled into this MAIN-world script too, so t()/ti() resolve here. English is the fallback.
+  const GXI = self.GXI18N;
+  const tr = (k, lang) => (GXI ? GXI.t(k, lang) : k);
+  const tri = (k, vals, lang) => (GXI ? GXI.ti(k, vals, lang) : k);
+  const scopeWord = (sc, lang) => tr("lines.scope." + sc, lang); // page|tab|global → localized noun (lowercase)
+  const capFirst = (s) => (s ? s.charAt(0).toUpperCase() + s.slice(1) : s);
   const AMBER = "#FFB454", AZURE = "#4AA3FF"; // line-mode reticle / draw reticle+strokes
   const SVGNS = "http://www.w3.org/2000/svg";
 
@@ -123,7 +130,7 @@
     // zoom-lock badge: shown while a mode is armed, tinted to the mode
     lockBadge.style.display = armed ? "flex" : "none";
     lockBadge.style.color = drawing ? dCol : tCol;
-    if (lockTxt) lockTxt.textContent = drawing ? `draw · ${(cfg && cfg.scope) || "page"}` : "zoom locked";
+    if (lockTxt) lockTxt.textContent = drawing ? tri("lines.drawScope", { scope: scopeWord((cfg && cfg.scope) || "page", cfg && cfg.lang) }, cfg && cfg.lang) : tr("lines.zoomLocked", cfg && cfg.lang);
     lockBadge.style.left = (area.left + 8) + "px";
     lockBadge.style.top = Math.max(2, area.top - 20) + "px"; // sit on the top price axis, not inside the plot
     if (!armed) hideGuide(); // overlay stays up for saved lines, but not armed → clear any leftover reticle
@@ -276,36 +283,37 @@
     document.body.appendChild(backdrop);
     menuEl = document.createElement("div");
     menuEl.style.cssText = "position:fixed;z-index:2147482000;min-width:184px;padding:5px 0;background:#12161f;border:1px solid #2a3342;border-radius:8px;box-shadow:0 8px 28px rgba(0,0,0,.5);font:600 12px 'JetBrains Mono',ui-monospace,monospace;user-select:none;";
+    const lang = ctx.lang;
     const mode = ctx.mode === "draw" ? "draw" : "line"; // "" never opens a menu; default to line
     // header: Line | Draw — switches sub-mode in place (dispatch + rebuild body, menu stays open)
-    menuEl.appendChild(segRow("", [["line", "Line"], ["draw", "Draw"]], mode, (m) => {
+    menuEl.appendChild(segRow("", [["line", tr("lines.line", lang)], ["draw", tr("lines.draw", lang)]], mode, (m) => {
       window.dispatchEvent(new CustomEvent("gexsync-chart-mode", { detail: { mode: m } }));
       buildMenu(x, y, { ...ctx, mode: m });
     }));
     menuEl.appendChild(sep());
     // shared: read the price under the cursor (works in both modes)
-    menuEl.appendChild(menuItem("Copy price", ctx.price.toFixed(2), () => navigator.clipboard.writeText(ctx.price.toFixed(2))));
+    menuEl.appendChild(menuItem(tr("lines.copyPrice", lang), ctx.price.toFixed(2), () => navigator.clipboard.writeText(ctx.price.toFixed(2))));
     menuEl.appendChild(sep());
     if (mode === "draw") {
-      menuEl.appendChild(segRow("Tool", [["free", "Freehand"], ["arrow", "Arrow"]], ctx.tool || "free", (t) => { window.dispatchEvent(new CustomEvent("gexsync-draw-tool", { detail: { tool: t } })); buildMenu(x, y, { ...ctx, tool: t }); }));
-      menuEl.appendChild(segRow("Scope", [["page", "Page"], ["tab", "Tab"], ["global", "Global"]], ctx.scope || "page", (s) => { window.dispatchEvent(new CustomEvent("gexsync-draw-scope", { detail: { scope: s } })); buildMenu(x, y, { ...ctx, scope: s }); }));
+      menuEl.appendChild(segRow(tr("lines.tool", lang), [["free", tr("lines.freehand", lang)], ["arrow", tr("lines.arrow", lang)]], ctx.tool || "free", (t) => { window.dispatchEvent(new CustomEvent("gexsync-draw-tool", { detail: { tool: t } })); buildMenu(x, y, { ...ctx, tool: t }); }));
+      menuEl.appendChild(segRow(tr("lines.scopeLabel", lang), [["page", capFirst(scopeWord("page", lang))], ["tab", capFirst(scopeWord("tab", lang))], ["global", capFirst(scopeWord("global", lang))]], ctx.scope || "page", (s) => { window.dispatchEvent(new CustomEvent("gexsync-draw-scope", { detail: { scope: s } })); buildMenu(x, y, { ...ctx, scope: s }); }));
       menuEl.appendChild(sep());
-      menuEl.appendChild(menuItem("Undo last", null, () => window.dispatchEvent(new CustomEvent("gexsync-draw-undo"))));
+      menuEl.appendChild(menuItem(tr("lines.undoLast", lang), null, () => window.dispatchEvent(new CustomEvent("gexsync-draw-undo"))));
       // all three scope-clears always present; a scope with no drawings is dimmed. Each targets its
       // own scope (no need to switch scope first) — content.js reads detail.scope.
       const counts = ctx.drawCounts || {};
       for (const sc of ["page", "tab", "global"]) {
         const n = counts[sc] || 0;
-        menuEl.appendChild(menuItem(`Clear ${sc} drawings`, n ? String(n) : null, () => window.dispatchEvent(new CustomEvent("gexsync-draws-clear", { detail: { scope: sc } })), "#FF5C5C", n === 0));
+        menuEl.appendChild(menuItem(tri("lines.clearDrawings", { scope: scopeWord(sc, lang) }, lang), n ? String(n) : null, () => window.dispatchEvent(new CustomEvent("gexsync-draws-clear", { detail: { scope: sc } })), "#FF5C5C", n === 0));
       }
     } else {
-      if (ctx.hitId != null) menuEl.appendChild(menuItem("Remove line", null, () => window.dispatchEvent(new CustomEvent("gexsync-line-remove", { detail: { id: ctx.hitId } }))));
-      else menuEl.appendChild(menuItem("Add line here", ctx.price.toFixed(2), () => window.dispatchEvent(new CustomEvent("gexsync-line-place", { detail: { price: ctx.price } }))));
-      menuEl.appendChild(menuItem(ctx.inWatch ? "Remove from watchlist" : "Add to watchlist", ctx.ticker || "", () => window.dispatchEvent(new CustomEvent("gexsync-watchlist-toggle"))));
-      if (ctx.hasLines) menuEl.appendChild(menuItem("Clear lines", ctx.ticker || "", () => window.dispatchEvent(new CustomEvent("gexsync-lines-clear")), "#FF5C5C"));
+      if (ctx.hitId != null) menuEl.appendChild(menuItem(tr("lines.removeLine", lang), null, () => window.dispatchEvent(new CustomEvent("gexsync-line-remove", { detail: { id: ctx.hitId } }))));
+      else menuEl.appendChild(menuItem(tr("lines.addLineHere", lang), ctx.price.toFixed(2), () => window.dispatchEvent(new CustomEvent("gexsync-line-place", { detail: { price: ctx.price } }))));
+      menuEl.appendChild(menuItem(ctx.inWatch ? tr("lines.removeWatch", lang) : tr("lines.addWatch", lang), ctx.ticker || "", () => window.dispatchEvent(new CustomEvent("gexsync-watchlist-toggle"))));
+      if (ctx.hasLines) menuEl.appendChild(menuItem(tr("lines.clearLines", lang), ctx.ticker || "", () => window.dispatchEvent(new CustomEvent("gexsync-lines-clear")), "#FF5C5C"));
     }
     menuEl.appendChild(sep());
-    menuEl.appendChild(menuItem("Off", null, () => window.dispatchEvent(new CustomEvent("gexsync-chart-mode", { detail: { mode: "" } }))));
+    menuEl.appendChild(menuItem(tr("lines.off", lang), null, () => window.dispatchEvent(new CustomEvent("gexsync-chart-mode", { detail: { mode: "" } }))));
     document.body.appendChild(menuEl);
     const r = menuEl.getBoundingClientRect(); // clamp inside the viewport
     menuEl.style.left = Math.min(x, innerWidth - r.width - 6) + "px";
@@ -322,6 +330,6 @@
     const rect = c.canvas.getBoundingClientRect(), py = e.clientY - rect.top, area = c.chartArea;
     if (py < area.top || py > area.bottom) return;
     const cfg = readCfg() || {}, price = +c.scales.y.getValueForPixel(py);
-    buildMenu(e.clientX, e.clientY, { price, hitId: hitLine(py), ticker: cfg.ticker, hasLines: Array.isArray(cfg.lines) && cfg.lines.length > 0, inWatch: !!cfg.inWatch, mode: cfg.mode, tool: cfg.tool, scope: cfg.scope, drawCounts: cfg.drawCounts });
+    buildMenu(e.clientX, e.clientY, { price, hitId: hitLine(py), ticker: cfg.ticker, hasLines: Array.isArray(cfg.lines) && cfg.lines.length > 0, inWatch: !!cfg.inWatch, mode: cfg.mode, tool: cfg.tool, scope: cfg.scope, drawCounts: cfg.drawCounts, lang: cfg.lang });
   }, true);
 })();

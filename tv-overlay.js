@@ -17,6 +17,14 @@
   const EV = { fetch: "gexsync-tv-fetch", symbol: "gexsync-tv-symbol", hello: "gexsync-tv-hello", cyclePkg: "gexsync-tv-cycle-pkg", toggleLines: "gexsync-tv-toggle-lines", toggleHist: "gexsync-tv-toggle-hist", cycleHsrc: "gexsync-tv-cycle-hsrc" };
   const emit = (name, detail) => window.dispatchEvent(new CustomEvent(name, detail ? { detail } : undefined));
 
+  // i18n: the popup UI language rides over on the #__gxtv payload (data.lang); readNode keeps LANG
+  // fresh (the main loop parses the node every ~100ms, before any pill/toast is drawn). GXI18N is
+  // bundled into this MAIN-world script too. Level names (Classic/State/Zero Gamma/…) stay English.
+  const GXI = self.GXI18N;
+  let LANG = "en";
+  const tr = (k) => (GXI ? GXI.t(k, LANG) : k);
+  const tri = (k, v) => (GXI ? GXI.ti(k, v, LANG) : k);
+
   const NODE_ID = "__gxtv", HNODE_ID = "__gxtvh";
   // The 5 lines: which cfg toggle/color, which source (classic/state) + field in data.levels,
   // and the label. The package (latest/next/90d) is chosen globally and applies to all of them.
@@ -46,7 +54,7 @@
   const LINES_ICON = '<svg width="14" height="14" viewBox="0 0 14 14" style="display:block"><line x1="1" y1="3.5" x2="13" y2="3.5" stroke="currentColor" stroke-width="1.5" stroke-dasharray="3 2"/><line x1="1" y1="7" x2="13" y2="7" stroke="currentColor" stroke-width="1.5" stroke-dasharray="3 2"/><line x1="1" y1="10.5" x2="13" y2="10.5" stroke="currentColor" stroke-width="1.5" stroke-dasharray="3 2"/></svg>';
   const HIST_ICON = '<svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor" style="display:block"><rect x="5" y="2" width="8" height="2.2" rx="1"/><rect x="1" y="5.9" width="12" height="2.2" rx="1"/><rect x="7" y="9.8" width="6" height="2.2" rx="1"/></svg>';
 
-  const readNode = () => { const n = document.getElementById(NODE_ID); if (!n || !n.textContent) return null; try { return JSON.parse(n.textContent); } catch { return null; } };
+  const readNode = () => { const n = document.getElementById(NODE_ID); if (!n || !n.textContent) return null; try { const p = JSON.parse(n.textContent); if (p && p.lang && GXI) LANG = GXI.normLang(p.lang); return p; } catch { return null; } };
   // Histogram strikes live in a separate node so they don't bloat the 100ms sig. Parse only when
   // the version stamp (hgen from the main node) changes; otherwise reuse the cached parse.
   let histGen = -1, histData = null;
@@ -134,20 +142,20 @@
     } catch { return { ok: false, j: null, status: 0, net: true }; }
   }
   // errmsg helper: uniform "<verb>: network" / "<verb>" / "<verb> (status)" from a tvAlert* result.
-  const alertErr = (res, verb) => (res.net ? `${verb}: network` : (res.j && res.j.errmsg) || `${verb} (${res.status})`);
+  const alertErr = (res, verb) => (res.net ? tri("tv.errNetwork", { verb }) : (res.j && res.j.errmsg) || tri("tv.errStatus", { verb, status: res.status }));
 
   // Click a level's label → create a TradingView price-crossing alert at that price.
   async function createAlert(price, label, key, pkg) {
     if (price == null || !isFinite(price)) return;
-    const ctx = chartCtx(); if (!ctx) return toast("no chart", true);
+    const ctx = chartCtx(); if (!ctx) return toast(tr("tv.noChart"), true);
     const now = Date.now();
     if (now - (alertGuard.get(label) || 0) < 2000) return; // same level clicked twice → one alert
     alertGuard.set(label, now);
     const res = await tvAlertPost("create_alert", { payload: alertInner(ctx.sym, ctx.res, ctx.bare, price, label, key, pkg) });
     if (res.ok) {
       if (res.j.r && res.j.r.alert_id != null) { cacheAlert(ctx.bare, key, res.j.r.alert_id, pkg); lastSig = ""; } // cache locally → trash appears, no re-list
-      toast(`✓ alert set: ${label}`);
-    } else toast(alertErr(res, "alert failed"), true);
+      toast(tri("tv.alertSet", { label }));
+    } else toast(alertErr(res, tr("tv.vAlertFailed")), true);
   }
 
   // Load our alerts from TV once and cache them. list_alerts returns ALL alerts (no server-side
@@ -155,7 +163,7 @@
   // our own create/delete — never poll. manual=true → user hit the pill resync button.
   async function loadAlertIndex(manual) {
     const res = await tvAlertGet("list_alerts");
-    if (!res.ok || !res.j || !Array.isArray(res.j.r)) { if (manual) toast(res.net ? "resync failed: network" : "resync failed", true); return; }
+    if (!res.ok || !res.j || !Array.isArray(res.j.r)) { if (manual) toast(res.net ? tr("tv.resyncFailedNet") : tr("tv.resyncFailed"), true); return; }
     myAlerts.clear();
     let n = 0;
     for (const a of res.j.r) {
@@ -167,7 +175,7 @@
       n++;
     }
     lastSig = ""; // force redraw so trash glyphs refresh
-    if (manual) toast(`alerts synced (${n})`);
+    if (manual) toast(tri("tv.alertsSynced", { n }));
   }
 
   // Delete our alerts on this ticker:level that were set under the CURRENT package (immediate, no
@@ -185,8 +193,8 @@
     if (res.ok) {
       const rest = arr.filter((a) => a.pkg !== pkg);
       if (rest.length) myAlerts.set(k, rest); else myAlerts.delete(k);
-      lastSig = ""; toast(`✓ alert deleted: ${label}`);
-    } else toast(alertErr(res, "delete failed"), true);
+      lastSig = ""; toast(tri("tv.alertDeleted", { label }));
+    } else toast(alertErr(res, tr("tv.vDeleteFailed")), true);
   }
 
   // ---- Bulk: one pill bell that adds/removes ALL of a ticker's GexSync alerts at once ----------
@@ -215,21 +223,21 @@
     const res = await tvAlertPost("delete_alerts", { payload: { alert_ids: ids } });
     if (res.ok) {
       const pre = String(ticker).toUpperCase() + ":"; for (const k of [...myAlerts.keys()]) if (k.startsWith(pre)) myAlerts.delete(k);
-      lastSig = ""; toast(`✓ ${ids.length} alert${ids.length === 1 ? "" : "s"} deleted: ${ticker}`);
-    } else toast(alertErr(res, "bulk delete failed"), true);
+      lastSig = ""; toast(tri("tv.alertsDeleted", { n: ids.length, s: ids.length === 1 ? "" : "s", ticker }));
+    } else toast(alertErr(res, tr("tv.vBulkDelFailed")), true);
   }
   async function bulkAdd(data) {
-    const ctx = chartCtx(); if (!ctx) return toast("no chart", true);
-    const levels = shownLevels(data); if (!levels.length) return toast("no levels to add", true);
+    const ctx = chartCtx(); if (!ctx) return toast(tr("tv.noChart"), true);
+    const levels = shownLevels(data); if (!levels.length) return toast(tr("tv.noLevels"), true);
     const pkg = data.pkgCat;
     const res = await tvAlertPost("create_alerts", { payload: levels.map((L) => alertInner(ctx.sym, ctx.res, ctx.bare, L.price, L.label, L.key, pkg)) });
     if (res.ok) {
       const r = Array.isArray(res.j.r) ? res.j.r : [];
       let ok = r.length === levels.length; // create_alerts returns in input order
       if (ok) for (let i = 0; i < levels.length; i++) { if (r[i] && r[i].alert_id != null) cacheAlert(ctx.bare, levels[i].key, r[i].alert_id, pkg); else ok = false; }
-      if (ok) { lastSig = ""; toast(`✓ ${levels.length} alerts added: ${ctx.bare} (${PKG_FR[pkg] || pkg})`); }
-      else { toast(`✓ ${levels.length} alerts added: ${ctx.bare}`); loadAlertIndex(); } // response shape off → resync
-    } else toast(alertErr(res, "bulk add failed"), true);
+      if (ok) { lastSig = ""; toast(tri("tv.alertsAddedPkg", { n: levels.length, ticker: ctx.bare, pkg: PKG_FR[pkg] || pkg })); }
+      else { toast(tri("tv.alertsAdded", { n: levels.length, ticker: ctx.bare })); loadAlertIndex(); } // response shape off → resync
+    } else toast(alertErr(res, tr("tv.vBulkAddFailed")), true);
   }
 
   // Transient status message, pinned just above the pill (bottom-right of the pane).
@@ -275,18 +283,18 @@
         ic.onmouseenter = () => { ic.style.color = C.danger; }; ic.onmouseleave = () => { ic.style.color = C.dim; };
         ic.onclick = (e) => { e.stopPropagation(); deleteAlert(p.ticker, p.key, p.name, p.pkg); };
         d.onclick = null; d.style.cursor = "default";
-        d.title = "Alert set (" + (PKG_FR[p.pkg] || p.pkg) + ") — click the trash to delete: " + p.name;
+        d.title = tri("tv.titleAlertSet", { pkg: PKG_FR[p.pkg] || p.pkg, name: p.name });
       } else if (p.otherPkgs.length) { // alert exists but tied to another package → amber bell cue, not deletable here
         const fr = p.otherPkgs.map((x) => PKG_FR[x] || x).join("/");
         ic.style.display = "flex"; ic.style.cursor = "help"; ic.style.color = C.warn; ic.innerHTML = BELL_SVG;
         ic.onmouseenter = null; ic.onmouseleave = null;
-        ic.onclick = (e) => { e.stopPropagation(); toast(`alert on ${fr} — switch to ${fr}, or click the bell to bulk-delete`, true); };
+        ic.onclick = (e) => { e.stopPropagation(); toast(tri("tv.alertOnOther", { fr }), true); };
         d.onclick = null; d.style.cursor = "default";
-        d.title = `Alert set on ${fr} (not ${PKG_FR[p.pkg] || p.pkg}) — switch to ${fr} to delete it, or click the bell to bulk-delete`;
+        d.title = tri("tv.titleAlertOther", { fr, pkg: PKG_FR[p.pkg] || p.pkg });
       } else { // no alert here → whole label creates one
         ic.style.display = "none";
         d.style.cursor = "pointer";
-        d.title = "Create TradingView price alert — " + p.name;
+        d.title = tri("tv.titleCreate", { name: p.name });
         d.onclick = (e) => { e.stopPropagation(); createAlert(p.price, p.name, p.key, p.pkg); };
       }
     }
@@ -300,8 +308,8 @@
     if (!data || !data.ticker || data.valid === false) return "";
     const n = tickerIds(data.ticker).length;
     const title = n
-      ? `Delete all ${n} GexSync alert${n === 1 ? "" : "s"} for ${data.ticker}`
-      : `Add alerts for all shown ${data.ticker} levels (${PKG_FR[data.pkgCat] || data.pkgCat})`;
+      ? tri("tv.bulkDel", { n, s: n === 1 ? "" : "s", ticker: data.ticker })
+      : tri("tv.bulkAdd", { ticker: data.ticker, pkg: PKG_FR[data.pkgCat] || data.pkgCat });
     return `<span id="gxtv-bulk" title="${title}" style="display:flex;align-items:center;color:${n ? C.danger : C.accent};${CLICK}">${n ? BELL_DEL : BELL_ADD}</span>`;
   }
 
@@ -317,24 +325,24 @@
     }
     pillEl.style.display = "flex";
     const t = data.ticker || "—";
-    const badge = data.valid === false ? `<span style="color:${C.dim}">no GEX data</span>`
+    const badge = data.valid === false ? `<span style="color:${C.dim}">${tr("tv.noGexData")}</span>`
       : data.err ? `<span style="color:${C.warn}">${data.err}</span>` // rate limited / bad key / …
       : data.levels ? `<span style="color:${C.accent}">GEX ✓</span>`
       : `<span style="color:${C.dim}">…</span>`;
     const showRing = data.valid !== false; // only tick the countdown when we actually poll this ticker
     pillEl.innerHTML = LOGO
       + `<span><span style="color:${C.ink}">Gex</span><span style="color:${C.accent}">Sync</span></span>`
-      + `<span style="color:${C.accent};font-size:9px" title="connected">●</span>`
+      + `<span style="color:${C.accent};font-size:9px" title="${tr("tv.connected")}">●</span>`
       + DIVIDER
       + `<span style="color:${C.ink}">${t}</span>`
-      + (data.pkg ? `<span id="gxtv-pkg" title="Click to cycle package (latest → next → 90 Days)" style="color:${C.dim};${CLICK}">· ${data.pkg}${data.dte != null ? ` ${data.dte}DTE` : ""}</span>` : "") // active package (latest/next/90d) + DTE — click to cycle
+      + (data.pkg ? `<span id="gxtv-pkg" title="${tr("tv.pkgCycle")}" style="color:${C.dim};${CLICK}">· ${data.pkg}${data.dte != null ? ` ${data.dte}DTE` : ""}</span>` : "") // active package (latest/next/90d) + DTE — click to cycle
       + badge
       + viewToggles(data) // ≡ lines / ▤ histogram / C·S source quick-toggles
       + bulkBell(data) // bulk add/delete-all-alerts bell (GEXbot tickers only)
-      + `<span id="gxtv-resync" title="Resync alerts from TradingView" style="color:${C.dim};${CLICK};font-size:13px;line-height:1">⟳</span>`
+      + `<span id="gxtv-resync" title="${tr("tv.resyncTitle")}" style="color:${C.dim};${CLICK};font-size:13px;line-height:1">⟳</span>`
       + (showRing ? DIVIDER + RING : "");
     const wire = (id, fn) => { const el = pillEl.querySelector(id); if (el) fn(el); };
-    wire("#gxtv-ring", (el) => { el.onclick = forceFetch; updateCountdown(); }); // click the countdown → refresh now
+    wire("#gxtv-ring", (el) => { el.setAttribute("title", tr("tv.ringTitle")); el.onclick = forceFetch; updateCountdown(); }); // click the countdown → refresh now
     wire("#gxtv-pkg", (el) => (el.onclick = () => emit(EV.cyclePkg)));   // click package → cycle
     wire("#gxtv-resync", (el) => (el.onclick = () => loadAlertIndex(true))); // re-list our alerts
     wire("#gxtv-bulk", (el) => (el.onclick = bulkToggle));               // add all / delete all
@@ -350,10 +358,10 @@
     const histOn = !!(data.hist && data.hist.on);
     const state = data.hist && data.hist.src === "state";
     let html = DIVIDER
-      + `<span id="gxtv-lines" title="Show/hide GEX lines (keeps your settings)" style="display:flex;align-items:center;${CLICK};color:${linesOn ? C.accent : C.off}">${LINES_ICON}</span>`
-      + `<span id="gxtv-hist" title="Show/hide strike histogram" style="display:flex;align-items:center;${CLICK};color:${histOn ? C.accent : C.off}">${HIST_ICON}</span>`;
+      + `<span id="gxtv-lines" title="${tr("tv.toggleLines")}" style="display:flex;align-items:center;${CLICK};color:${linesOn ? C.accent : C.off}">${LINES_ICON}</span>`
+      + `<span id="gxtv-hist" title="${tr("tv.toggleHist")}" style="display:flex;align-items:center;${CLICK};color:${histOn ? C.accent : C.off}">${HIST_ICON}</span>`;
     const stateOk = !!(data.cfg && data.cfg.caps && data.cfg.caps.state); // Classic-tier key → no source switch
-    if (histOn && stateOk) html += `<span id="gxtv-hsrc" title="Histogram source: ${state ? "State" : "Classic"} — click to switch" style="${CLICK};font-weight:700;font-size:11px;color:${state ? C.state : C.accent}">${state ? "S" : "C"}</span>`;
+    if (histOn && stateOk) html += `<span id="gxtv-hsrc" title="${tri("tv.histSrc", { src: state ? "State" : "Classic" })}" style="${CLICK};font-weight:700;font-size:11px;color:${state ? C.state : C.accent}">${state ? "S" : "C"}</span>`;
     return html;
   }
 
