@@ -45,6 +45,12 @@
   .seg-btn:hover { color: var(--ink); }
   .seg-btn[aria-selected="true"] { background: var(--mint); color: #08110c; }
   .seg[data-disabled="1"] .seg-btn { cursor: default; opacity: .5; }
+  /* timeframe-bucket multi-select chips (TV visibility → Custom) */
+  .tf-chips { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 8px; }
+  .tf-chips[hidden] { display: none; }
+  .tf-chip { display: inline-flex; align-items: center; padding: 4px 9px; border-radius: 8px; background: var(--raised); border: 1px solid var(--line); color: var(--muted); font: 600 11px var(--ui); cursor: pointer; user-select: none; transition: background .1s, color .1s, border-color .1s; }
+  .tf-chip input { display: none; }
+  .tf-chip:has(input:checked) { background: var(--mint); color: #08110c; border-color: var(--mint); }
 
   /* locked note */
   #lockNote {
@@ -361,6 +367,24 @@
   <div class="hint" style="margin-top:5px" data-i18n-html="tv.hist.hint">Per-strike net GEX as a right-anchored profile (green +, red −) with the recent prior-reading dots, for the selected source at the current package. One source at a time.</div>
   <div class="label" style="margin-top:10px"><span data-i18n="tv.histOpacity">Histogram opacity</span> <span id="tvHistOpVal" style="opacity:.6;font-weight:400">100%</span></div>
   <input type="range" id="tvHistOpacity" min="0" max="100" value="100" style="width:100%">
+  <div class="label" style="margin-top:14px" data-i18n="tv.visibility">Chart visibility</div>
+  <div class="seg" id="tvVisSeg" role="tablist">
+    <button class="seg-btn" data-vis="all" role="tab" data-i18n="tv.vis.all">All</button>
+    <button class="seg-btn" data-vis="intraday" role="tab" data-i18n="tv.vis.intraday">Intraday</button>
+    <button class="seg-btn" data-vis="daily" role="tab" data-i18n="tv.vis.daily">Daily+</button>
+    <button class="seg-btn" data-vis="custom" role="tab" data-i18n="tv.vis.custom">Custom</button>
+  </div>
+  <div class="tf-chips" id="tvVisCustom" hidden>
+    <label class="tf-chip"><input type="checkbox" data-bucket="ticks">Ticks</label>
+    <label class="tf-chip"><input type="checkbox" data-bucket="seconds">Seconds</label>
+    <label class="tf-chip"><input type="checkbox" data-bucket="minutes">Minutes</label>
+    <label class="tf-chip"><input type="checkbox" data-bucket="hours">Hours</label>
+    <label class="tf-chip"><input type="checkbox" data-bucket="days">Days</label>
+    <label class="tf-chip"><input type="checkbox" data-bucket="weeks">Weeks</label>
+    <label class="tf-chip"><input type="checkbox" data-bucket="months">Months</label>
+    <label class="tf-chip"><input type="checkbox" data-bucket="ranges">Ranges</label>
+  </div>
+  <div class="hint" style="margin-top:5px" data-i18n-html="tv.vis.hint">Which chart timeframes show the GEX lines &amp; histogram. <b>Intraday</b> = sub-daily, <b>Daily+</b> = day/week/month. <b>Custom</b> lets you pick exactly.</div>
   <div class="label" style="margin-top:14px" data-i18n="tv.updates">Updates</div>
   <div class="seg" id="tvSrcSeg" role="tablist">
     <button class="seg-btn" data-src="poll" role="tab" data-i18n="tv.src.poll">Poll</button>

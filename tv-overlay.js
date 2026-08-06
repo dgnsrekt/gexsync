@@ -39,8 +39,10 @@
   const LOGO = '<svg width="18" height="18" viewBox="0 0 32 32" style="display:block"><rect x="1.5" y="1.5" width="29" height="29" rx="9" fill="#12101B" stroke="rgba(22,224,163,.55)"/><rect x="7" y="10" width="7" height="12" rx="2.2" fill="#16E0A3" opacity=".92"/><rect x="18" y="10" width="7" height="12" rx="2.2" fill="#4AA3FF" opacity=".92"/><line x1="16" y1="7" x2="16" y2="25" stroke="#16E0A3" stroke-width="2" stroke-linecap="round"/><circle cx="16" cy="16" r="2.4" fill="#16E0A3"/></svg>';
   let refreshMs = 30000; // fetch cadence + countdown, wall-clock aligned; tunable via cfg (15/30/60s)
   const R = 8, CIRC = 2 * Math.PI * R; // countdown ring geometry
-  // clickable countdown ring: track + depleting arc + seconds; click forces a refresh
-  const RING = `<svg id="gxtv-ring" width="20" height="20" viewBox="0 0 20 20" style="${CLICK};display:block" title="next GEX refresh — click to refresh now"><circle cx="10" cy="10" r="${R}" fill="none" stroke="rgba(255,255,255,.16)" stroke-width="2"/><circle id="gxtv-arc" cx="10" cy="10" r="${R}" fill="none" stroke="${C.accent}" stroke-width="2" stroke-linecap="round" stroke-dasharray="${CIRC.toFixed(2)}" stroke-dashoffset="0" transform="rotate(-90 10 10)"/><text id="gxtv-sec" x="10" y="10.5" text-anchor="middle" dominant-baseline="middle" fill="${C.dim}" style="font:700 8px -apple-system,system-ui,sans-serif">30</text></svg>`;
+  // clickable countdown ring: track + depleting arc + seconds; click forces a refresh. The title
+  // lives on an HTML <span> WRAPPER (not the <svg>) — Chrome doesn't tooltip a `title` attribute on
+  // inline SVG, so #gxtv-ring is the span (carries title/click); the arc/sec ids stay on the svg.
+  const RING = `<span id="gxtv-ring" style="${CLICK};display:flex;align-items:center" title="next GEX refresh — click to refresh now"><svg width="20" height="20" viewBox="0 0 20 20" style="display:block"><circle cx="10" cy="10" r="${R}" fill="none" stroke="rgba(255,255,255,.16)" stroke-width="2"/><circle id="gxtv-arc" cx="10" cy="10" r="${R}" fill="none" stroke="${C.accent}" stroke-width="2" stroke-linecap="round" stroke-dasharray="${CIRC.toFixed(2)}" stroke-dashoffset="0" transform="rotate(-90 10 10)"/><text id="gxtv-sec" x="10" y="10.5" text-anchor="middle" dominant-baseline="middle" fill="${C.dim}" style="font:700 8px -apple-system,system-ui,sans-serif">30</text></svg></span>`;
   // feather-style trash glyph shown on a label that already has one of our alerts (click → delete)
   const TRASH_SVG = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>';
   // amber bell shown when an alert exists on this level but under a DIFFERENT package than what's
@@ -55,6 +57,22 @@
   const HIST_ICON = '<svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor" style="display:block"><rect x="5" y="2" width="8" height="2.2" rx="1"/><rect x="1" y="5.9" width="12" height="2.2" rx="1"/><rect x="7" y="9.8" width="6" height="2.2" rx="1"/></svg>';
 
   const readNode = () => { const n = document.getElementById(NODE_ID); if (!n || !n.textContent) return null; try { const p = JSON.parse(n.textContent); if (p && p.lang && GXI) LANG = GXI.normLang(p.lang); return p; } catch { return null; } };
+  // Map a TradingView resolution string to a timeframe "bucket" (mirrors TV's Visibility units).
+  // Suffix-based: …T ticks, …S seconds, …R ranges, …D days, …W weeks, …M months ("1M" = 1 month);
+  // a bare number is minutes, or hours when ≥ 60. cfg.vis (from tv.js) is the allowed-bucket set,
+  // or null = every timeframe. When the current bucket isn't allowed, the overlay is hidden here.
+  function tfBucket(res) {
+    const s = String(res || "").toUpperCase();
+    if (s.endsWith("T")) return "ticks";
+    if (s.endsWith("S")) return "seconds";
+    if (s.endsWith("R")) return "ranges";
+    if (s.endsWith("D")) return "days";
+    if (s.endsWith("W")) return "weeks";
+    if (s.endsWith("M")) return "months";
+    const n = parseInt(s, 10);
+    return isFinite(n) && n >= 60 ? "hours" : "minutes";
+  }
+  let tfHidden = false; // true when the current chart timeframe falls outside cfg.vis (drives gating + pill cue)
   // Histogram strikes live in a separate node so they don't bloat the 100ms sig. Parse only when
   // the version stamp (hgen from the main node) changes; otherwise reuse the cached parse.
   let histGen = -1, histData = null;
@@ -90,11 +108,19 @@
   function updateCountdown() {
     const now = Date.now();
     const mark = Math.floor(now / refreshMs) * refreshMs; // start of the current 30s window
-    if (lastMark && mark !== lastMark) emit(EV.fetch); // crossed :00 / :30
+    if (lastMark && mark !== lastMark && !tfHidden) emit(EV.fetch); // crossed :00 / :30 — but paused while hidden by timeframe
     lastMark = mark;
     if (!pillEl || pillEl.style.display === "none") return;
-    const arc = pillEl.querySelector("#gxtv-arc"), sec = pillEl.querySelector("#gxtv-sec");
+    const ring = pillEl.querySelector("#gxtv-ring"), arc = pillEl.querySelector("#gxtv-arc"), sec = pillEl.querySelector("#gxtv-sec");
     if (!arc || !sec) return; // ring hidden (no-data ticker) → nothing to paint
+    if (tfHidden) { // polling paused: freeze the ring as an amber "paused" badge (‖) explaining itself on hover
+      arc.setAttribute("stroke", C.warn); arc.setAttribute("stroke-dashoffset", "0"); // full amber ring, no depletion
+      sec.setAttribute("fill", C.warn); sec.textContent = "‖";
+      if (ring) ring.setAttribute("title", tr("tv.pausedTf"));
+      return;
+    }
+    arc.setAttribute("stroke", C.accent); sec.setAttribute("fill", C.dim); // restore live look (may have been paused)
+    if (ring) ring.setAttribute("title", tr("tv.ringTitle"));
     const remaining = mark + refreshMs - now; // ms to the next mark
     arc.setAttribute("stroke-dashoffset", (CIRC * (1 - remaining / refreshMs)).toFixed(2));
     sec.textContent = String(Math.ceil(remaining / 1000));
@@ -357,9 +383,14 @@
     const linesOn = !data.cfg || data.cfg.linesOn !== false;
     const histOn = !!(data.hist && data.hist.on);
     const state = data.hist && data.hist.src === "state";
+    // amber = config-on but hidden on this timeframe (cfg.vis) — so nothing drawing here is understood
+    const linesCol = linesOn ? (tfHidden ? C.warn : C.accent) : C.off;
+    const histCol = histOn ? (tfHidden ? C.warn : C.accent) : C.off;
+    const linesTitle = linesOn && tfHidden ? tr("tv.hiddenTf") : tr("tv.toggleLines");
+    const histTitle = histOn && tfHidden ? tr("tv.hiddenTf") : tr("tv.toggleHist");
     let html = DIVIDER
-      + `<span id="gxtv-lines" title="${tr("tv.toggleLines")}" style="display:flex;align-items:center;${CLICK};color:${linesOn ? C.accent : C.off}">${LINES_ICON}</span>`
-      + `<span id="gxtv-hist" title="${tr("tv.toggleHist")}" style="display:flex;align-items:center;${CLICK};color:${histOn ? C.accent : C.off}">${HIST_ICON}</span>`;
+      + `<span id="gxtv-lines" title="${linesTitle}" style="display:flex;align-items:center;${CLICK};color:${linesCol}">${LINES_ICON}</span>`
+      + `<span id="gxtv-hist" title="${histTitle}" style="display:flex;align-items:center;${CLICK};color:${histCol}">${HIST_ICON}</span>`;
     const stateOk = !!(data.cfg && data.cfg.caps && data.cfg.caps.state); // Classic-tier key → no source switch
     if (histOn && stateOk) html += `<span id="gxtv-hsrc" title="${tri("tv.histSrc", { src: state ? "State" : "Classic" })}" style="${CLICK};font-weight:700;font-size:11px;color:${state ? C.state : C.accent}">${state ? "S" : "C"}</span>`;
     return html;
@@ -431,6 +462,13 @@
     ctx.clearRect(0, 0, r.width, r.height);
     const data = readNode();
     if (data && data.refreshMs) refreshMs = data.refreshMs; // cfg-driven cadence (15/30/60s)
+    // Timeframe visibility: hide lines + histogram when the chart's current bucket isn't in cfg.vis
+    // (null/absent = show on all). Computed before updatePill so the pill cue reflects it this frame.
+    // While hidden, the poll is paused (see updateCountdown); on resume, fetch once so it isn't stale.
+    const vis = data && data.cfg && data.cfg.vis;
+    const wasHidden = tfHidden;
+    tfHidden = !!vis && !vis.includes(tfBucket(chart.resolution()));
+    if (wasHidden && !tfHidden) emit(EV.fetch); // timeframe became visible again → refresh now
     updatePill(data); // pill shows whenever the overlay is enabled, even with no levels to draw
     if (pillEl && pillEl.style.display !== "none") { // pin to the pane's bottom-RIGHT (host is static);
       pillEl.style.left = (r.left - hr.left + r.width - pillEl.offsetWidth - 12) + "px"; // r.width excludes the price axis
@@ -440,9 +478,9 @@
     if (!data || !data.cfg || data.cfg.enabled === false || !data.levels) { hideAlertTargets(); return; }
     let scale; try { scale = chart.getPanes()[0].getMainSourcePriceScale(); } catch { hideAlertTargets(); return; }
     const y = p2y(scale, r.height);
-    drawHistogram(data, chart, r, y); // GEX profile behind the lines (gated on data.hist.on)
+    if (!tfHidden) drawHistogram(data, chart, r, y); // GEX profile behind the lines (gated on data.hist.on + timeframe)
     const placed = [];
-    if (data.cfg.linesOn !== false) { // "Show lines" master (pill/settings) — hide without losing config
+    if (data.cfg.linesOn !== false && !tfHidden) { // "Show lines" master (pill/settings) + timeframe visibility — hide without losing config
     ctx.font = "600 11px -apple-system, system-ui, sans-serif";
     ctx.textBaseline = "middle";
     ctx.globalAlpha = data.cfg.lineOpacity != null ? data.cfg.lineOpacity : 1; // user opacity for lines + labels
@@ -494,7 +532,7 @@
     const ticker = bareTicker(chart);
     if (ticker && ticker !== lastSym) { lastSym = ticker; emit(EV.symbol, { ticker }); } // symbol change → ISOLATED refetches
     let sig = "";
-    try { sig = JSON.stringify(chart.getVisiblePriceRange()) + (paneEl ? paneEl.getBoundingClientRect().width : 0); } catch {}
+    try { sig = JSON.stringify(chart.getVisiblePriceRange()) + (paneEl ? paneEl.getBoundingClientRect().width : 0) + "|" + String(chart.resolution()); } catch {} // resolution in the sig so a bare timeframe switch repaints (visibility gate)
     const n = document.getElementById(NODE_ID); sig += n ? n.textContent : "";
     if (sig !== lastSig) { lastSig = sig; draw(); }
     updateCountdown(); // tick the ring every frame (independent of the sig-gated redraw)
