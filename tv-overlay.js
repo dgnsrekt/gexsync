@@ -72,7 +72,15 @@
     const n = parseInt(s, 10);
     return isFinite(n) && n >= 60 ? "hours" : "minutes";
   }
-  let tfHidden = false; // true when the current chart timeframe falls outside cfg.vis (drives gating + pill cue)
+  let tfHidden = false; // true when the current chart timeframe falls outside cfg.vis (hides overlay + pauses poll)
+  let pollPaused = false, pauseReason = ""; // poll gate: "tf" (timeframe-hidden) | "closed" (market closed) | ""
+  // TradingView's own market status for the current symbol — a reactive watched value. activeChart() is
+  // a stable ref and the wv tracks symbol changes, so grab it ONCE and reuse value() (a fresh call spawns
+  // a new wrapper each time). Fail OPEN ("market") on any error so we never wrongly pause fetching.
+  let mktWv = null;
+  function marketStatus(chart) {
+    try { if (!mktWv) mktWv = chart.marketStatus(); return mktWv.value(); } catch (e) { mktWv = null; return "market"; }
+  }
   // Histogram strikes live in a separate node so they don't bloat the 100ms sig. Parse only when
   // the version stamp (hgen from the main node) changes; otherwise reuse the cached parse.
   let histGen = -1, histData = null;
@@ -108,15 +116,15 @@
   function updateCountdown() {
     const now = Date.now();
     const mark = Math.floor(now / refreshMs) * refreshMs; // start of the current 30s window
-    if (lastMark && mark !== lastMark && !tfHidden) emit(EV.fetch); // crossed :00 / :30 — but paused while hidden by timeframe
+    if (lastMark && mark !== lastMark && !pollPaused) emit(EV.fetch); // crossed :00 / :30 — but paused (timeframe hidden / market closed)
     lastMark = mark;
     if (!pillEl || pillEl.style.display === "none") return;
     const ring = pillEl.querySelector("#gxtv-ring"), arc = pillEl.querySelector("#gxtv-arc"), sec = pillEl.querySelector("#gxtv-sec");
     if (!arc || !sec) return; // ring hidden (no-data ticker) → nothing to paint
-    if (tfHidden) { // polling paused: freeze the ring as an amber "paused" badge (‖) explaining itself on hover
+    if (pollPaused) { // polling paused: freeze the ring as an amber "paused" badge (‖); hover says why
       arc.setAttribute("stroke", C.warn); arc.setAttribute("stroke-dashoffset", "0"); // full amber ring, no depletion
       sec.setAttribute("fill", C.warn); sec.textContent = "‖";
-      if (ring) ring.setAttribute("title", tr("tv.pausedTf"));
+      if (ring) ring.setAttribute("title", tr(pauseReason === "closed" ? "tv.pausedClosed" : "tv.pausedTf"));
       return;
     }
     arc.setAttribute("stroke", C.accent); sec.setAttribute("fill", C.dim); // restore live look (may have been paused)
@@ -462,13 +470,18 @@
     ctx.clearRect(0, 0, r.width, r.height);
     const data = readNode();
     if (data && data.refreshMs) refreshMs = data.refreshMs; // cfg-driven cadence (15/30/60s)
-    // Timeframe visibility: hide lines + histogram when the chart's current bucket isn't in cfg.vis
-    // (null/absent = show on all). Computed before updatePill so the pill cue reflects it this frame.
-    // While hidden, the poll is paused (see updateCountdown); on resume, fetch once so it isn't stale.
+    // Poll gating, computed before updatePill so the ring/cue reflect it this frame. Two reasons:
+    //  • timeframe-hidden (cfg.vis) — HIDES the overlay + pauses the poll
+    //  • market closed (cfg.pauseClosed, TradingView marketStatus ≠ "market") — pauses the poll but
+    //    KEEPS the last levels shown (it's about saving calls, not hiding data)
+    // On resume (timeframe shown again / market opens), fetch once so the data isn't stale.
     const vis = data && data.cfg && data.cfg.vis;
-    const wasHidden = tfHidden;
     tfHidden = !!vis && !vis.includes(tfBucket(chart.resolution()));
-    if (wasHidden && !tfHidden) emit(EV.fetch); // timeframe became visible again → refresh now
+    const mktClosed = !!(data && data.cfg && data.cfg.pauseClosed !== false) && marketStatus(chart) !== "market";
+    const wasPaused = pollPaused;
+    pollPaused = tfHidden || mktClosed;
+    pauseReason = tfHidden ? "tf" : (mktClosed ? "closed" : "");
+    if (wasPaused && !pollPaused) emit(EV.fetch); // resumed → refresh now
     updatePill(data); // pill shows whenever the overlay is enabled, even with no levels to draw
     if (pillEl && pillEl.style.display !== "none") { // pin to the pane's bottom-RIGHT (host is static);
       pillEl.style.left = (r.left - hr.left + r.width - pillEl.offsetWidth - 12) + "px"; // r.width excludes the price axis
@@ -532,7 +545,7 @@
     const ticker = bareTicker(chart);
     if (ticker && ticker !== lastSym) { lastSym = ticker; emit(EV.symbol, { ticker }); } // symbol change → ISOLATED refetches
     let sig = "";
-    try { sig = JSON.stringify(chart.getVisiblePriceRange()) + (paneEl ? paneEl.getBoundingClientRect().width : 0) + "|" + String(chart.resolution()); } catch {} // resolution in the sig so a bare timeframe switch repaints (visibility gate)
+    try { sig = JSON.stringify(chart.getVisiblePriceRange()) + (paneEl ? paneEl.getBoundingClientRect().width : 0) + "|" + String(chart.resolution()) + "|" + marketStatus(chart); } catch {} // resolution + market status in the sig so a timeframe switch OR a market open/close repaints (pause gates)
     const n = document.getElementById(NODE_ID); sig += n ? n.textContent : "";
     if (sig !== lastSig) { lastSig = sig; draw(); }
     updateCountdown(); // tick the ring every frame (independent of the sig-gated redraw)

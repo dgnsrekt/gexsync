@@ -40,6 +40,7 @@
   const VIS_BUCKETS = ["ticks", "seconds", "minutes", "hours", "days", "weeks", "months", "ranges"];
   const VIS_PRESETS = { all: null, intraday: ["ticks", "seconds", "minutes", "hours", "ranges"], daily: ["days", "weeks", "months"] };
   const resolveVis = () => tvVisibility === "custom" ? (Array.isArray(tvVisCustom) ? tvVisCustom : VIS_BUCKETS) : (tvVisibility in VIS_PRESETS ? VIS_PRESETS[tvVisibility] : null);
+  let tvPauseClosed = true; // pause the poll outside regular market hours (TradingView marketStatus); default on. MAIN checks the status.
   let universe = null, curTicker = "", valid = null, lastLevels = null, lastErr = null;
   let LANG = "en"; // popup UI language (gexsync-cfg.lang); carried to tv-overlay.js via #__gxtv
 
@@ -73,6 +74,7 @@
       tvRefresh = [1, 5, 15, 30, 60].includes(g.tvRefresh) ? g.tvRefresh : 30;
       tvVisibility = ["all", "intraday", "daily", "custom"].includes(g.tvVisibility) ? g.tvVisibility : "all";
       tvVisCustom = Array.isArray(g.tvVisCustom) ? g.tvVisCustom.filter((b) => VIS_BUCKETS.includes(b)) : null;
+      tvPauseClosed = g.tvPauseClosed !== false; // default on
       LANG = self.GXI18N ? self.GXI18N.normLang(g.lang) : "en";
       const s = g.tvLevels || {};
       const lvl = (k, old) => ({ on: (s[k]?.on ?? (old && s[old]?.on)) !== false, color: s[k]?.color || (old && s[old]?.color) || DEFCOL[k] });
@@ -114,7 +116,7 @@
       hgen, hist: { on: tvHistogram, src }, // GEX profile: strikes-version + on/off + effective source (src computed above)
       refreshMs: tvRefresh * 1000, // countdown/fetch cadence for the MAIN overlay
       lang: LANG, // popup UI language for the overlay's pill/toasts/labels
-      cfg: { enabled: true, linesOn: tvLinesOn, levels: tvLevels, lineOpacity: tvLineOp, histOpacity: tvHistOp, tier: gexTier, caps: caps(), vis: resolveVis() }, // vis = allowed timeframe buckets (null = all)
+      cfg: { enabled: true, linesOn: tvLinesOn, levels: tvLevels, lineOpacity: tvLineOp, histOpacity: tvHistOp, tier: gexTier, caps: caps(), vis: resolveVis(), pauseClosed: tvPauseClosed }, // vis = allowed timeframe buckets (null = all); pauseClosed = pause poll outside RTH
     });
     if (n.textContent !== payload) n.textContent = payload;
   }

@@ -395,6 +395,7 @@ const tvCap = (k) => k[0].toUpperCase() + k.slice(1);
 const tvEnabledEl = document.getElementById("tvEnabled");
 const tvLinesOnEl = document.getElementById("tvLinesOn");
 const tvHistOnEl = document.getElementById("tvHistOn");
+const tvPauseClosedEl = document.getElementById("tvPauseClosed");
 let tvHistSrc = "classic"; // GEX profile source: classic | state
 const tvLineOpEl = document.getElementById("tvLineOpacity"), tvHistOpEl = document.getElementById("tvHistOpacity");
 const tvLineOpVal = document.getElementById("tvLineOpVal"), tvHistOpVal = document.getElementById("tvHistOpVal");
@@ -413,7 +414,7 @@ const VIS_BUCKETS = ["ticks", "seconds", "minutes", "hours", "days", "weeks", "m
 const tvVisCustomWrap = document.getElementById("tvVisCustom");
 const tvVisChips = [...tvVisCustomWrap.querySelectorAll("input[data-bucket]")];
 let tvVis = "all"; // all | intraday | daily | custom
-const tvSaveCfg = () => chrome.storage.local.get("gexsync-cfg", (r) => chrome.storage.local.set({ "gexsync-cfg": { ...(r["gexsync-cfg"] || {}), tvEnabled: tvEnabledEl.checked, tvLinesOn: tvLinesOnEl.checked, gexTier, tvSource, tvPackage, tvLevels, tvHistogram: tvHistOnEl.checked, tvHistSrc, tvLineOpacity: tvLineOpEl.value / 100, tvHistOpacity: tvHistOpEl.value / 100, tvRefresh, tvVisibility: tvVis, tvVisCustom: tvVisChips.filter((c) => c.checked).map((c) => c.dataset.bucket) } }));
+const tvSaveCfg = () => chrome.storage.local.get("gexsync-cfg", (r) => chrome.storage.local.set({ "gexsync-cfg": { ...(r["gexsync-cfg"] || {}), tvEnabled: tvEnabledEl.checked, tvLinesOn: tvLinesOnEl.checked, gexTier, tvSource, tvPackage, tvLevels, tvHistogram: tvHistOnEl.checked, tvHistSrc, tvLineOpacity: tvLineOpEl.value / 100, tvHistOpacity: tvHistOpEl.value / 100, tvRefresh, tvVisibility: tvVis, tvVisCustom: tvVisChips.filter((c) => c.checked).map((c) => c.dataset.bucket), tvPauseClosed: tvPauseClosedEl.checked } }));
 const tvPaint = () => {
   for (const k of TV_KEYS) {
     tvLevelEls[k].checked = tvLevels[k].on !== false;
@@ -452,6 +453,7 @@ const tvLoad = (g) => {
   tvHistSrc = g.tvHistSrc === "state" ? "state" : "classic";
   gexTier = ["classic", "state", "orderflow", "quant"].includes(g.gexTier) ? g.gexTier : "classic";
   tvRefresh = [1, 5, 15, 30, 60].includes(g.tvRefresh) ? g.tvRefresh : 30;
+  tvPauseClosedEl.checked = g.tvPauseClosed !== false; // pause outside RTH, default on
   tvVis = ["all", "intraday", "daily", "custom"].includes(g.tvVisibility) ? g.tvVisibility : "all";
   const visCustom = Array.isArray(g.tvVisCustom) ? g.tvVisCustom : VIS_BUCKETS; // default: every bucket checked
   for (const c of tvVisChips) c.checked = visCustom.includes(c.dataset.bucket);
@@ -468,6 +470,7 @@ const tvOpPaint = () => { tvLineOpVal.textContent = tvLineOpEl.value + "%"; tvHi
 tvEnabledEl.addEventListener("change", tvSaveCfg);
 tvLinesOnEl.addEventListener("change", tvSaveCfg);
 tvHistOnEl.addEventListener("change", tvSaveCfg);
+tvPauseClosedEl.addEventListener("change", tvSaveCfg);
 for (const el of [tvLineOpEl, tvHistOpEl]) el.addEventListener("input", () => { tvOpPaint(); tvSaveCfg(); }); // live blend
 [...document.querySelectorAll("#tvHistSrcSeg .seg-btn")].forEach((b) => b.addEventListener("click", () => { if (b.disabled) return; tvHistSrc = b.dataset.hsrc; tvPaint(); tvSaveCfg(); }));
 for (const k of TV_KEYS) {
