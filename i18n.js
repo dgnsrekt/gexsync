@@ -101,6 +101,8 @@
     "tv.stale": "Alertas desactualizadas",
     "tv.stale.pulse": "Pulso", "tv.stale.inline": "Precio", "tv.stale.line": "Línea",
     "tv.stale.hint": "Cuando un nivel se aleja de una alerta que fijaste, su icono de papelera parpadea en ámbar (en todos los modos). <b>Precio</b> también añade el precio antiguo de la alerta a la etiqueta; <b>Línea</b> dibuja una línea punteada donde está la alerta.",
+    "tv.auto": "Auto-actualizar alertas desactualizadas", "tv.auto.off": "No",
+    "tv.auto.hint": "Desactivado por defecto. Cuando está activo, una alerta desactualizada se elimina y se vuelve a crear automáticamente al precio actual del nivel — en el reloj (p. ej. 5m → :00/:05…), solo mientras el mercado está abierto, y nunca más rápido que la frecuencia de actualización. Se aplica al símbolo de este gráfico.",
     // ---- Watchlist page ----
     "wl.title": "Lista de seguimiento",
     "wl.hint": "Un clic en la píldora del gráfico cicla tu grupo en modo Ticker por estos. Requiere 2+ tickers.",
@@ -207,6 +209,7 @@
       "tv.d.zeroGamma": "Zero gamma", "tv.d.majorPos": "Major +", "tv.d.majorNeg": "Major −", "tv.d.netGex": "Net GEX",
       "tv.d.spot": "Spot", "tv.d.asof": "as of",
       "tv.staleAlert": "Alert is stale — set at {alertPx}, but the level has moved to {level}. Click the trash to delete, then click the level to re-add at the current price.",
+      "tv.autoUpdated": "✓ {n} stale alert{s} updated: {ticker}", "tv.vAutoFailed": "auto-update failed",
       // replay.js — replay transport bar, review/exit modals, panel-lock blocker (GEXbot, isolated)
       "rp.blockerTitle": "Locked by GexSync for replay sync — Exit the replay bar to unlock",
       "rp.blockerHead": "Locked for replay sync",
@@ -315,6 +318,7 @@
       "tv.d.zeroGamma": "Gamma cero", "tv.d.majorPos": "Mayor +", "tv.d.majorNeg": "Mayor −", "tv.d.netGex": "GEX neto",
       "tv.d.spot": "Spot", "tv.d.asof": "a las",
       "tv.staleAlert": "Alerta desactualizada — fijada en {alertPx}, pero el nivel se movió a {level}. Haz clic en la papelera para eliminarla y luego en el nivel para volver a añadirla al precio actual.",
+      "tv.autoUpdated": "✓ {n} alerta{s} actualizada{s}: {ticker}", "tv.vAutoFailed": "falló la auto-actualización",
       // replay.js — replay transport bar, review/exit modals, panel-lock blocker (GEXbot, isolated)
       "rp.blockerTitle": "Bloqueado por GexSync para la sincronización de repetición — Sal de la barra de repetición para desbloquear",
       "rp.blockerHead": "Bloqueado para la sincronización de repetición",

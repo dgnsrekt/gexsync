@@ -42,6 +42,7 @@
   const resolveVis = () => tvVisibility === "custom" ? (Array.isArray(tvVisCustom) ? tvVisCustom : VIS_BUCKETS) : (tvVisibility in VIS_PRESETS ? VIS_PRESETS[tvVisibility] : null);
   let tvPauseClosed = true; // pause the poll outside regular market hours (TradingView marketStatus); default on. MAIN checks the status.
   let tvStaleMode = "inline"; // how a drifted alert shows: "pulse" | "inline" | "line" (all pulse the icon)
+  let tvAutoUpdate = 0; // auto-heal stale alerts every N minutes (0 = off); MAIN runs it on the wall clock
   let universe = null, curTicker = "", valid = null, lastLevels = null, lastErr = null;
   let LANG = "en"; // popup UI language (gexsync-cfg.lang); carried to tv-overlay.js via #__gxtv
 
@@ -77,6 +78,7 @@
       tvVisCustom = Array.isArray(g.tvVisCustom) ? g.tvVisCustom.filter((b) => VIS_BUCKETS.includes(b)) : null;
       tvPauseClosed = g.tvPauseClosed !== false; // default on
       tvStaleMode = ["pulse", "inline", "line"].includes(g.tvStaleMode) ? g.tvStaleMode : "inline";
+      tvAutoUpdate = [0, 1, 5, 15, 30].includes(g.tvAutoUpdate) ? g.tvAutoUpdate : 0;
       LANG = self.GXI18N ? self.GXI18N.normLang(g.lang) : "en";
       const s = g.tvLevels || {};
       const lvl = (k, old) => ({ on: (s[k]?.on ?? (old && s[old]?.on)) !== false, color: s[k]?.color || (old && s[old]?.color) || DEFCOL[k] });
@@ -119,6 +121,7 @@
       dte: (valid !== false && hasData && lastLevels.dte) ? PKG_DTE[tvPackage](lastLevels.dte) : null,
       hgen, hist: { on: tvHistogram, src }, // GEX profile: strikes-version + on/off + effective source (src computed above)
       refreshMs: tvRefresh * 1000, // countdown/fetch cadence for the MAIN overlay
+      autoUpdateMs: tvAutoUpdate * 60000, // auto-heal stale alerts cadence (0 = off); MAIN aligns to the wall clock
       lang: LANG, // popup UI language for the overlay's pill/toasts/labels
       cfg: { enabled: true, linesOn: tvLinesOn, levels: tvLevels, lineOpacity: tvLineOp, histOpacity: tvHistOp, tier: gexTier, caps: caps(), vis: resolveVis(), pauseClosed: tvPauseClosed, staleMode: tvStaleMode }, // vis = allowed timeframe buckets (null = all); pauseClosed = pause poll outside RTH; staleMode = stale-alert cue
     });

@@ -38,6 +38,7 @@
   // the GexSync mark (two bars + sync line) — same geometry as the popup/pill icon
   const LOGO = '<svg width="18" height="18" viewBox="0 0 32 32" style="display:block"><rect x="1.5" y="1.5" width="29" height="29" rx="9" fill="#12101B" stroke="rgba(22,224,163,.55)"/><rect x="7" y="10" width="7" height="12" rx="2.2" fill="#16E0A3" opacity=".92"/><rect x="18" y="10" width="7" height="12" rx="2.2" fill="#4AA3FF" opacity=".92"/><line x1="16" y1="7" x2="16" y2="25" stroke="#16E0A3" stroke-width="2" stroke-linecap="round"/><circle cx="16" cy="16" r="2.4" fill="#16E0A3"/></svg>';
   let refreshMs = 30000; // fetch cadence + countdown, wall-clock aligned; tunable via cfg (15/30/60s)
+  let autoMs = 0, lastAutoMark = 0, autoBusy = false; // auto-heal stale alerts: wall-clock cadence (0 = off), overlap guard
   const R = 8, CIRC = 2 * Math.PI * R; // countdown ring geometry
   // clickable countdown ring: track + depleting arc + seconds; click forces a refresh. The title
   // lives on an HTML <span> WRAPPER (not the <svg>) — Chrome doesn't tooltip a `title` attribute on
@@ -521,6 +522,7 @@
     ctx.clearRect(0, 0, r.width, r.height);
     const data = readNode();
     if (data && data.refreshMs) refreshMs = data.refreshMs; // cfg-driven cadence (15/30/60s)
+    autoMs = (data && data.autoUpdateMs) || 0; // auto-heal cadence (0 = off)
     // Poll gating, computed before updatePill so the ring/cue reflect it this frame. Two reasons:
     //  • timeframe-hidden (cfg.vis) — HIDES the overlay + pauses the poll
     //  • market closed (cfg.pauseClosed, TradingView marketStatus ≠ "market") — pauses the poll but
@@ -643,6 +645,50 @@
     const n = document.getElementById(NODE_ID); sig += n ? n.textContent : "";
     if (sig !== lastSig) { lastSig = sig; draw(); }
     updateCountdown(); // tick the ring every frame (independent of the sig-gated redraw)
+    // Auto-heal stale alerts on a coarser wall-clock mark (:00/:05…), never faster than the poll,
+    // and only while actively polling (same pollPaused gate as the countdown fetch).
+    if (autoMs > 0 && !pollPaused) {
+      const effAutoMs = Math.max(autoMs, refreshMs);
+      const amark = Math.floor(Date.now() / effAutoMs) * effAutoMs;
+      if (lastAutoMark && amark !== lastAutoMark) autoUpdateStale();
+      lastAutoMark = amark;
+    } else lastAutoMark = 0; // reset when off/paused so re-enabling doesn't insta-fire
+  }
+
+  // Auto-heal: recompute the currently-stale alerts on the shown ticker+pkg (draw is sig-gated, so we
+  // rescan here), then create-first-delete-after so a failed create never loses an alert. 2 API calls
+  // total regardless of how many drifted. Scope = this chart's symbol only.
+  async function autoUpdateStale() {
+    if (autoBusy) return;
+    const data = readNode();
+    if (!data || !data.cfg || data.valid === false || !data.levels || data.cfg.linesOn === false) return;
+    const ctx = chartCtx(); if (!ctx || ctx.bare !== data.ticker) return; // symbol spec for alertInner; guard against a mid-swap
+    const stale = [];
+    for (const L of LINES) {
+      const lv = data.levels[L.src]; const price = lv ? lv[L.field] : null;
+      if (price == null || !isFinite(price) || price <= 0) continue;
+      const lc = data.cfg.levels && data.cfg.levels[L.key]; if (!lc || lc.on === false) continue; // only shown levels
+      const mine = (myAlerts.get(akey(data.ticker, L.key)) || []).find((a) => a.pkg === data.pkgCat);
+      if (mine && mine.price != null && Math.abs(mine.price - price) > 0.01) stale.push({ key: L.key, oldId: mine.id, label: L.label, newPrice: price, pkg: data.pkgCat });
+    }
+    if (!stale.length) return;
+    autoBusy = true;
+    try {
+      const created = await tvAlertPost("create_alerts", { payload: stale.map((s) => alertInner(ctx.sym, ctx.res, ctx.bare, s.newPrice, s.label, s.key, s.pkg)) });
+      if (!created.ok || !Array.isArray(created.j.r)) { toast(alertErr(created, tr("tv.vAutoFailed")), true); return; }
+      const oldIds = [];
+      for (let i = 0; i < stale.length; i++) {
+        const s = stale[i], nid = created.j.r[i] && created.j.r[i].alert_id;
+        if (nid == null) continue; // this one didn't create → leave its old alert alone
+        const k = akey(ctx.bare, s.key), list = myAlerts.get(k) || [];
+        const idx = list.findIndex((a) => a.id === s.oldId); if (idx >= 0) list.splice(idx, 1); // drop the stale entry
+        list.push({ id: nid, pkg: s.pkg, price: s.newPrice }); myAlerts.set(k, list); // cache the fresh one
+        oldIds.push(s.oldId);
+      }
+      if (oldIds.length) await tvAlertPost("delete_alerts", { payload: { alert_ids: oldIds } }); // now safe to remove the old
+      lastSig = ""; // repaint → the stale cues clear
+      toast(tri("tv.autoUpdated", { n: oldIds.length, s: oldIds.length === 1 ? "" : "s", ticker: ctx.bare }));
+    } catch (e) { /* leave state as-is; next mark retries */ } finally { autoBusy = false; }
   }
 
   // ISOLATED tv.js loads later (document_idle) and asks us to re-emit the current symbol.

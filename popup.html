@@ -409,6 +409,15 @@
     <button class="seg-btn" data-stale="line" role="tab" data-i18n="tv.stale.line">Line</button>
   </div>
   <div class="hint" style="margin-top:5px" data-i18n-html="tv.stale.hint">When a level drifts away from an alert you set, its trash icon pulses amber (all modes). <b>Inline</b> also appends the old alert price to the label; <b>Line</b> draws a dotted line where the alert sits.</div>
+  <div class="label" style="margin-top:14px" data-i18n="tv.auto">Auto-update stale alerts</div>
+  <div class="seg" id="tvAutoSeg" role="tablist">
+    <button class="seg-btn" data-auto="0" role="tab" data-i18n="tv.auto.off">Off</button>
+    <button class="seg-btn" data-auto="1" role="tab">1m</button>
+    <button class="seg-btn" data-auto="5" role="tab">5m</button>
+    <button class="seg-btn" data-auto="15" role="tab">15m</button>
+    <button class="seg-btn" data-auto="30" role="tab">30m</button>
+  </div>
+  <div class="hint" style="margin-top:5px" data-i18n-html="tv.auto.hint">Off by default. When on, a stale alert is automatically deleted and recreated at the current level price — on the wall clock (e.g. 5m → :00/:05…), only while the market's open, and never faster than the refresh rate. Applies to the symbol on this chart.</div>
   </div><!-- /page: tv -->
 
   <div data-page="watchlist" hidden>
