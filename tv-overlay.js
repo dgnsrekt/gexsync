@@ -55,6 +55,9 @@
   // pill quick-toggle glyphs: stacked dashed lines (levels) + right-anchored bars (profile)
   const LINES_ICON = '<svg width="14" height="14" viewBox="0 0 14 14" style="display:block"><line x1="1" y1="3.5" x2="13" y2="3.5" stroke="currentColor" stroke-width="1.5" stroke-dasharray="3 2"/><line x1="1" y1="7" x2="13" y2="7" stroke="currentColor" stroke-width="1.5" stroke-dasharray="3 2"/><line x1="1" y1="10.5" x2="13" y2="10.5" stroke="currentColor" stroke-width="1.5" stroke-dasharray="3 2"/></svg>';
   const HIST_ICON = '<svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor" style="display:block"><rect x="5" y="2" width="8" height="2.2" rx="1"/><rect x="1" y="5.9" width="12" height="2.2" rx="1"/><rect x="7" y="9.8" width="6" height="2.2" rx="1"/></svg>';
+  // details-panel toggle: a small framed panel with a header rule + rows
+  const DETAILS_ICON = '<svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.1" style="display:block"><rect x="1.5" y="1.5" width="11" height="11" rx="1.6"/><line x1="1.5" y1="5" x2="12.5" y2="5"/><line x1="4" y1="8" x2="10" y2="8"/><line x1="4" y1="10.3" x2="10" y2="10.3"/></svg>';
+  let detailsEl = null, detailsOpen = false; // GEX details panel above the pill (data we already fetch)
 
   const readNode = () => { const n = document.getElementById(NODE_ID); if (!n || !n.textContent) return null; try { const p = JSON.parse(n.textContent); if (p && p.lang && GXI) LANG = GXI.normLang(p.lang); return p; } catch { return null; } };
   // Map a TradingView resolution string to a timeframe "bucket" (mirrors TV's Visibility units).
@@ -374,6 +377,7 @@
       + viewToggles(data) // ≡ lines / ▤ histogram / C·S source quick-toggles
       + bulkBell(data) // bulk add/delete-all-alerts bell (GEXbot tickers only)
       + `<span id="gxtv-resync" title="${tr("tv.resyncTitle")}" style="color:${C.dim};${CLICK};font-size:13px;line-height:1">⟳</span>`
+      + (data.levels ? `<span id="gxtv-details" title="${tr("tv.details")}" style="display:flex;align-items:center;${CLICK};color:${detailsOpen ? C.accent : C.dim}">${DETAILS_ICON}</span>` : "") // GEX details panel toggle
       + (showRing ? DIVIDER + RING : "");
     const wire = (id, fn) => { const el = pillEl.querySelector(id); if (el) fn(el); };
     wire("#gxtv-ring", (el) => { el.setAttribute("title", tr("tv.ringTitle")); el.onclick = forceFetch; updateCountdown(); }); // click the countdown → refresh now
@@ -383,6 +387,43 @@
     wire("#gxtv-lines", (el) => (el.onclick = () => emit(EV.toggleLines)));
     wire("#gxtv-hist", (el) => (el.onclick = () => emit(EV.toggleHist)));
     wire("#gxtv-hsrc", (el) => (el.onclick = () => emit(EV.cycleHsrc)));
+    wire("#gxtv-details", (el) => (el.onclick = () => { detailsOpen = !detailsOpen; if (!detailsOpen && detailsEl) detailsEl.style.display = "none"; lastSig = ""; })); // toggle the GEX details panel (repaint updates button color + panel)
+  }
+
+  // GEX details panel above the pill — renders the numbers we already fetch (net gex, OI majors,
+  // max-change table, per source). All from data.levels; zero extra API calls.
+  function renderDetails(data) {
+    if (!detailsEl) {
+      detailsEl = document.createElement("div");
+      detailsEl.id = "gxtv-details-panel";
+      detailsEl.style.cssText = "position:absolute;z-index:7;padding:10px 13px;border-radius:12px;background:rgba(12,10,18,.94);border:1px solid rgba(255,255,255,.12);box-shadow:0 8px 28px rgba(0,0,0,.5);font:500 11.5px 'JetBrains Mono',ui-monospace,monospace;line-height:1.5;pointer-events:auto;user-select:none;white-space:nowrap";
+      host.appendChild(detailsEl);
+    }
+    const L = data.levels || {};
+    const px = (n) => n == null ? "—" : (+n).toFixed(2);
+    const net = (n) => n == null ? "—" : (+n).toFixed(4);
+    const mm = (n) => n == null ? "—" : (n >= 0 ? "+" : "") + (+n).toFixed(2) + "MM";
+    const sc = (n) => n == null || n >= 0 ? C.accent : C.danger;
+    const row = (label, val, color) => `<div style="display:flex;justify-content:space-between;gap:18px"><span style="color:#7c8698">${label}</span><span style="color:${color || "#e8ecf3"}">${val}</span></div>`;
+    const hdr = (t) => `<div style="color:#7c8698;font-size:9px;letter-spacing:.11em;text-transform:uppercase;margin:7px 0 2px">${t}</div>`;
+    const MC = ["1m", "5m", "10m", "15m", "30m"];
+    // each source is its own COLUMN — laid side by side so the panel spreads horizontally, not tall
+    const block = (src, o) => {
+      if (!o) return "";
+      let h = `<div style="color:${src === "state" ? C.state : C.accent};font-weight:700;font-size:9.5px;letter-spacing:.09em">${src.toUpperCase()}</div>` + hdr(tr("tv.d.volume"));
+      if (o.zeroGamma != null) h += row(tr("tv.d.zeroGamma"), px(o.zeroGamma), C.warn);
+      h += row(tr("tv.d.majorPos"), px(o.majorPos), C.accent) + row(tr("tv.d.majorNeg"), px(o.majorNeg), C.danger) + row(tr("tv.d.netGex"), net(o.netVol), sc(o.netVol));
+      if (o.posOi != null || o.negOi != null || o.netOi != null) h += hdr(tr("tv.d.oi")) + row(tr("tv.d.majorPos"), px(o.posOi), C.accent) + row(tr("tv.d.majorNeg"), px(o.negOi), C.danger) + row(tr("tv.d.netGex"), net(o.netOi), sc(o.netOi));
+      if (Array.isArray(o.maxChg) && o.maxChg.length) { h += hdr(tr("tv.d.maxChg")); o.maxChg.forEach((p, i) => { if (p) h += row(MC[i], px(p[0]) + "  " + mm(p[1]), sc(p[1])); }); }
+      return `<div>${h}</div>`;
+    };
+    const ts = (L.classic && L.classic.ts) || (L.state && L.state.ts);
+    const asof = ts ? new Date(ts * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "—";
+    detailsEl.innerHTML =
+      `<div style="display:flex;justify-content:space-between;gap:18px;font-weight:700;color:#e8ecf3"><span>${data.ticker || "—"}</span><span style="color:#7c8698;font-weight:400">${data.pkg || ""}${data.dte != null ? " · " + data.dte + "DTE" : ""}</span></div>`
+      + row(tr("tv.d.spot"), px((L.classic && L.classic.spot) ?? (L.state && L.state.spot)))
+      + `<div style="color:#7c8698;font-size:9px;margin-top:1px">${tr("tv.d.asof")} ${asof}</div>`
+      + `<div style="display:flex;gap:26px;align-items:flex-start;margin-top:4px">${block("classic", L.classic)}${block("state", L.state)}</div>`;
   }
 
   // Compact quick-toggles: ≡ lines on/off, ▤ histogram on/off (bright=on / dim=off), and — only
@@ -488,6 +529,13 @@
       pillEl.style.top = (r.top - hr.top + r.height - pillEl.offsetHeight - 14) + "px";
       pillEl.style.bottom = "auto";
     }
+    // details panel: refresh + pin just above the pill's right edge while open
+    if (detailsOpen && data && data.levels && pillEl) {
+      renderDetails(data);
+      detailsEl.style.display = "block";
+      detailsEl.style.left = Math.max(4, r.left - hr.left + r.width - detailsEl.offsetWidth - 12) + "px";
+      detailsEl.style.top = Math.max(4, r.top - hr.top + r.height - pillEl.offsetHeight - detailsEl.offsetHeight - 22) + "px";
+    } else if (detailsEl) detailsEl.style.display = "none";
     if (!data || !data.cfg || data.cfg.enabled === false || !data.levels) { hideAlertTargets(); return; }
     let scale; try { scale = chart.getPanes()[0].getMainSourcePriceScale(); } catch { hideAlertTargets(); return; }
     const y = p2y(scale, r.height);

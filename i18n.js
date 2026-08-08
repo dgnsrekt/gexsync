@@ -200,6 +200,9 @@
       "tv.hiddenTf": "hidden on this timeframe",
       "tv.pausedTf": "Polling paused — GEX is hidden on this timeframe (Chart visibility). Switch to a shown timeframe to resume.",
       "tv.pausedClosed": "Polling paused — market closed (outside regular trading hours). Resumes automatically when the session opens.",
+      "tv.details": "GEX details", "tv.d.volume": "Volume", "tv.d.oi": "Open interest", "tv.d.maxChg": "Max change GEX",
+      "tv.d.zeroGamma": "Zero gamma", "tv.d.majorPos": "Major +", "tv.d.majorNeg": "Major −", "tv.d.netGex": "Net GEX",
+      "tv.d.spot": "Spot", "tv.d.asof": "as of",
       // replay.js — replay transport bar, review/exit modals, panel-lock blocker (GEXbot, isolated)
       "rp.blockerTitle": "Locked by GexSync for replay sync — Exit the replay bar to unlock",
       "rp.blockerHead": "Locked for replay sync",
@@ -304,6 +307,9 @@
       "tv.hiddenTf": "oculto en este marco temporal",
       "tv.pausedTf": "Sondeo en pausa — GEX está oculto en este marco temporal (Visibilidad del gráfico). Cambia a un marco temporal visible para reanudar.",
       "tv.pausedClosed": "Sondeo en pausa — mercado cerrado (fuera del horario regular). Se reanuda automáticamente cuando abre la sesión.",
+      "tv.details": "Detalles GEX", "tv.d.volume": "Volumen", "tv.d.oi": "Interés abierto", "tv.d.maxChg": "Máx. cambio GEX",
+      "tv.d.zeroGamma": "Gamma cero", "tv.d.majorPos": "Mayor +", "tv.d.majorNeg": "Mayor −", "tv.d.netGex": "GEX neto",
+      "tv.d.spot": "Spot", "tv.d.asof": "a las",
       // replay.js — replay transport bar, review/exit modals, panel-lock blocker (GEXbot, isolated)
       "rp.blockerTitle": "Bloqueado por GexSync para la sincronización de repetición — Sal de la barra de repetición para desbloquear",
       "rp.blockerHead": "Bloqueado para la sincronización de repetición",

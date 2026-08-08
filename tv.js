@@ -103,7 +103,9 @@
       ? JSON.stringify({ src, strikes: lastLevels[src].strikes }) : "";
     if (hn.textContent !== hstr) { hn.textContent = hstr; hgen++; }
     // Strip strikes from the main node's levels (they live in hnode) so this string stays small.
-    const slim = (o) => o ? { zeroGamma: o.zeroGamma, majorPos: o.majorPos, majorNeg: o.majorNeg, spot: o.spot, minDte: o.minDte, secDte: o.secDte } : null;
+    // Strip only the big strikes array (→ hnode); the small detail fields (net gex, OI, max-change, ts)
+    // ride along for the pill's details panel.
+    const slim = (o) => o ? { zeroGamma: o.zeroGamma, majorPos: o.majorPos, majorNeg: o.majorNeg, spot: o.spot, minDte: o.minDte, secDte: o.secDte, posOi: o.posOi, negOi: o.negOi, netVol: o.netVol, netOi: o.netOi, ts: o.ts, maxChg: o.maxChg } : null;
     const levelsOut = (valid !== false && hasData) ? { classic: slim(lastLevels.classic), state: slim(lastLevels.state), dte: lastLevels.dte } : null;
     const payload = JSON.stringify({
       ticker: curTicker || null,

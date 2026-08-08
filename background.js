@@ -145,7 +145,11 @@ async function pkgFetch(t, src, cat) {
   // strikes tuple is [strike, netGEX_vol, netGEX_oi, [5 prior vol readings]] — keep a compact
   // [strike, vol, priors[]] for the histogram (OI unused → dropped to shrink the payload).
   const strikes = Array.isArray(j.strikes) ? j.strikes.map((s) => [s[0], s[1], Array.isArray(s[3]) ? s[3] : []]) : null;
-  return { levels: { zeroGamma: num(j.zero_gamma), majorPos: num(j.major_pos_vol), majorNeg: num(j.major_neg_vol), spot: num(j.spot), minDte: num(j.min_dte), secDte: num(j.sec_min_dte), strikes }, error: null };
+  // max_priors rows [1..5] = [1m,5m,10m,15m,30m], each [strike, value-in-MM] (row 0 is an extra window
+  // GEXbot doesn't display). num-guard everything so a field the endpoint omits degrades to null, not a crash.
+  const maxChg = Array.isArray(j.max_priors) ? j.max_priors.slice(1, 6).map((p) => [num(p[0]), num(p[1])]) : null;
+  return { levels: { zeroGamma: num(j.zero_gamma), majorPos: num(j.major_pos_vol), majorNeg: num(j.major_neg_vol), spot: num(j.spot), minDte: num(j.min_dte), secDte: num(j.sec_min_dte), strikes,
+    posOi: num(j.major_pos_oi), negOi: num(j.major_neg_oi), netVol: num(j.sum_gex_vol), netOi: num(j.sum_gex_oi), ts: num(j.timestamp), maxChg }, error: null };
 }
 // Fetch the requested sources (classic and/or state — only what's toggled on) at the chosen
 // package category. cat: gex_zero=latest (nearest expiry, not literally 0dte — VIX has its own
