@@ -98,6 +98,9 @@
     "tv.refresh.hint": "Cada cuánto sondear, alineado al reloj (p. ej. 5s → :00/:05/:10…, 30s → :00/:30). El anillo de la píldora cuenta hasta la siguiente marca. 1s/5s sondean fuerte — cuida los límites de GEXbot.",
     "tv.pauseClosed": "Pausar cuando el mercado esté cerrado",
     "tv.pauseClosed.hint": "Detiene el sondeo fuera del horario regular de mercado (usando el estado de mercado de TradingView para el símbolo) para no gastar llamadas de GEXbot fuera de hora. Los últimos niveles se quedan en el gráfico; el anillo de la píldora muestra un ‖ en pausa. Se reanuda automáticamente cuando abre la sesión.",
+    "tv.stale": "Alertas desactualizadas",
+    "tv.stale.pulse": "Pulso", "tv.stale.inline": "Precio", "tv.stale.line": "Línea",
+    "tv.stale.hint": "Cuando un nivel se aleja de una alerta que fijaste, su icono de papelera parpadea en ámbar (en todos los modos). <b>Precio</b> también añade el precio antiguo de la alerta a la etiqueta; <b>Línea</b> dibuja una línea punteada donde está la alerta.",
     // ---- Watchlist page ----
     "wl.title": "Lista de seguimiento",
     "wl.hint": "Un clic en la píldora del gráfico cicla tu grupo en modo Ticker por estos. Requiere 2+ tickers.",
@@ -203,6 +206,7 @@
       "tv.details": "GEX details", "tv.d.volume": "Volume", "tv.d.oi": "Open interest", "tv.d.maxChg": "Max change GEX",
       "tv.d.zeroGamma": "Zero gamma", "tv.d.majorPos": "Major +", "tv.d.majorNeg": "Major −", "tv.d.netGex": "Net GEX",
       "tv.d.spot": "Spot", "tv.d.asof": "as of",
+      "tv.staleAlert": "Alert is stale — set at {alertPx}, but the level has moved to {level}. Click the trash to delete, then click the level to re-add at the current price.",
       // replay.js — replay transport bar, review/exit modals, panel-lock blocker (GEXbot, isolated)
       "rp.blockerTitle": "Locked by GexSync for replay sync — Exit the replay bar to unlock",
       "rp.blockerHead": "Locked for replay sync",
@@ -310,6 +314,7 @@
       "tv.details": "Detalles GEX", "tv.d.volume": "Volumen", "tv.d.oi": "Interés abierto", "tv.d.maxChg": "Máx. cambio GEX",
       "tv.d.zeroGamma": "Gamma cero", "tv.d.majorPos": "Mayor +", "tv.d.majorNeg": "Mayor −", "tv.d.netGex": "GEX neto",
       "tv.d.spot": "Spot", "tv.d.asof": "a las",
+      "tv.staleAlert": "Alerta desactualizada — fijada en {alertPx}, pero el nivel se movió a {level}. Haz clic en la papelera para eliminarla y luego en el nivel para volver a añadirla al precio actual.",
       // replay.js — replay transport bar, review/exit modals, panel-lock blocker (GEXbot, isolated)
       "rp.blockerTitle": "Bloqueado por GexSync para la sincronización de repetición — Sal de la barra de repetición para desbloquear",
       "rp.blockerHead": "Bloqueado para la sincronización de repetición",

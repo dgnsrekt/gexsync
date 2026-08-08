@@ -157,7 +157,7 @@
       auto_deactivate: true, ignore_warnings: true, active: true, name: `gxs:${bare}:${key || "?"}:${pkg || "?"}`, expiration: null,
     };
   }
-  const cacheAlert = (bare, key, id, pkg) => { const k = akey(bare, key); if (!myAlerts.has(k)) myAlerts.set(k, []); myAlerts.get(k).push({ id, pkg }); };
+  const cacheAlert = (bare, key, id, pkg, price) => { const k = akey(bare, key); if (!myAlerts.has(k)) myAlerts.set(k, []); myAlerts.get(k).push({ id, pkg, price: price != null ? price : null }); }; // price → staleness detection
 
   // ALL pricealerts calls funnel through these two so the load-bearing invariant lives in ONE place:
   // tv-overlay runs in MAIN world on www.tradingview.com, so these are page-context, same-site
@@ -190,7 +190,7 @@
     alertGuard.set(label, now);
     const res = await tvAlertPost("create_alert", { payload: alertInner(ctx.sym, ctx.res, ctx.bare, price, label, key, pkg) });
     if (res.ok) {
-      if (res.j.r && res.j.r.alert_id != null) { cacheAlert(ctx.bare, key, res.j.r.alert_id, pkg); lastSig = ""; } // cache locally → trash appears, no re-list
+      if (res.j.r && res.j.r.alert_id != null) { cacheAlert(ctx.bare, key, res.j.r.alert_id, pkg, price); lastSig = ""; } // cache locally → trash appears, no re-list
       toast(tri("tv.alertSet", { label }));
     } else toast(alertErr(res, tr("tv.vAlertFailed")), true);
   }
@@ -208,7 +208,8 @@
       if (!m) continue;
       const k = akey(m[1], m[2]);
       if (!myAlerts.has(k)) myAlerts.set(k, []);
-      myAlerts.get(k).push({ id: a.alert_id, pkg: m[3] });
+      const sv = a.condition && Array.isArray(a.condition.series) ? a.condition.series.find((s) => s && s.type === "value") : null; // target price = the "value" series
+      myAlerts.get(k).push({ id: a.alert_id, pkg: m[3], price: sv ? sv.value : null });
       n++;
     }
     lastSig = ""; // force redraw so trash glyphs refresh
@@ -271,7 +272,7 @@
     if (res.ok) {
       const r = Array.isArray(res.j.r) ? res.j.r : [];
       let ok = r.length === levels.length; // create_alerts returns in input order
-      if (ok) for (let i = 0; i < levels.length; i++) { if (r[i] && r[i].alert_id != null) cacheAlert(ctx.bare, levels[i].key, r[i].alert_id, pkg); else ok = false; }
+      if (ok) for (let i = 0; i < levels.length; i++) { if (r[i] && r[i].alert_id != null) cacheAlert(ctx.bare, levels[i].key, r[i].alert_id, pkg, levels[i].price); else ok = false; }
       if (ok) { lastSig = ""; toast(tri("tv.alertsAddedPkg", { n: levels.length, ticker: ctx.bare, pkg: PKG_FR[pkg] || pkg })); }
       else { toast(tri("tv.alertsAdded", { n: levels.length, ticker: ctx.bare })); loadAlertIndex(); } // response shape off → resync
     } else toast(alertErr(res, tr("tv.vBulkAddFailed")), true);
@@ -297,6 +298,7 @@
   // Sync a small reused pool of transparent DOM hotspots over the canvas-drawn labels (the canvas
   // itself is pointer-events:none). Each carries its price+label so a click creates that alert.
   function syncAlertTargets(placed, offX, offY) {
+    if (!document.getElementById("gxtv-style")) { const st = document.createElement("style"); st.id = "gxtv-style"; st.textContent = "@keyframes gxtvStale{0%,100%{opacity:1;transform:translateY(-50%) scale(1)}50%{opacity:.4;transform:translateY(-50%) scale(1.22)}}"; (document.head || document.documentElement).appendChild(st); } // stale-alert pulse (keeps the icon's base translateY)
     if (alertTargets.length && alertTargets[0] && !host.contains(alertTargets[0])) alertTargets = []; // pane re-rendered → rebuild
     for (let i = 0; i < placed.length; i++) {
       let d = alertTargets[i];
@@ -315,12 +317,20 @@
       d.style.width = (p.right - p.left) + "px"; d.style.height = (p.bottom - p.top) + "px";
       d.style.display = "block";
       const ic = d._icon;
+      ic.style.animation = ""; // reset (icons are reused across renders); the stale branch re-arms the pulse
       if (p.samePkg) { // alert on the shown package → trash deletes it; body-click disabled (no dupes)
-        ic.style.display = "flex"; ic.style.cursor = "pointer"; ic.style.color = C.dim; ic.innerHTML = TRASH_SVG;
-        ic.onmouseenter = () => { ic.style.color = C.danger; }; ic.onmouseleave = () => { ic.style.color = C.dim; };
+        ic.style.display = "flex"; ic.style.cursor = "pointer"; ic.innerHTML = TRASH_SVG;
+        if (p.stale) { // #1: level drifted from the alert price → amber pulsing trash to grab attention
+          ic.style.color = C.warn; ic.style.animation = "gxtvStale 1.2s ease-in-out infinite";
+          ic.onmouseenter = () => { ic.style.color = C.danger; }; ic.onmouseleave = () => { ic.style.color = C.warn; };
+          d.title = tri("tv.staleAlert", { alertPx: (+p.alertPx).toFixed(2), level: (+p.price).toFixed(2) });
+        } else {
+          ic.style.color = C.dim;
+          ic.onmouseenter = () => { ic.style.color = C.danger; }; ic.onmouseleave = () => { ic.style.color = C.dim; };
+          d.title = tri("tv.titleAlertSet", { pkg: PKG_FR[p.pkg] || p.pkg, name: p.name });
+        }
         ic.onclick = (e) => { e.stopPropagation(); deleteAlert(p.ticker, p.key, p.name, p.pkg); };
         d.onclick = null; d.style.cursor = "default";
-        d.title = tri("tv.titleAlertSet", { pkg: PKG_FR[p.pkg] || p.pkg, name: p.name });
       } else if (p.otherPkgs.length) { // alert exists but tied to another package → amber bell cue, not deletable here
         const fr = p.otherPkgs.map((x) => PKG_FR[x] || x).join("/");
         ic.style.display = "flex"; ic.style.cursor = "help"; ic.style.color = C.warn; ic.innerHTML = BELL_SVG;
@@ -546,7 +556,8 @@
     ctx.textBaseline = "middle";
     ctx.globalAlpha = data.cfg.lineOpacity != null ? data.cfg.lineOpacity : 1; // user opacity for lines + labels
     // Pass 1: draw the full-width lines, and collect the labels to place.
-    const labels = [];
+    const staleMode = data.cfg.staleMode || "inline"; // how staleness shows: pulse | inline | line (all pulse the icon)
+    const labels = [], ghosts = []; // ghosts = stale alerts' old prices → dotted "ghost" lines (line mode)
     for (const L of LINES) {
       const lv = data.levels[L.src];                // { zeroGamma, majorPos, majorNeg, spot } | null
       const price = lv ? lv[L.field] : null;
@@ -559,10 +570,16 @@
       ctx.setLineDash([]);
       const text = `${L.label}  ${price.toFixed(2)}`;
       const arr = myAlerts.get(akey(data.ticker, L.key)) || []; // our alerts on this level, across packages
-      const samePkg = arr.some((a) => a.pkg === data.pkgCat);   // deletable here (matches shown package)
+      const mine = arr.find((a) => a.pkg === data.pkgCat);      // alert on the shown package (deletable here)
+      const samePkg = !!mine;
       const otherPkgs = [...new Set(arr.filter((a) => a.pkg !== data.pkgCat).map((a) => a.pkg))]; // cue only
+      // stale = the level has drifted away from where the alert sits (levels are discrete strikes)
+      const stale = !!(mine && mine.price != null && Math.abs(mine.price - price) > 0.01);
+      const staleTxt = stale && staleMode === "inline" ? `  ⚠ ${(+mine.price).toFixed(2)}` : ""; // #3 inline drift (inline mode only)
+      if (stale && staleMode === "line") ghosts.push({ alertPx: mine.price, color: lc.color }); // #2 ghost line (line mode only)
       const mark = samePkg || otherPkgs.length ? 18 : 0;        // reserve room for the trash/bell glyph
-      labels.push({ yy, text, color: lc.color, tw: ctx.measureText(text).width + mark, price, name: L.label, key: L.key, samePkg, otherPkgs });
+      const baseW = ctx.measureText(text).width, staleW = staleTxt ? ctx.measureText(staleTxt).width : 0;
+      labels.push({ yy, text, baseW, staleTxt, color: lc.color, tw: baseW + staleW + mark, price, name: L.label, key: L.key, samePkg, otherPkgs, stale, alertPx: stale ? mine.price : null });
     }
     // Pass 2: place labels right-aligned; if one would overlap an already-placed label (same y band),
     // slide it left of that one so both stay readable.
@@ -578,9 +595,23 @@
         right = hit.left - GAP; // move this label to the left of the colliding one
       }
       const left = right - boxW;
-      placed.push({ top, bottom, left, right, price: it.price, name: it.name, key: it.key, pkg: data.pkgCat, ticker: data.ticker, samePkg: it.samePkg, otherPkgs: it.otherPkgs });
+      placed.push({ top, bottom, left, right, price: it.price, name: it.name, key: it.key, pkg: data.pkgCat, ticker: data.ticker, samePkg: it.samePkg, otherPkgs: it.otherPkgs, stale: it.stale, alertPx: it.alertPx });
       ctx.fillStyle = "rgba(12,12,18,0.82)"; ctx.fillRect(left, ly - 8, boxW, 16);
       ctx.fillStyle = it.color; ctx.fillText(it.text, left + PADX, ly);
+      if (it.staleTxt) { ctx.fillStyle = C.warn; ctx.fillText(it.staleTxt, left + PADX + it.baseW, ly); } // #3: inline drift — old alert price in amber
+    }
+    // #2 ghost line (line mode): a faint dotted line in the key color at each stale alert's old price,
+    // with a 🔔 price tag on the left — so the gap between the alert and the current line is visible.
+    const lop = data.cfg.lineOpacity != null ? data.cfg.lineOpacity : 1;
+    for (const g of ghosts) {
+      const gy = y(g.alertPx);
+      if (gy < 0 || gy > r.height) continue;
+      ctx.globalAlpha = lop * 0.5; ctx.strokeStyle = g.color; ctx.lineWidth = 1; ctx.setLineDash([2, 3]);
+      ctx.beginPath(); ctx.moveTo(0, gy); ctx.lineTo(r.width, gy); ctx.stroke(); ctx.setLineDash([]);
+      ctx.globalAlpha = 1;
+      const tag = "🔔 " + (+g.alertPx).toFixed(2), tw = ctx.measureText(tag).width + 12;
+      ctx.fillStyle = "rgba(12,12,18,0.82)"; ctx.fillRect(6, gy - 8, tw, 16);
+      ctx.fillStyle = C.warn; ctx.fillText(tag, 12, gy);
     }
     ctx.globalAlpha = 1; // reset before the DOM hotspots (which aren't canvas-drawn)
     } // end linesOn

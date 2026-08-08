@@ -414,7 +414,8 @@ const VIS_BUCKETS = ["ticks", "seconds", "minutes", "hours", "days", "weeks", "m
 const tvVisCustomWrap = document.getElementById("tvVisCustom");
 const tvVisChips = [...tvVisCustomWrap.querySelectorAll("input[data-bucket]")];
 let tvVis = "all"; // all | intraday | daily | custom
-const tvSaveCfg = () => chrome.storage.local.get("gexsync-cfg", (r) => chrome.storage.local.set({ "gexsync-cfg": { ...(r["gexsync-cfg"] || {}), tvEnabled: tvEnabledEl.checked, tvLinesOn: tvLinesOnEl.checked, gexTier, tvSource, tvPackage, tvLevels, tvHistogram: tvHistOnEl.checked, tvHistSrc, tvLineOpacity: tvLineOpEl.value / 100, tvHistOpacity: tvHistOpEl.value / 100, tvRefresh, tvVisibility: tvVis, tvVisCustom: tvVisChips.filter((c) => c.checked).map((c) => c.dataset.bucket), tvPauseClosed: tvPauseClosedEl.checked } }));
+let tvStaleMode = "inline"; // pulse | inline | line — how a drifted alert is shown
+const tvSaveCfg = () => chrome.storage.local.get("gexsync-cfg", (r) => chrome.storage.local.set({ "gexsync-cfg": { ...(r["gexsync-cfg"] || {}), tvEnabled: tvEnabledEl.checked, tvLinesOn: tvLinesOnEl.checked, gexTier, tvSource, tvPackage, tvLevels, tvHistogram: tvHistOnEl.checked, tvHistSrc, tvLineOpacity: tvLineOpEl.value / 100, tvHistOpacity: tvHistOpEl.value / 100, tvRefresh, tvVisibility: tvVis, tvVisCustom: tvVisChips.filter((c) => c.checked).map((c) => c.dataset.bucket), tvPauseClosed: tvPauseClosedEl.checked, tvStaleMode } }));
 const tvPaint = () => {
   for (const k of TV_KEYS) {
     tvLevelEls[k].checked = tvLevels[k].on !== false;
@@ -430,6 +431,7 @@ const tvPaint = () => {
   [...document.querySelectorAll("#gexTierSeg .seg-btn")].forEach((b) => b.setAttribute("aria-selected", b.dataset.tval === gexTier ? "true" : "false"));
   [...document.querySelectorAll("#tvVisSeg .seg-btn")].forEach((b) => b.setAttribute("aria-selected", b.dataset.vis === tvVis ? "true" : "false"));
   tvVisCustomWrap.hidden = tvVis !== "custom"; // chips only for the Custom preset
+  [...document.querySelectorAll("#tvStaleSeg .seg-btn")].forEach((b) => b.setAttribute("aria-selected", b.dataset.stale === tvStaleMode ? "true" : "false"));
 };
 // Disable every [data-tier] control above the chosen tier (declarative gate — future features just
 // add data-tier="<tier>" in the HTML). Classic is the floor (no attribute needed).
@@ -454,6 +456,7 @@ const tvLoad = (g) => {
   gexTier = ["classic", "state", "orderflow", "quant"].includes(g.gexTier) ? g.gexTier : "classic";
   tvRefresh = [1, 5, 15, 30, 60].includes(g.tvRefresh) ? g.tvRefresh : 30;
   tvPauseClosedEl.checked = g.tvPauseClosed !== false; // pause outside RTH, default on
+  tvStaleMode = ["pulse", "inline", "line"].includes(g.tvStaleMode) ? g.tvStaleMode : "inline";
   tvVis = ["all", "intraday", "daily", "custom"].includes(g.tvVisibility) ? g.tvVisibility : "all";
   const visCustom = Array.isArray(g.tvVisCustom) ? g.tvVisCustom : VIS_BUCKETS; // default: every bucket checked
   for (const c of tvVisChips) c.checked = visCustom.includes(c.dataset.bucket);
@@ -488,6 +491,7 @@ for (const k of TV_KEYS) {
 [...document.querySelectorAll("#gexTierSeg .seg-btn")].forEach((b) => b.addEventListener("click", () => { if (b.disabled) return; gexTier = b.dataset.tval; applyTierGate(); tvPaint(); tvSaveCfg(); })); // tier → gate features + refetch
 [...document.querySelectorAll("#tvVisSeg .seg-btn")].forEach((b) => b.addEventListener("click", () => { tvVis = b.dataset.vis; tvPaint(); tvSaveCfg(); })); // visibility preset → reveals Custom chips
 for (const c of tvVisChips) c.addEventListener("change", tvSaveCfg);
+[...document.querySelectorAll("#tvStaleSeg .seg-btn")].forEach((b) => b.addEventListener("click", () => { tvStaleMode = b.dataset.stale; tvPaint(); tvSaveCfg(); }));
 chrome.storage.local.get("gexsync-cfg", (r) => tvLoad(r["gexsync-cfg"] || {}));
 
 // ---- Language (EN | ES). Stored in gexsync-cfg.lang; defaults to the browser's on first run.
