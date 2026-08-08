@@ -550,7 +550,7 @@
     let scale; try { scale = chart.getPanes()[0].getMainSourcePriceScale(); } catch { hideAlertTargets(); return; }
     const y = p2y(scale, r.height);
     if (!tfHidden) drawHistogram(data, chart, r, y); // GEX profile behind the lines (gated on data.hist.on + timeframe)
-    const placed = [];
+    const placed = [], ghostRects = []; // ghostRects → hover hit-areas over the 🔔 ghost-line tags
     if (data.cfg.linesOn !== false && !tfHidden) { // "Show lines" master (pill/settings) + timeframe visibility — hide without losing config
     ctx.font = "600 11px -apple-system, system-ui, sans-serif";
     ctx.textBaseline = "middle";
@@ -576,7 +576,7 @@
       // stale = the level has drifted away from where the alert sits (levels are discrete strikes)
       const stale = !!(mine && mine.price != null && Math.abs(mine.price - price) > 0.01);
       const staleTxt = stale && staleMode === "inline" ? `  ⚠ ${(+mine.price).toFixed(2)}` : ""; // #3 inline drift (inline mode only)
-      if (stale && staleMode === "line") ghosts.push({ alertPx: mine.price, color: lc.color }); // #2 ghost line (line mode only)
+      if (stale && staleMode === "line") ghosts.push({ alertPx: mine.price, color: lc.color, level: price }); // #2 ghost line (line mode only)
       const mark = samePkg || otherPkgs.length ? 18 : 0;        // reserve room for the trash/bell glyph
       const baseW = ctx.measureText(text).width, staleW = staleTxt ? ctx.measureText(staleTxt).width : 0;
       labels.push({ yy, text, baseW, staleTxt, color: lc.color, tw: baseW + staleW + mark, price, name: L.label, key: L.key, samePkg, otherPkgs, stale, alertPx: stale ? mine.price : null });
@@ -612,10 +612,25 @@
       const tag = "🔔 " + (+g.alertPx).toFixed(2), tw = ctx.measureText(tag).width + 12;
       ctx.fillStyle = "rgba(12,12,18,0.82)"; ctx.fillRect(6, gy - 8, tw, 16);
       ctx.fillStyle = C.warn; ctx.fillText(tag, 12, gy);
+      ghostRects.push({ left: 6, top: gy - 8, w: tw, h: 16, alertPx: g.alertPx, level: g.level }); // hover hit-area
     }
     ctx.globalAlpha = 1; // reset before the DOM hotspots (which aren't canvas-drawn)
     } // end linesOn
     syncAlertTargets(placed, r.left - hr.left, r.top - hr.top); // hotspots over labels (empty when lines hidden)
+    syncGhostTargets(ghostRects, r.left - hr.left, r.top - hr.top); // hover tooltips over the 🔔 ghost tags (empty unless line mode)
+  }
+  // transparent hover hit-areas over the ghost-line 🔔 tags → the "why is this stale" tooltip
+  let ghostTargets = [];
+  function syncGhostTargets(rects, offX, offY) {
+    if (ghostTargets.length && ghostTargets[0] && !host.contains(ghostTargets[0])) ghostTargets = [];
+    for (let i = 0; i < rects.length; i++) {
+      let d = ghostTargets[i];
+      if (!d) { d = document.createElement("div"); d.style.cssText = "position:absolute;z-index:5;pointer-events:auto;cursor:help;background:transparent"; host.appendChild(d); ghostTargets[i] = d; }
+      const g = rects[i];
+      d.style.left = (offX + g.left) + "px"; d.style.top = (offY + g.top) + "px"; d.style.width = g.w + "px"; d.style.height = g.h + "px"; d.style.display = "block";
+      d.title = tri("tv.staleAlert", { alertPx: (+g.alertPx).toFixed(2), level: (+g.level).toFixed(2) });
+    }
+    for (let i = rects.length; i < ghostTargets.length; i++) if (ghostTargets[i]) ghostTargets[i].style.display = "none";
   }
 
   function tick() {
