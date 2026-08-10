@@ -210,7 +210,8 @@
       "tv.d.spot": "Spot", "tv.d.asof": "as of",
       "tv.staleAlert": "Alert is stale — set at {alertPx}, but the level has moved to {level}. Click the trash to delete, then click the level to re-add at the current price.",
       "tv.autoUpdated": "✓ {n} stale alert{s} updated: {ticker}", "tv.vAutoFailed": "auto-update failed",
-      "tv.autoRing": "next auto-update of stale alerts ({m}m cadence)",
+      "tv.autoRing": "next auto-update of stale alerts ({m}m) — click to update now",
+      "tv.autoNoneStale": "no stale alerts to update",
       // replay.js — replay transport bar, review/exit modals, panel-lock blocker (GEXbot, isolated)
       "rp.blockerTitle": "Locked by GexSync for replay sync — Exit the replay bar to unlock",
       "rp.blockerHead": "Locked for replay sync",
@@ -320,7 +321,8 @@
       "tv.d.spot": "Spot", "tv.d.asof": "a las",
       "tv.staleAlert": "Alerta desactualizada — fijada en {alertPx}, pero el nivel se movió a {level}. Haz clic en la papelera para eliminarla y luego en el nivel para volver a añadirla al precio actual.",
       "tv.autoUpdated": "✓ {n} alerta{s} actualizada{s}: {ticker}", "tv.vAutoFailed": "falló la auto-actualización",
-      "tv.autoRing": "próxima auto-actualización de alertas desactualizadas (cada {m}m)",
+      "tv.autoRing": "próxima auto-actualización de alertas desactualizadas (cada {m}m) — clic para actualizar ahora",
+      "tv.autoNoneStale": "no hay alertas desactualizadas que actualizar",
       // replay.js — replay transport bar, review/exit modals, panel-lock blocker (GEXbot, isolated)
       "rp.blockerTitle": "Bloqueado por GexSync para la sincronización de repetición — Sal de la barra de repetición para desbloquear",
       "rp.blockerHead": "Bloqueado para la sincronización de repetición",

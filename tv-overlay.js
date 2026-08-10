@@ -46,8 +46,9 @@
   const RING = `<span id="gxtv-ring" style="${CLICK};display:flex;align-items:center" title="next GEX refresh — click to refresh now"><svg width="20" height="20" viewBox="0 0 20 20" style="display:block"><circle cx="10" cy="10" r="${R}" fill="none" stroke="rgba(255,255,255,.16)" stroke-width="2"/><circle id="gxtv-arc" cx="10" cy="10" r="${R}" fill="none" stroke="${C.accent}" stroke-width="2" stroke-linecap="round" stroke-dasharray="${CIRC.toFixed(2)}" stroke-dashoffset="0" transform="rotate(-90 10 10)"/><text id="gxtv-sec" x="10" y="10.5" text-anchor="middle" dominant-baseline="middle" fill="${C.dim}" style="font:700 8px -apple-system,system-ui,sans-serif">30</text></svg></span>`;
   // second countdown ring for auto-update stale alerts — amber to match the stale-alert cue (C.warn: the
   // pulsing trash / inline "⚠ old-px" it heals). Mirrors the GEX ring's geometry, counts down to the next
-  // auto-heal mark. Display-only (no click), shown only while the feature is on.
-  const ARING = `<span id="gxtv-aring" style="display:flex;align-items:center" title="next auto-update"><svg width="20" height="20" viewBox="0 0 20 20" style="display:block"><circle cx="10" cy="10" r="${R}" fill="none" stroke="rgba(255,255,255,.16)" stroke-width="2"/><circle id="gxtv-aarc" cx="10" cy="10" r="${R}" fill="none" stroke="${C.warn}" stroke-width="2" stroke-linecap="round" stroke-dasharray="${CIRC.toFixed(2)}" stroke-dashoffset="0" transform="rotate(-90 10 10)"/><text id="gxtv-asec" x="10" y="10.5" text-anchor="middle" dominant-baseline="middle" fill="${C.warn}" style="font:700 7px -apple-system,system-ui,sans-serif">•</text></svg></span>`;
+  // auto-heal mark. Click forces a heal now (parallel to the GEX ring's click-to-refresh); shown only
+  // while the feature is on.
+  const ARING = `<span id="gxtv-aring" style="${CLICK};display:flex;align-items:center" title="next auto-update"><svg width="20" height="20" viewBox="0 0 20 20" style="display:block"><circle cx="10" cy="10" r="${R}" fill="none" stroke="rgba(255,255,255,.16)" stroke-width="2"/><circle id="gxtv-aarc" cx="10" cy="10" r="${R}" fill="none" stroke="${C.warn}" stroke-width="2" stroke-linecap="round" stroke-dasharray="${CIRC.toFixed(2)}" stroke-dashoffset="0" transform="rotate(-90 10 10)"/><text id="gxtv-asec" x="10" y="10.5" text-anchor="middle" dominant-baseline="middle" fill="${C.warn}" style="font:700 7px -apple-system,system-ui,sans-serif">•</text></svg></span>`;
   // feather-style trash glyph shown on a label that already has one of our alerts (click → delete)
   const TRASH_SVG = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>';
   // amber bell shown when an alert exists on this level but under a DIFFERENT package than what's
@@ -418,7 +419,7 @@
       + (showRing && autoMs > 0 ? ARING : ""); // second (amber) ring — only while auto-update is on
     const wire = (id, fn) => { const el = pillEl.querySelector(id); if (el) fn(el); };
     wire("#gxtv-ring", (el) => { el.setAttribute("title", tr("tv.ringTitle")); el.onclick = forceFetch; updateCountdown(); }); // click the countdown → refresh now
-    wire("#gxtv-aring", () => updateAutoCountdown()); // seed the auto ring so it doesn't flash the "•" placeholder
+    wire("#gxtv-aring", (el) => { updateAutoCountdown(); el.onclick = () => autoUpdateStale(true); }); // seed the auto ring + click forces a heal now (guarded; toasts on the no-op paths)
     wire("#gxtv-pkg", (el) => (el.onclick = () => emit(EV.cyclePkg)));   // click package → cycle
     wire("#gxtv-resync", (el) => (el.onclick = () => loadAlertIndex(true))); // re-list our alerts
     wire("#gxtv-bulk", (el) => (el.onclick = bulkToggle));               // add all / delete all
@@ -686,11 +687,11 @@
   // Auto-heal: recompute the currently-stale alerts on the shown ticker+pkg (draw is sig-gated, so we
   // rescan here), then create-first-delete-after so a failed create never loses an alert. 2 API calls
   // total regardless of how many drifted. Scope = this chart's symbol only.
-  async function autoUpdateStale() {
-    if (autoBusy) return;
+  async function autoUpdateStale(manual) { // manual = clicked the ring (force now) → give feedback on the no-op paths the scheduled tick swallows
+    if (autoBusy) return; // a heal is already running — its success toast will follow
     const data = readNode();
-    if (!data || !data.cfg || data.valid === false || !data.levels || data.cfg.linesOn === false) return;
-    const ctx = chartCtx(); if (!ctx || ctx.bare !== data.ticker) return; // symbol spec for alertInner; guard against a mid-swap
+    if (!data || !data.cfg || data.valid === false || !data.levels || data.cfg.linesOn === false) { if (manual) toast(tr("tv.autoNoneStale")); return; }
+    const ctx = chartCtx(); if (!ctx || ctx.bare !== data.ticker) { if (manual) toast(tr("tv.autoNoneStale")); return; } // symbol spec for alertInner; guard against a mid-swap
     const stale = [];
     for (const L of LINES) {
       const lv = data.levels[L.src]; const price = lv ? lv[L.field] : null;
@@ -699,7 +700,7 @@
       const mine = (myAlerts.get(akey(data.ticker, L.key)) || []).find((a) => a.pkg === data.pkgCat);
       if (mine && mine.price != null && Math.abs(mine.price - price) > 0.01) stale.push({ key: L.key, oldId: mine.id, label: L.label, newPrice: price, pkg: data.pkgCat });
     }
-    if (!stale.length) return;
+    if (!stale.length) { if (manual) toast(tr("tv.autoNoneStale")); return; }
     autoBusy = true;
     try {
       const created = await tvAlertPost("create_alerts", { payload: stale.map((s) => alertInner(ctx.sym, ctx.res, ctx.bare, s.newPrice, s.label, s.key, s.pkg)) });
