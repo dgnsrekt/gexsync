@@ -115,25 +115,26 @@
     const armed = mode === "line" || mode === "draw", drawing = mode === "draw";
     const tCol = (cfg && cfg.lineColor) || AMBER, dCol = (cfg && cfg.drawColor) || AZURE;
     const drawList = (cfg && Array.isArray(cfg.draws)) ? cfg.draws : [];
-    if (!list.length && !armed && !drawList.length) { if (overlay) overlay.style.display = "none"; for (const { line, label } of els.values()) { line.remove(); label.remove(); } els.clear(); if (drawG) drawG.replaceChildren(); lastSig = ""; return; }
+    const tvCol = (document.getElementById("__gxZoomLock") || {}).textContent || "", tvLock = !!tvCol; // TV chart owns the y-axis (color = its group) → show the same "zoom locked" chip
+    if (!list.length && !armed && !drawList.length && !tvLock) { if (overlay) overlay.style.display = "none"; for (const { line, label } of els.values()) { line.remove(); label.remove(); } els.clear(); if (drawG) drawG.replaceChildren(); lastSig = ""; return; }
     const chart = getChart();
     if (!chart) { if (overlay) overlay.style.display = "none"; return; }
     ensureOverlay();
     const rect = chart.canvas.getBoundingClientRect(), y = chart.scales.y, area = chart.chartArea, t = timeScale();
     // crosshair on the canvas while a mode is armed
     chart.canvas.style.cursor = armed ? "crosshair" : "";
-    const sig = JSON.stringify([rect.left, rect.top, rect.width, rect.height, y.min, y.max, t ? t.min : 0, t ? t.max : 0, area.left, area.right, area.top, area.bottom, mode, (cfg && cfg.scope) || "", tCol, dCol, list.map((l) => [l.id, priceOf(l), l.overrides && l.overrides.linecolor, l.text]), drawList.map((d) => d.id)]);
+    const sig = JSON.stringify([rect.left, rect.top, rect.width, rect.height, y.min, y.max, t ? t.min : 0, t ? t.max : 0, area.left, area.right, area.top, area.bottom, mode, (cfg && cfg.scope) || "", tCol, dCol, tvCol, list.map((l) => [l.id, priceOf(l), l.overrides && l.overrides.linecolor, l.text]), drawList.map((d) => d.id)]);
     if (sig === lastSig) return;
     lastSig = sig;
     overlay.style.cssText = `position:fixed;pointer-events:none;z-index:2147481600;overflow:hidden;display:block;left:${rect.left}px;top:${rect.top}px;width:${rect.width}px;height:${rect.height}px;`;
     paintDraws(chart, drawList, dCol);
-    // zoom-lock badge: shown while a mode is armed, tinted to the mode
-    lockBadge.style.display = armed ? "flex" : "none";
-    lockBadge.style.color = drawing ? dCol : tCol;
-    if (lockTxt) lockTxt.textContent = drawing ? tri("lines.drawScope", { scope: scopeWord((cfg && cfg.scope) || "page", cfg && cfg.lang) }, cfg && cfg.lang) : tr("lines.zoomLocked", cfg && cfg.lang);
+    // zoom-lock badge: shown while a mode is armed (tinted to the tool) OR while a TV chart owns the y-axis (tinted to the group)
+    lockBadge.style.display = (armed || tvLock) ? "flex" : "none";
+    lockBadge.style.color = armed ? (drawing ? dCol : tCol) : tvCol;
+    if (lockTxt) lockTxt.textContent = (armed && drawing) ? tri("lines.drawScope", { scope: scopeWord((cfg && cfg.scope) || "page", cfg && cfg.lang) }, cfg && cfg.lang) : tr("lines.zoomLocked", cfg && cfg.lang);
     lockBadge.style.left = (area.left + 8) + "px";
     lockBadge.style.top = Math.max(2, area.top - 20) + "px"; // sit on the top price axis, not inside the plot
-    if (!armed) hideGuide(); // overlay stays up for saved lines, but not armed → clear any leftover reticle
+    if (!armed) hideGuide(); // overlay stays up for saved lines / TV zoom-lock, but not armed → clear any leftover reticle
     const live = new Set();
     for (const ln of list) {
       const price = priceOf(ln);

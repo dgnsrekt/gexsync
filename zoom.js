@@ -10,7 +10,9 @@
   const CUR_ID = "__gxZoom";       // MAIN → isolated: the chart's current y-range (fresh each tick)
   const HOLD_ID = "__gxZoomHold";  // isolated → MAIN: a range to hold through refreshes (live sync)
   const APPLY_ID = "__gxZoomApply";// isolated → MAIN: {..,seq} — apply once, don't hold (Recall)
+  const LOCK_ID = "__gxZoomLock";  // isolated → MAIN: "1" = a TV chart owns the y-axis → block the user's own zoom input
   const node = (id) => { let n = document.getElementById(id); if (!n) { n = document.createElement("div"); n.id = id; n.style.display = "none"; (document.documentElement || document).appendChild(n); } return n; };
+  const locked = () => { const n = document.getElementById(LOCK_ID); return !!(n && n.textContent); }; // non-empty (holds the group color) = a TV chart owns the y-axis
   const fiberOf = (el) => { for (const k in el) if (k.startsWith("__reactFiber$")) return el[k]; return null; };
 
   // Locate the Chart.js instance by SHAPE (component is minified) — an object with a
@@ -44,7 +46,7 @@
   // and signal content.js (for live-sync propagation). Skipped while WE apply.
   let capTimer = 0;
   const scheduleCapture = (e) => {
-    if (!onCanvas(e)) return;
+    if (!onCanvas(e) || locked()) return; // locked = TV drives the axis; ignore any (blocked) local input
     clearTimeout(capTimer);
     capTimer = setTimeout(() => {
       if (applying) return; const c = findChart(); if (!c) return;
@@ -55,6 +57,13 @@
   document.addEventListener("wheel", scheduleCapture, true);
   document.addEventListener("pointerup", scheduleCapture, true);
   document.addEventListener("dblclick", scheduleCapture, true);
+
+  // TV-owned zoom: while __gxZoomLock is "1", block the user's own wheel/drag/dblclick on the canvas so the
+  // axis moves only via the held range from TV (mirrors lines.js's lockEv). NEVER block pointerdown → menus.
+  const lockEv = (e) => { if (locked() && onCanvas(e)) { e.stopPropagation(); e.preventDefault(); } };
+  document.addEventListener("mousedown", lockEv, true);
+  document.addEventListener("dblclick", lockEv, true);
+  document.addEventListener("wheel", lockEv, { capture: true, passive: false });
 
   let lastMin = null, lastMax = null, lastApplySeq = null;
   function tick() {

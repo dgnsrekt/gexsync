@@ -418,6 +418,15 @@
     <button class="seg-btn" data-auto="30" role="tab">30m</button>
   </div>
   <div class="hint" style="margin-top:5px" data-i18n-html="tv.auto.hint">Off by default. When on, a stale alert is automatically deleted and recreated at the current level price — on the wall clock (e.g. 5m → :00/:05…), only while the market's open, and never faster than the refresh rate. Applies to the symbol on this chart.</div>
+  <div class="label" style="margin-top:14px" data-i18n="tv.push">Push ticker to gexbot</div>
+  <div class="seg" id="tvPushSeg" role="tablist">
+    <button class="seg-btn" data-push="off" role="tab" data-i18n="tv.push.off">Off</button>
+    <button class="seg-btn" data-push="manual" role="tab" data-i18n="tv.push.manual">Manual</button>
+    <button class="seg-btn" data-push="auto" role="tab" data-i18n="tv.push.auto">Auto</button>
+  </div>
+  <div class="hint" style="margin-top:5px" data-i18n="tv.push.hint">Off by default. The chart pill shows a group chip — only gexbot tabs currently in <b>Ticker mode</b> appear. <b>Manual</b>: click ➜ to push this chart's ticker to the selected group. <b>Auto</b>: lock this chart to a group (🔓 → 🔒) and it auto-pushes on every symbol change — one chart per group, so multiple TV tabs don't fight.</div>
+  <label class="switch" style="margin-top:8px"><input type="checkbox" id="tvZoomSync"><span class="track"></span><span data-i18n="tv.zoom">Sync y-axis zoom (locks gexbot zoom)</span></label>
+  <div class="hint" style="margin-top:5px" data-i18n="tv.zoom.hint"><b>Auto + locked only.</b> While this chart owns a group, scrolling the TradingView price axis also drives that group's gexbot y-axis, and gexbot's own zoom is locked (only this chart controls it). One-way; a wrong-scale/instrument push is ignored automatically.</div>
   </div><!-- /page: tv -->
 
   <div data-page="watchlist" hidden>

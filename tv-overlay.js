@@ -14,7 +14,7 @@
   const DIVIDER = '<span style="width:1px;height:13px;background:rgba(255,255,255,.16)"></span>';
   const CLICK = "cursor:pointer;pointer-events:auto"; // a pill child opts back into clicks (pill is pointer-events:none)
   // Outbound event contract to ISOLATED tv.js (its listeners use the same literals).
-  const EV = { fetch: "gexsync-tv-fetch", symbol: "gexsync-tv-symbol", hello: "gexsync-tv-hello", cyclePkg: "gexsync-tv-cycle-pkg", toggleLines: "gexsync-tv-toggle-lines", toggleHist: "gexsync-tv-toggle-hist", cycleHsrc: "gexsync-tv-cycle-hsrc" };
+  const EV = { fetch: "gexsync-tv-fetch", symbol: "gexsync-tv-symbol", hello: "gexsync-tv-hello", cyclePkg: "gexsync-tv-cycle-pkg", toggleLines: "gexsync-tv-toggle-lines", toggleHist: "gexsync-tv-toggle-hist", cycleHsrc: "gexsync-tv-cycle-hsrc", pushCycle: "gexsync-tv-push-cycle", pushSend: "gexsync-tv-push-send", pushLock: "gexsync-tv-push-lock", zoomPush: "gexsync-tv-zoom" };
   const emit = (name, detail) => window.dispatchEvent(new CustomEvent(name, detail ? { detail } : undefined));
 
   // i18n: the popup UI language rides over on the #__gxtv payload (data.lang); readNode keeps LANG
@@ -39,6 +39,7 @@
   const LOGO = '<svg width="18" height="18" viewBox="0 0 32 32" style="display:block"><rect x="1.5" y="1.5" width="29" height="29" rx="9" fill="#12101B" stroke="rgba(22,224,163,.55)"/><rect x="7" y="10" width="7" height="12" rx="2.2" fill="#16E0A3" opacity=".92"/><rect x="18" y="10" width="7" height="12" rx="2.2" fill="#4AA3FF" opacity=".92"/><line x1="16" y1="7" x2="16" y2="25" stroke="#16E0A3" stroke-width="2" stroke-linecap="round"/><circle cx="16" cy="16" r="2.4" fill="#16E0A3"/></svg>';
   let refreshMs = 30000; // fetch cadence + countdown, wall-clock aligned; tunable via cfg (15/30/60s)
   let autoMs = 0, lastAutoMark = 0, autoBusy = false; // auto-heal stale alerts: wall-clock cadence (0 = off), overlap guard
+  let zoomArmed = false, lastPushVR = null; // y-axis push (auto+locked): whether armed (from data.push.zoom) + last {yMin,yMax} emitted (delta gate)
   const R = 8, CIRC = 2 * Math.PI * R; // countdown ring geometry
   // clickable countdown ring: track + depleting arc + seconds; click forces a refresh. The title
   // lives on an HTML <span> WRAPPER (not the <svg>) — Chrome doesn't tooltip a `title` attribute on
@@ -387,10 +388,42 @@
     return `<span id="gxtv-bulk" title="${title}" style="display:flex;align-items:center;color:${n ? C.danger : C.accent};${CLICK}">${n ? BELL_DEL : BELL_ADD}</span>`;
   }
 
+  // Our own lock glyphs — the 🔒/🔓 emoji are indistinguishable at pill size and CSS color can't tint them.
+  // SVG uses currentColor, so locked = FILLED body (green) vs unlocked = HOLLOW open shackle (grey): the read
+  // is "is there a solid green padlock?" from across the screen, not a squint at the shackle.
+  const LOCK_SHUT = '<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:block"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4" fill="none"/></svg>';
+  const LOCK_OPEN = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:block"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 7.6-1.3"/></svg>';
+
+  // Ticker-push chip (opt-in): group swatch + name + live count, then a mode-specific action. MANUAL → a ➜
+  // push button (click pushes this chart's ticker to the selected group). AUTO → a lock toggle: 🔓 to lock
+  // THIS chart to the group (exclusive — one chart per group; then it auto-pushes on every change) / 🔒 when
+  // we hold it (click to unlock). Click the chip to cycle live groups (inert while locked). Shown only when
+  // the feature is on (data.push); greyed with a hint when no group is live.
+  function pushChip(data) {
+    const p = data.push; if (!p) return ""; // feature off
+    const groups = p.groups || [], sel = groups.find((g) => g.name === p.group) || (p.locked ? groups.find((g) => g.name === p.locked) : null);
+    if (!sel) return DIVIDER + `<span id="gxtv-pushgrp" title="${tr("tv.pushNone")}" style="${CLICK};display:flex;align-items:center;gap:4px;color:${C.off};font-size:10px;font-weight:600">◇ ${tr("tv.pushNoGroups")}</span>`;
+    const locked = !!p.locked && sel.name === p.locked;
+    const swatch = `<span style="width:9px;height:9px;border-radius:2px;background:${sel.color};box-shadow:0 0 0 1px rgba(255,255,255,.35);flex:none"></span>`;
+    const chip = `<span id="gxtv-pushgrp" title="${locked ? tr("tv.pushLocked") : tr("tv.pushCycle")}" style="${locked ? "" : CLICK + ";"}display:flex;align-items:center;gap:4px;font-size:10px;font-weight:700;color:${sel.color}">${swatch}<span>${sel.name}</span><span style="color:${C.dim};min-width:8px;text-align:center">${sel.count}</span></span>`;
+    let action;
+    if (p.mode === "auto") {
+      if (locked) action = `<span id="gxtv-pushlock" title="${tri("tv.pushUnlock", { group: sel.name })}" style="${CLICK};display:flex;align-items:center;color:${C.accent}">${LOCK_SHUT}</span>`
+        + (p.zoom ? `<span title="${tr("tv.zoomOn")}" style="display:flex;align-items:center;color:${C.accent};font-size:11px;line-height:1;font-weight:700">↕</span>` : ""); // y-axis sync armed cue
+      else { const canLock = sel.lock !== "other"; action = `<span id="gxtv-pushlock" title="${canLock ? tri("tv.pushLock", { group: sel.name }) : tr("tv.pushLockedOther")}" style="${CLICK};display:flex;align-items:center;color:${canLock ? C.dim : C.off};opacity:${canLock ? 1 : 0.55}">${LOCK_OPEN}</span>`; }
+    } else { // manual
+      const canPush = data.valid === true; // only a GEXbot-universe ticker can be pushed (valid:false = "no GEX data", null = universe still loading)
+      const sendTitle = canPush ? tri("tv.pushSend", { ticker: data.ticker || "?", group: sel.name }) : tri("tv.pushNotGex", { ticker: data.ticker || "?" });
+      action = `<span id="gxtv-pushsend" title="${sendTitle}" style="${CLICK};display:flex;align-items:center;color:${canPush ? C.dim : C.off};font-size:12px;line-height:1;opacity:${canPush ? 1 : 0.55}">➜</span>`;
+    }
+    return DIVIDER + chip + action;
+  }
+
   // Bottom-left status pill: logo + wordmark, connection dot, current ticker, GEXbot-ticker badge.
   function updatePill(data) {
     if (!host) return;
-    if (!data) { if (pillEl) pillEl.style.display = "none"; return; } // overlay off → no pill
+    if (!data) { if (pillEl) pillEl.style.display = "none"; zoomArmed = false; lastPushVR = null; return; } // overlay off → no pill
+    zoomArmed = !!(data.push && data.push.zoom); if (!zoomArmed) lastPushVR = null; // y-axis push armed? (drives the per-tick emit)
     if (!pillEl || !host.contains(pillEl)) {
       pillEl = document.createElement("div");
       pillEl.id = "gexsync-tv-pill";
@@ -415,11 +448,32 @@
       + bulkBell(data) // bulk add/delete-all-alerts bell (GEXbot tickers only)
       + `<span id="gxtv-resync" title="${tr("tv.resyncTitle")}" style="color:${C.dim};${CLICK};font-size:13px;line-height:1">⟳</span>`
       + (data.levels ? `<span id="gxtv-details" title="${tr("tv.details")}" style="display:flex;align-items:center;${CLICK};color:${detailsOpen ? C.accent : C.dim}">${DETAILS_ICON}</span>` : "") // GEX details panel toggle
+      + pushChip(data) // ticker-push group chip + ➜ (opt-in; empty string when off) — carries its own leading divider
       + (showRing ? DIVIDER + RING : "")
       + (showRing && autoMs > 0 ? ARING : ""); // second (amber) ring — only while auto-update is on
     const wire = (id, fn) => { const el = pillEl.querySelector(id); if (el) fn(el); };
     wire("#gxtv-ring", (el) => { el.setAttribute("title", tr("tv.ringTitle")); el.onclick = forceFetch; updateCountdown(); }); // click the countdown → refresh now
     wire("#gxtv-aring", (el) => { updateAutoCountdown(); el.onclick = () => autoUpdateStale(true); }); // seed the auto ring + click forces a heal now (guarded; toasts on the no-op paths)
+    wire("#gxtv-pushgrp", (el) => (el.onclick = () => { // click the group chip → cycle active groups (inert while locked)
+      if (data.push && data.push.locked) return; // locked → chip is committed; use the lock toggle to unlock
+      if (!data.push || !(data.push.groups || []).length) return toast(tr("tv.pushNone"), true);
+      emit(EV.pushCycle);
+    }));
+    wire("#gxtv-pushsend", (el) => (el.onclick = () => { // manual ➜ → push this chart's ticker to the target group
+      const p = data.push, sel = p && (p.groups || []).find((g) => g.name === p.group);
+      if (!sel) return toast(tr("tv.pushNone"), true);
+      if (data.valid !== true) return toast(tri("tv.pushNotGex", { ticker: data.ticker || "?" }), true); // not a GEXbot ticker → nothing to push
+      if (!data.ticker) return toast(tr("tv.pushNoTicker"), true);
+      emit(EV.pushSend); toast(tri("tv.pushed", { ticker: data.ticker, group: sel.name }));
+    }));
+    wire("#gxtv-pushlock", (el) => (el.onclick = () => { // auto lock toggle → lock this chart to the group / unlock
+      const p = data.push; if (!p) return;
+      if (p.locked) { emit(EV.pushLock); return toast(tri("tv.pushUnlocked", { group: p.locked })); }
+      const sel = (p.groups || []).find((g) => g.name === p.group);
+      if (!sel) return toast(tr("tv.pushNone"), true);
+      if (sel.lock === "other") return toast(tr("tv.pushLockedOther"), true); // another chart owns this group
+      emit(EV.pushLock); toast(tri("tv.pushLockedMe", { group: sel.name }));
+    }));
     wire("#gxtv-pkg", (el) => (el.onclick = () => emit(EV.cyclePkg)));   // click package → cycle
     wire("#gxtv-resync", (el) => (el.onclick = () => loadAlertIndex(true))); // re-list our alerts
     wire("#gxtv-bulk", (el) => (el.onclick = bulkToggle));               // add all / delete all
@@ -672,6 +726,7 @@
     try { sig = JSON.stringify(chart.getVisiblePriceRange()) + (paneEl ? paneEl.getBoundingClientRect().width : 0) + "|" + String(chart.resolution()) + "|" + marketStatus(chart); } catch {} // resolution + market status in the sig so a timeframe switch OR a market open/close repaints (pause gates)
     const n = document.getElementById(NODE_ID); sig += n ? n.textContent : "";
     if (sig !== lastSig) { lastSig = sig; draw(); }
+    if (zoomArmed) zoomPushTick(chart); // y-axis push: emit the visible price range when it moves (auto+locked zoom-sync)
     updateCountdown(); // tick the ring every frame (independent of the sig-gated redraw)
     updateAutoCountdown(); // and the auto-update ring alongside it
     // Auto-heal stale alerts on a coarser wall-clock mark (:00/:05…), never faster than the poll,
@@ -682,6 +737,18 @@
       if (lastAutoMark && amark !== lastAutoMark) autoUpdateStale();
       lastAutoMark = amark;
     } else lastAutoMark = 0; // reset when off/paused so re-enabling doesn't insta-fire
+  }
+
+  // Emit the chart's visible price window to ISOLATED when it moves beyond a relative delta (0.25% of span).
+  // Endpoints are prices even under log scale; percent/indexed mode → garbage, caught by gexbot's sanity gate.
+  function zoomPushTick(chart) {
+    let vr; try { vr = chart.getVisiblePriceRange(); } catch { return; }
+    if (!vr || !isFinite(vr.from) || !isFinite(vr.to)) return;
+    const yMin = Math.min(vr.from, vr.to), yMax = Math.max(vr.from, vr.to), span = yMax - yMin;
+    if (!(span > 0)) return;
+    if (lastPushVR && Math.abs(yMin - lastPushVR.yMin) <= span * 0.0025 && Math.abs(yMax - lastPushVR.yMax) <= span * 0.0025) return; // <0.25% move → skip
+    lastPushVR = { yMin, yMax };
+    emit(EV.zoomPush, { yMin, yMax });
   }
 
   // Auto-heal: recompute the currently-stale alerts on the shown ticker+pkg (draw is sig-gated, so we

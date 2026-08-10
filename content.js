@@ -767,7 +767,30 @@
   const zoomBusy = () => { try { return (JSON.parse(document.getElementById("__gxZoom").textContent).busyUntil || 0) > Date.now(); } catch (e) { return false; } }; // user actively zooming this tab → it's the authority
   const writeHold = (z) => { zNode("__gxZoomHold").textContent = z && isFinite(z.yMin) && isFinite(z.yMax) ? JSON.stringify({ yMin: z.yMin, yMax: z.yMax }) : ""; };
   const oneShot = (z) => { if (z && isFinite(z.yMin) && isFinite(z.yMax)) zNode("__gxZoomApply").textContent = JSON.stringify({ yMin: z.yMin, yMax: z.yMax, seq: ++applySeq }); };
-  const adoptLive = () => { if (!zoomSync || !onSyncPage() || !baseTicker()) return; const k = liveKey(); get(k, (r) => { if (alive()) writeHold(r[k] || null); }); };
+  const adoptLive = () => { if (!zoomSync || !onSyncPage() || !baseTicker() || tvZoomActive()) return; const k = liveKey(); get(k, (r) => { if (alive()) writeHold(r[k] || null); }); }; // never adopt a peer's zoom while a TV chart owns our axis
+  // ---- TV-owned zoom (an auto+locked ticker-push chart drives our y-axis; group-scoped, parallels gexsync-tvlock) ----
+  const tvZoomKey = () => "gexsync-tvzoom:" + groupName();
+  // __gxZoomLock holds the group COLOR while TV owns the axis ("" = off). zoom.js reads it (truthy → block
+  // input); lines.js reads it to show its existing "zoom locked" chip tinted to the group (same chip draw/line use).
+  const writeZoomLock = (on) => { zNode("__gxZoomLock").textContent = on ? (GROUPS.find((g) => g.name === groupName()) || GROUPS[0]).color : ""; };
+  let tvZoomOn = false; const tvZoomActive = () => tvZoomOn;
+  // Sanity gate: reject a pushed range whose CENTER is nowhere near our current axis — percent/indexed TV
+  // scale (center ≈ 0 or 100) or a gross price mismatch. Span-agnostic on purpose: a legit big zoom in/out
+  // is the whole point, so we don't gate on span ratio (that would reject the initial wide→tight sync).
+  // Wrong instrument is already caught upstream by ticker === baseTicker(); same-underlying spot/es basis
+  // differs only ~points and passes.
+  const zoomFits = (yMin, yMax, cur) => {
+    if (!cur) return true; // no current range yet (fresh chart) → allow; zoom.js's stability gate handles the re-fit
+    const pc = (yMin + yMax) / 2, ps = yMax - yMin, cc = (cur.yMin + cur.yMax) / 2, cs = cur.yMax - cur.yMin;
+    if (!(ps > 0) || !(cs > 0)) return false;
+    return Math.abs(pc - cc) <= 0.18 * Math.max(Math.abs(cc), cs, ps); // center within ~18% of the price/spans
+  };
+  const clearTvZoom = () => { if (!tvZoomOn) return; tvZoomOn = false; writeHold(null); writeZoomLock(false); if (zoomSync) adoptLive(); }; // hand back control: drop the hold (else it re-asserts forever) + unlock; resume peer sync if on
+  const applyTvZoom = (rec) => {
+    if (!rec || !(rec.exp > Date.now()) || rec.ticker !== baseTicker() || !isFinite(rec.yMin) || !isFinite(rec.yMax)) return clearTvZoom(); // stale / different ticker (mid-switch) → hand back
+    if (!zoomFits(rec.yMin, rec.yMax, readCurZoom())) return clearTvZoom(); // wrong scale/instrument → don't apply, hand control back
+    writeHold({ yMin: rec.yMin, yMax: rec.yMax }); writeZoomLock(true); tvZoomOn = true;
+  };
   // ---- live-zoom state indicator: the state machine takes over the pill's leading
   // section (the loop-glyph circle + "mode: …" label). idle → grab ("master", mint)
   // → settle ("setting…", the loop glyph spins for the beat before it takes) → took
@@ -808,7 +831,7 @@
 
   // capture: the user changed the zoom → it becomes the live value for this ticker
   window.addEventListener("gexsync-zoom", () => {
-    if (!zoomSync || !onSyncPage() || !baseTicker()) return;
+    if (!zoomSync || !onSyncPage() || !baseTicker() || tvZoomActive()) return; // while TV owns the axis, don't capture/broadcast (input is locked anyway)
     const z = readCurZoom(); if (z) { send({ [liveKey()]: { yMin: z.yMin, yMax: z.yMax, t: Date.now() } }); writeHold(z); ZHUD.took(); }
   });
   // adopt the live value on ticker switch
@@ -816,7 +839,7 @@
   // Recall (broadcast from popup): apply the saved range. With sync on it becomes the
   // live value (holds + propagates); with sync off it's a one-shot snap.
   function recallZoom() {
-    if (replayLocked || !onSyncPage() || !baseTicker()) return;
+    if (replayLocked || !onSyncPage() || !baseTicker() || tvZoomActive()) return; // TV owns the axis → ignore Recall
     const k = savedKey(); get(k, (r) => { const z = r[k]; if (!z || !alive()) return;
       if (zoomSync) { send({ [liveKey()]: { yMin: z.yMin, yMax: z.yMax, t: Date.now() } }); writeHold(z); }
       else oneShot(z);
@@ -1276,7 +1299,7 @@
     const TP = "gexsync-tp:" + TAB;
     setInterval(() => {
       if (!alive()) return; // orphaned content script: stay quiet
-      if (!onSyncPage() || mode !== "ticker") { chrome.storage.local.remove(TP); return; } // drop presence off-page / off-ticker
+      if (!onSyncPage() || mode !== "ticker") { chrome.storage.local.remove(TP); clearTvZoom(); return; } // drop presence off-page / off-ticker; also hand zoom control back
       send({ [TP]: { group: groupName(), exp: Date.now() + 5000 } });
       get(null, (all) => {
         const now = Date.now(), mine = groupName(), stale = [];
@@ -1290,6 +1313,7 @@
         if (stale.length && alive()) chrome.storage.local.remove(stale);
         groupCount = n || 1;
         paintGroup();
+        applyTvZoom(all[tvZoomKey()]); // TV-owned zoom: re-validate every 1.5s → applies while fresh, clears on expiry
       });
     }, 1500);
     renderChip();
@@ -1682,7 +1706,8 @@
     if (profileSync() && changes[OPTS_KEY]?.newValue) applyOpts(changes[OPTS_KEY].newValue.state);
     if (tickerSync() && changes[tickerChan()]?.newValue) applyTicker(changes[tickerChan()].newValue.ticker);
     if (tickerSync() && changes[ES_CHAN()]?.newValue) applyEs(changes[ES_CHAN()].newValue.es);
-    if (zoomSync && !zoomBusy() && changes[liveKey()]?.newValue) { writeHold(changes[liveKey()].newValue); ZHUD.follow(); } // live sync from a peer (incl. during replay) — but never override a tab you're actively zooming
+    if (zoomSync && !zoomBusy() && !tvZoomActive() && changes[liveKey()]?.newValue) { writeHold(changes[liveKey()].newValue); ZHUD.follow(); } // live sync from a peer (incl. during replay) — but never override a tab you're actively zooming, or one a TV chart owns
+    if (onSyncPage() && tickerSync() && changes[tvZoomKey()]) applyTvZoom(changes[tvZoomKey()].newValue); // TV-owned zoom: a locked TV chart pushed a y-range for our group (undefined newValue = removed → clearTvZoom)
     if (changes[RECALL_KEY]) recallZoom(); // Save/Recall broadcast from the popup
     if (groupShot && changes[SHOOT_REQ]?.newValue) respondShot(changes[SHOOT_REQ].newValue.seq); // every pane captures itself
   });
