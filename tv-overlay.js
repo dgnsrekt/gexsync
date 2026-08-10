@@ -44,6 +44,10 @@
   // lives on an HTML <span> WRAPPER (not the <svg>) — Chrome doesn't tooltip a `title` attribute on
   // inline SVG, so #gxtv-ring is the span (carries title/click); the arc/sec ids stay on the svg.
   const RING = `<span id="gxtv-ring" style="${CLICK};display:flex;align-items:center" title="next GEX refresh — click to refresh now"><svg width="20" height="20" viewBox="0 0 20 20" style="display:block"><circle cx="10" cy="10" r="${R}" fill="none" stroke="rgba(255,255,255,.16)" stroke-width="2"/><circle id="gxtv-arc" cx="10" cy="10" r="${R}" fill="none" stroke="${C.accent}" stroke-width="2" stroke-linecap="round" stroke-dasharray="${CIRC.toFixed(2)}" stroke-dashoffset="0" transform="rotate(-90 10 10)"/><text id="gxtv-sec" x="10" y="10.5" text-anchor="middle" dominant-baseline="middle" fill="${C.dim}" style="font:700 8px -apple-system,system-ui,sans-serif">30</text></svg></span>`;
+  // second countdown ring for auto-update stale alerts — amber to match the stale-alert cue (C.warn: the
+  // pulsing trash / inline "⚠ old-px" it heals). Mirrors the GEX ring's geometry, counts down to the next
+  // auto-heal mark. Display-only (no click), shown only while the feature is on.
+  const ARING = `<span id="gxtv-aring" style="display:flex;align-items:center" title="next auto-update"><svg width="20" height="20" viewBox="0 0 20 20" style="display:block"><circle cx="10" cy="10" r="${R}" fill="none" stroke="rgba(255,255,255,.16)" stroke-width="2"/><circle id="gxtv-aarc" cx="10" cy="10" r="${R}" fill="none" stroke="${C.warn}" stroke-width="2" stroke-linecap="round" stroke-dasharray="${CIRC.toFixed(2)}" stroke-dashoffset="0" transform="rotate(-90 10 10)"/><text id="gxtv-asec" x="10" y="10.5" text-anchor="middle" dominant-baseline="middle" fill="${C.warn}" style="font:700 7px -apple-system,system-ui,sans-serif">•</text></svg></span>`;
   // feather-style trash glyph shown on a label that already has one of our alerts (click → delete)
   const TRASH_SVG = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>';
   // amber bell shown when an alert exists on this level but under a DIFFERENT package than what's
@@ -136,6 +140,27 @@
     const remaining = mark + refreshMs - now; // ms to the next mark
     arc.setAttribute("stroke-dashoffset", (CIRC * (1 - remaining / refreshMs)).toFixed(2));
     sec.textContent = String(Math.ceil(remaining / 1000));
+  }
+
+  // Paint the auto-update ring (amber — matches the stale-alert cue it heals). Same wall-clock mark math
+  // as the scheduled heal (effAutoMs = max(autoMs, refreshMs)); mirrors the GEX ring's paused (‖) state.
+  // Label switches to minutes ("5m") above 99s so a long cadence stays inside the 20px circle.
+  function updateAutoCountdown() {
+    if (!pillEl || pillEl.style.display === "none" || autoMs <= 0) return;
+    const ring = pillEl.querySelector("#gxtv-aring"), arc = pillEl.querySelector("#gxtv-aarc"), sec = pillEl.querySelector("#gxtv-asec");
+    if (!arc || !sec) return; // ring not in the pill this frame
+    if (pollPaused) { // same gate as the scheduled heal — freeze as an amber ‖
+      arc.setAttribute("stroke", C.warn); arc.setAttribute("stroke-dashoffset", "0");
+      sec.setAttribute("fill", C.warn); sec.textContent = "‖";
+      if (ring) ring.setAttribute("title", tr(pauseReason === "closed" ? "tv.pausedClosed" : "tv.pausedTf")); return;
+    }
+    const eff = Math.max(autoMs, refreshMs), now = Date.now();
+    const remaining = Math.floor(now / eff) * eff + eff - now; // ms to the next auto mark
+    arc.setAttribute("stroke", C.warn); sec.setAttribute("fill", C.warn); // amber — matches the stale-alert cue
+    arc.setAttribute("stroke-dashoffset", (CIRC * (1 - remaining / eff)).toFixed(2));
+    const secs = Math.ceil(remaining / 1000);
+    sec.textContent = secs >= 100 ? Math.ceil(remaining / 60000) + "m" : String(secs);
+    if (ring) ring.setAttribute("title", tri("tv.autoRing", { m: Math.round(eff / 60000) }));
   }
 
   // Current chart context for an alert payload: full symbol spec, resolution, bare ticker.
@@ -389,9 +414,11 @@
       + bulkBell(data) // bulk add/delete-all-alerts bell (GEXbot tickers only)
       + `<span id="gxtv-resync" title="${tr("tv.resyncTitle")}" style="color:${C.dim};${CLICK};font-size:13px;line-height:1">⟳</span>`
       + (data.levels ? `<span id="gxtv-details" title="${tr("tv.details")}" style="display:flex;align-items:center;${CLICK};color:${detailsOpen ? C.accent : C.dim}">${DETAILS_ICON}</span>` : "") // GEX details panel toggle
-      + (showRing ? DIVIDER + RING : "");
+      + (showRing ? DIVIDER + RING : "")
+      + (showRing && autoMs > 0 ? ARING : ""); // second (amber) ring — only while auto-update is on
     const wire = (id, fn) => { const el = pillEl.querySelector(id); if (el) fn(el); };
     wire("#gxtv-ring", (el) => { el.setAttribute("title", tr("tv.ringTitle")); el.onclick = forceFetch; updateCountdown(); }); // click the countdown → refresh now
+    wire("#gxtv-aring", () => updateAutoCountdown()); // seed the auto ring so it doesn't flash the "•" placeholder
     wire("#gxtv-pkg", (el) => (el.onclick = () => emit(EV.cyclePkg)));   // click package → cycle
     wire("#gxtv-resync", (el) => (el.onclick = () => loadAlertIndex(true))); // re-list our alerts
     wire("#gxtv-bulk", (el) => (el.onclick = bulkToggle));               // add all / delete all
@@ -645,6 +672,7 @@
     const n = document.getElementById(NODE_ID); sig += n ? n.textContent : "";
     if (sig !== lastSig) { lastSig = sig; draw(); }
     updateCountdown(); // tick the ring every frame (independent of the sig-gated redraw)
+    updateAutoCountdown(); // and the auto-update ring alongside it
     // Auto-heal stale alerts on a coarser wall-clock mark (:00/:05…), never faster than the poll,
     // and only while actively polling (same pollPaused gate as the countdown fetch).
     if (autoMs > 0 && !pollPaused) {
