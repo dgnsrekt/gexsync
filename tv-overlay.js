@@ -64,7 +64,7 @@
   const HIST_ICON = '<svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor" style="display:block"><rect x="5" y="2" width="8" height="2.2" rx="1"/><rect x="1" y="5.9" width="12" height="2.2" rx="1"/><rect x="7" y="9.8" width="6" height="2.2" rx="1"/></svg>';
   // details-panel toggle: a small framed panel with a header rule + rows
   const DETAILS_ICON = '<svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.1" style="display:block"><rect x="1.5" y="1.5" width="11" height="11" rx="1.6"/><line x1="1.5" y1="5" x2="12.5" y2="5"/><line x1="4" y1="8" x2="10" y2="8"/><line x1="4" y1="10.3" x2="10" y2="10.3"/></svg>';
-  let detailsEl = null, detailsOpen = false; // GEX details panel above the pill (data we already fetch)
+  let detailsEl = null, detailsOpen = false; // "current pane" swap slots for the GEX details panel — real state lives per-pane on pc (swapped like the pill); with cfg.detailsPerPane every pane owns its own
 
   // The ISOLATED payload is now KEYED by ticker (`{tickers:{SYM:{valid,levels,err,dte}}, active, …global}`).
   // viewFor() flattens one ticker's entry back to the shape every render fn expects (data.ticker/valid/levels/
@@ -428,9 +428,10 @@
   }
 
   // Bottom-left status pill: logo + wordmark, connection dot, current ticker, GEXbot-ticker badge.
-  function updatePill(data, isActive, chart) {
+  function updatePill(data, isActive, chart, pc) {
     if (!host) return;
     if (!data) { if (pillEl) pillEl.style.display = "none"; if (isActive) { if (zoomArmed) emit(EV.zoomPush, { off: true }); zoomArmed = false; lastPushVR = null; } return; } // overlay off → no pill
+    const perPane = !!(data.cfg && data.cfg.detailsPerPane); // details panel per pane (else active-pane only)
     if (isActive) { // y-axis push (zoom) is tab-level → only the active pane arms it
       const wasArmed = zoomArmed;
       zoomArmed = !!(data.push && data.push.zoom) && !tfHidden; // armed AND GEX shown on this timeframe (cfg.vis) — don't drive gexbot zoom where GEX is hidden
@@ -460,7 +461,7 @@
       + viewToggles(data) // ≡ lines / ▤ histogram / C·S source quick-toggles (global cfg — shown on every pane)
       + bulkBell(data) // bulk add/delete-all-alerts bell — per pane (targets this pane's symbol)
       + `<span id="gxtv-resync" title="${tr("tv.resyncTitle")}" style="color:${C.dim};${CLICK};font-size:13px;line-height:1">⟳</span>` // resync (re-list alerts) — per pane (tab-wide list_alerts)
-      + (isActive && data.levels ? `<span id="gxtv-details" title="${tr("tv.details")}" style="display:flex;align-items:center;${CLICK};color:${detailsOpen ? C.accent : C.dim}">${DETAILS_ICON}</span>` : "") // GEX details panel toggle — active pane only
+      + ((perPane || isActive) && data.levels ? `<span id="gxtv-details" title="${tr("tv.details")}" style="display:flex;align-items:center;${CLICK};color:${detailsOpen ? C.accent : C.dim}">${DETAILS_ICON}</span>` : "") // GEX details panel toggle → active pane, or every pane when detailsPerPane
       + (isActive ? pushChip(data) : "") // ticker-push group chip + ➜ — active pane only
       + (showRing ? DIVIDER + RING : "") // countdown ring — every pane
       + (isActive && showRing && autoMs > 0 ? ARING : ""); // auto-update ring — active pane only
@@ -493,16 +494,16 @@
     wire("#gxtv-lines", (el) => (el.onclick = () => emit(EV.toggleLines)));
     wire("#gxtv-hist", (el) => (el.onclick = () => emit(EV.toggleHist)));
     wire("#gxtv-hsrc", (el) => (el.onclick = () => emit(EV.cycleHsrc)));
-    wire("#gxtv-details", (el) => (el.onclick = () => { detailsOpen = !detailsOpen; if (!detailsOpen && detailsEl) detailsEl.style.display = "none"; invalidate(); })); // toggle the GEX details panel (repaint updates button color + panel)
+    wire("#gxtv-details", (el) => (el.onclick = () => { pc.detailsOpen = !pc.detailsOpen; if (!pc.detailsOpen && pc.detailsEl) pc.detailsEl.style.display = "none"; invalidate(); })); // toggle THIS pane's GEX details (click fires outside the swap window → write pc directly)
   }
 
   // GEX details panel above the pill — renders the numbers we already fetch (net gex, OI majors,
   // max-change table, per source). All from data.levels; zero extra API calls.
-  function renderDetails(data) {
+  function renderDetails(data, pc) {
     if (!detailsEl) {
       detailsEl = document.createElement("div");
       detailsEl.id = "gxtv-details-panel";
-      detailsEl.style.cssText = "position:absolute;z-index:7;padding:10px 13px;border-radius:12px;background:rgba(12,10,18,.94);border:1px solid rgba(255,255,255,.12);box-shadow:0 8px 28px rgba(0,0,0,.5);font:500 11.5px 'JetBrains Mono',ui-monospace,monospace;line-height:1.5;pointer-events:auto;user-select:none;white-space:nowrap";
+      detailsEl.style.cssText = "position:absolute;z-index:7;padding:10px 22px 10px 13px;border-radius:12px;background:rgba(12,10,18,.94);border:1px solid rgba(255,255,255,.12);box-shadow:0 8px 28px rgba(0,0,0,.5);font:500 11.5px 'JetBrains Mono',ui-monospace,monospace;line-height:1.5;pointer-events:auto;user-select:none;white-space:nowrap"; // right padding leaves room for the ✕
       host.appendChild(detailsEl);
     }
     const L = data.levels || {};
@@ -526,10 +527,13 @@
     const ts = (L.classic && L.classic.ts) || (L.state && L.state.ts);
     const asof = ts ? new Date(ts * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "—";
     detailsEl.innerHTML =
-      `<div style="display:flex;justify-content:space-between;gap:18px;font-weight:700;color:#e8ecf3"><span>${data.ticker || "—"}</span><span style="color:#7c8698;font-weight:400">${data.pkg || ""}${data.dte != null ? " · " + data.dte + "DTE" : ""}</span></div>`
+      `<span id="gxtv-details-close" title="${tr("tv.close")}" style="position:absolute;top:4px;right:5px;width:14px;height:14px;display:flex;align-items:center;justify-content:center;font-size:11px;line-height:1;color:#7c8698;cursor:pointer;border-radius:4px">✕</span>` // close THIS pane's panel
+      + `<div style="display:flex;justify-content:space-between;gap:18px;font-weight:700;color:#e8ecf3"><span>${data.ticker || "—"}</span><span style="color:#7c8698;font-weight:400">${data.pkg || ""}${data.dte != null ? " · " + data.dte + "DTE" : ""}</span></div>`
       + row(tr("tv.d.spot"), px((L.classic && L.classic.spot) ?? (L.state && L.state.spot)))
       + `<div style="color:#7c8698;font-size:9px;margin-top:1px">${tr("tv.d.asof")} ${asof}</div>`
       + `<div style="display:flex;gap:26px;align-items:flex-start;margin-top:4px">${block("classic", L.classic)}${block("state", L.state)}</div>`;
+    const x = detailsEl.querySelector("#gxtv-details-close"); // re-wired each render (innerHTML rebuilds it)
+    if (x && pc) { x.onmouseenter = () => { x.style.color = "#e8ecf3"; x.style.background = "rgba(255,255,255,.10)"; }; x.onmouseleave = () => { x.style.color = "#7c8698"; x.style.background = "transparent"; }; x.onclick = (e) => { e.stopPropagation(); pc.detailsOpen = false; invalidate(); }; }
   }
 
   // Compact quick-toggles: ≡ lines on/off, ▤ histogram on/off (bright=on / dim=off), and — only
@@ -560,12 +564,12 @@
   // .chart-container) — direct, reorder-proof, same-symbol-proof (no DOM-order or symbol guessing). Each pane
   // gets its own canvas; cv/ctx/host/paneEl are the "current pane" the render fns write to, swapped per pane.
   const paneMap = new Map(); // container element → { cv, ctx, paneEl, host, lastSig }
-  let activeHost = null, activeWasPaused = false; // where the active-ONLY DOM (pill/panel/toast/hotspots) lives + its pause edge
+  let activeWasPaused = false; // active pane's poll-pause edge (drives the resume-refetch)
   function containerOf(chart) {
     try { const w = chart.chartWidget(); const el = w && (w._mainDiv || w._elMainTable || w._parent); return el ? el.closest(".chart-container") : null; } catch { return null; }
   }
-  const destroyPane = (pc) => { // remove every DOM node this pane owns (canvas, pill, toast, both hotspot pools)
-    for (const el of [pc.cv, pc.pillEl, pc.toastEl]) if (el && el.parentElement) el.remove();
+  const destroyPane = (pc) => { // remove every DOM node this pane owns (canvas, pill, toast, details panel, both hotspot pools)
+    for (const el of [pc.cv, pc.pillEl, pc.toastEl, pc.detailsEl]) if (el && el.parentElement) el.remove();
     for (const d of (pc.alertTargets || [])) if (d && d.parentElement) d.remove();
     for (const d of (pc.ghostTargets || [])) if (d && d.parentElement) d.remove();
   };
@@ -583,16 +587,11 @@
   }
   // Per-pane render state lives on the pane's pc; swapped into the module "current pane" vars around each
   // pane's render/alert work, then written back. pill / alert hotspots / ghost hotspots / toast are per-pane.
-  function swapIn(pc) { cv = pc.cv; ctx = pc.ctx; host = pc.host; paneEl = pc.paneEl; pillEl = pc.pillEl || null; alertTargets = pc.alertTargets || []; ghostTargets = pc.ghostTargets || []; toastEl = pc.toastEl || null; toastTimer = pc.toastTimer || null; }
-  function swapOut(pc) { pc.pillEl = pillEl; pc.alertTargets = alertTargets; pc.ghostTargets = ghostTargets; pc.toastEl = toastEl; pc.toastTimer = toastTimer; }
+  function swapIn(pc) { cv = pc.cv; ctx = pc.ctx; host = pc.host; paneEl = pc.paneEl; pillEl = pc.pillEl || null; alertTargets = pc.alertTargets || []; ghostTargets = pc.ghostTargets || []; toastEl = pc.toastEl || null; toastTimer = pc.toastTimer || null; detailsEl = pc.detailsEl || null; detailsOpen = pc.detailsOpen || false; }
+  function swapOut(pc) { pc.pillEl = pillEl; pc.alertTargets = alertTargets; pc.ghostTargets = ghostTargets; pc.toastEl = toastEl; pc.toastTimer = toastTimer; pc.detailsEl = detailsEl; pc.detailsOpen = detailsOpen; }
   // Alert data (myAlerts) is shared + ticker-keyed → a create/delete affects every pane on that symbol.
   // Force all panes to repaint next tick (refresh trash/bell glyphs). Replaces the old singleton lastSig="".
   const invalidate = () => { for (const pc of paneMap.values()) pc.lastSig = ""; };
-  // The DETAILS panel is still tab-level → lives in the active pane's host; migrate it on focus change.
-  function clearActiveDom() {
-    if (detailsEl && detailsEl.parentElement) detailsEl.remove();
-    detailsEl = null;
-  }
 
   // GEX-by-strike profile (GEXbot "Right" alignment): horizontal bars anchored at the right edge,
   // extending LEFT by |net GEX vol|, green when positive / red when negative, semi-transparent so
@@ -636,7 +635,7 @@
     ctx.globalAlpha = 1;
   }
 
-  function drawPane(chart, data, isActive) {
+  function drawPane(chart, data, isActive, pc) {
     if (!cv || !ctx || !paneEl || !host) return; // caller swapped in this pane's canvas resources
     const r = paneEl.getBoundingClientRect(), hr = host.getBoundingClientRect(), dpr = window.devicePixelRatio || 1;
     cv.width = r.width * dpr; cv.height = r.height * dpr;
@@ -644,20 +643,21 @@
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, r.width, r.height);
     // refreshMs/autoMs + tfHidden/pollPaused/pauseReason are computed per-pane in reconcile() before this call.
-    updatePill(data, isActive, chart); // EVERY pane gets its own pill (active-only chips gated inside; chart → per-pane alert targeting)
+    updatePill(data, isActive, chart, pc); // EVERY pane gets its own pill (active-only chips gated inside; chart → per-pane alert targeting)
     if (pillEl && pillEl.style.display !== "none") { // pin to the pane's bottom-RIGHT (host is static)
       pillEl.style.left = (r.left - hr.left + r.width - pillEl.offsetWidth - 12) + "px"; // r.width excludes the price axis
       pillEl.style.top = (r.top - hr.top + r.height - pillEl.offsetHeight - 14) + "px";
       pillEl.style.bottom = "auto";
     }
-    if (isActive) { // details panel is tab-level → active pane only (per-pane panels = a later step)
+    const showDetails = (data.cfg && data.cfg.detailsPerPane) || isActive; // details panel: active pane only, or every pane when detailsPerPane
+    if (showDetails) {
       if (detailsOpen && data && data.levels && pillEl) {
-        renderDetails(data);
+        renderDetails(data, pc);
         detailsEl.style.display = "block";
         detailsEl.style.left = Math.max(4, r.left - hr.left + r.width - detailsEl.offsetWidth - 12) + "px";
         detailsEl.style.top = Math.max(4, r.top - hr.top + r.height - pillEl.offsetHeight - detailsEl.offsetHeight - 22) + "px";
       } else if (detailsEl) detailsEl.style.display = "none";
-    }
+    } else if (detailsEl) detailsEl.style.display = "none"; // not shown on this pane → hide its panel (kept for when it regains focus)
     if (!data || !data.cfg || data.cfg.enabled === false || !data.levels) { hideAlertTargets(); return; }
     let scale; try { scale = chart.getPanes()[0].getMainSourcePriceScale(); } catch { hideAlertTargets(); return; }
     const y = p2y(scale, r.height);
@@ -762,9 +762,8 @@
       const t = bareTicker(chart); if (t && !tickers.includes(t)) tickers.push(t);
       const isActive = i === ai; if (isActive) activeTicker = t;
       const pc = paneRes(container); if (!pc) continue;
-      swapIn(pc); // swap the "current pane" render vars (canvas + pill + alert/ghost pools + toast)
-      if (isActive) { if (activeHost && activeHost !== host) { clearActiveDom(); pc.lastSig = ""; } activeHost = host; } // focus moved → migrate the active-only details panel
-      const view = viewFor(payload, t);
+      swapIn(pc); // swap the "current pane" render vars (canvas + pill + details panel + alert/ghost pools + toast)
+      const view = viewFor(payload, t); // detailsOpen is per-pane (swapped) → it joins the sig below so a per-pane panel toggle repaints its pane
       // per-pane pause state, fresh every tick (drawPane's line-gating + the countdown ring both read it)
       const vis = view && view.cfg && view.cfg.vis;
       tfHidden = !!vis && !vis.includes(tfBucket(chart.resolution()));
@@ -773,8 +772,8 @@
       if (isActive) { if (activeWasPaused && !pollPaused) emit(EV.fetch); activeWasPaused = pollPaused; } // active pane resumed → refetch all panes
       let sig = "";
       try { sig = JSON.stringify(chart.getVisiblePriceRange()) + pc.paneEl.getBoundingClientRect().width + "|" + String(chart.resolution()) + "|" + marketStatus(chart) + "|" + t + "|" + (isActive ? 1 : 0); } catch {}
-      sig += view ? (JSON.stringify(view.levels) + "|" + view.hgen + "|" + view.valid + "|" + view.err + "|" + (view.cfg ? JSON.stringify(view.cfg) : "") + "|" + (isActive ? JSON.stringify(view.push) : "")) : "";
-      if (sig !== pc.lastSig) { pc.lastSig = sig; drawPane(chart, view, isActive); }
+      sig += view ? (JSON.stringify(view.levels) + "|" + view.hgen + "|" + view.valid + "|" + view.err + "|" + (view.cfg ? JSON.stringify(view.cfg) : "") + "|" + (detailsOpen ? 1 : 0) + "|" + (isActive ? JSON.stringify(view.push) : "")) : ""; // detailsOpen so a per-pane panel toggle repaints that pane
+      if (sig !== pc.lastSig) { pc.lastSig = sig; drawPane(chart, view, isActive, pc); }
       updateCountdown(!isActive); // paint THIS pane's countdown ring every tick (fetch-cross fires on the active pane only)
       if (isActive) { // active-only per-frame extras
         updateAutoCountdown();

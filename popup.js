@@ -396,6 +396,7 @@ const tvEnabledEl = document.getElementById("tvEnabled");
 const tvLinesOnEl = document.getElementById("tvLinesOn");
 const tvHistOnEl = document.getElementById("tvHistOn");
 const tvPauseClosedEl = document.getElementById("tvPauseClosed");
+const tvDetailsPerPaneEl = document.getElementById("tvDetailsPerPane");
 let tvPushMode = "off"; // off | manual | auto — TV→gexbot ticker push (segmented control)
 const tvZoomSyncEl = document.getElementById("tvZoomSync"); // y-axis zoom push (auto + locked only)
 let tvHistSrc = "classic"; // GEX profile source: classic | state
@@ -418,7 +419,7 @@ const tvVisChips = [...tvVisCustomWrap.querySelectorAll("input[data-bucket]")];
 let tvVis = "all"; // all | intraday | daily | custom
 let tvStaleMode = "inline"; // pulse | inline | line — how a drifted alert is shown
 let tvAutoUpdate = 0; // minutes; 0 = off — auto-heal stale alerts cadence
-const tvSaveCfg = () => chrome.storage.local.get("gexsync-cfg", (r) => chrome.storage.local.set({ "gexsync-cfg": { ...(r["gexsync-cfg"] || {}), tvEnabled: tvEnabledEl.checked, tvLinesOn: tvLinesOnEl.checked, gexTier, tvSource, tvPackage, tvLevels, tvHistogram: tvHistOnEl.checked, tvHistSrc, tvLineOpacity: tvLineOpEl.value / 100, tvHistOpacity: tvHistOpEl.value / 100, tvRefresh, tvVisibility: tvVis, tvVisCustom: tvVisChips.filter((c) => c.checked).map((c) => c.dataset.bucket), tvPauseClosed: tvPauseClosedEl.checked, tvStaleMode, tvAutoUpdate, tvPushMode, tvZoomSync: tvZoomSyncEl.checked } }));
+const tvSaveCfg = () => chrome.storage.local.get("gexsync-cfg", (r) => chrome.storage.local.set({ "gexsync-cfg": { ...(r["gexsync-cfg"] || {}), tvEnabled: tvEnabledEl.checked, tvLinesOn: tvLinesOnEl.checked, gexTier, tvSource, tvPackage, tvLevels, tvHistogram: tvHistOnEl.checked, tvHistSrc, tvLineOpacity: tvLineOpEl.value / 100, tvHistOpacity: tvHistOpEl.value / 100, tvRefresh, tvVisibility: tvVis, tvVisCustom: tvVisChips.filter((c) => c.checked).map((c) => c.dataset.bucket), tvPauseClosed: tvPauseClosedEl.checked, tvDetailsPerPane: tvDetailsPerPaneEl.checked, tvStaleMode, tvAutoUpdate, tvPushMode, tvZoomSync: tvZoomSyncEl.checked } }));
 const tvPaint = () => {
   for (const k of TV_KEYS) {
     tvLevelEls[k].checked = tvLevels[k].on !== false;
@@ -463,6 +464,7 @@ const tvLoad = (g) => {
   gexTier = ["classic", "state", "orderflow", "quant"].includes(g.gexTier) ? g.gexTier : "classic";
   tvRefresh = [1, 5, 15, 30, 60].includes(g.tvRefresh) ? g.tvRefresh : 30;
   tvPauseClosedEl.checked = g.tvPauseClosed !== false; // pause outside RTH, default on
+  tvDetailsPerPaneEl.checked = !!g.tvDetailsPerPane; // details panel per pane, default off
   tvPushMode = ["off", "manual", "auto"].includes(g.tvPushMode) ? g.tvPushMode : (g.tvPushTicker === true ? "manual" : "off"); // migrate old boolean → manual
   tvZoomSyncEl.checked = g.tvZoomSync === true;
   tvStaleMode = ["pulse", "inline", "line"].includes(g.tvStaleMode) ? g.tvStaleMode : "inline";
@@ -484,6 +486,7 @@ tvEnabledEl.addEventListener("change", tvSaveCfg);
 tvLinesOnEl.addEventListener("change", tvSaveCfg);
 tvHistOnEl.addEventListener("change", tvSaveCfg);
 tvPauseClosedEl.addEventListener("change", tvSaveCfg);
+tvDetailsPerPaneEl.addEventListener("change", tvSaveCfg);
 [...document.querySelectorAll("#tvPushSeg .seg-btn")].forEach((b) => b.addEventListener("click", () => { tvPushMode = b.dataset.push; tvPaint(); tvSaveCfg(); })); // off | manual | auto (storage-only, no permission gesture)
 tvZoomSyncEl.addEventListener("change", tvSaveCfg); // y-axis zoom push (effective only in auto + locked)
 for (const el of [tvLineOpEl, tvHistOpEl]) el.addEventListener("input", () => { tvOpPaint(); tvSaveCfg(); }); // live blend

@@ -52,6 +52,7 @@
   const resolveVis = () => tvVisibility === "custom" ? (Array.isArray(tvVisCustom) ? tvVisCustom : VIS_BUCKETS) : (tvVisibility in VIS_PRESETS ? VIS_PRESETS[tvVisibility] : null);
   let tvPauseClosed = true; // pause the poll outside regular market hours (TradingView marketStatus); default on. MAIN checks the status.
   let tvStaleMode = "inline"; // how a drifted alert shows: "pulse" | "inline" | "line" (all pulse the icon)
+  let tvDetailsPerPane = false; // GEX details panel: per pane when on, else active-pane only (default)
   let tvAutoUpdate = 0; // auto-heal stale alerts every N minutes (0 = off); MAIN runs it on the wall clock
   let tvPushMode = "off", tvPushGroup = "green", lockedGroup = null, activeGroups = [], pushTimer = null; // ticker-push: mode off|manual|auto, target group, group THIS chart locked (auto), live [{name,color,count,lock}], poll handle
   let tvZoomSync = false, lastZoomVR = null, lastZoomWrite = 0; // y-axis push (auto+locked only): opt-in flag, last {yMin,yMax} the overlay emitted, last storage-write stamp (throttle)
@@ -94,6 +95,7 @@
       tvVisCustom = Array.isArray(g.tvVisCustom) ? g.tvVisCustom.filter((b) => VIS_BUCKETS.includes(b)) : null;
       tvPauseClosed = g.tvPauseClosed !== false; // default on
       tvStaleMode = ["pulse", "inline", "line"].includes(g.tvStaleMode) ? g.tvStaleMode : "inline";
+      tvDetailsPerPane = !!g.tvDetailsPerPane;
       tvAutoUpdate = [0, 1, 5, 15, 30].includes(g.tvAutoUpdate) ? g.tvAutoUpdate : 0;
       tvPushMode = ["off", "manual", "auto"].includes(g.tvPushMode) ? g.tvPushMode : (g.tvPushTicker === true ? "manual" : "off"); // off by default; migrate the old tvPushTicker boolean → manual
       if (TV_GROUPS.some((x) => x.name === g.tvPushGroup)) tvPushGroup = g.tvPushGroup;
@@ -147,7 +149,7 @@
       hgen, hist: { on: tvHistogram, src }, // strikes-version + on/off + effective source
       refreshMs: tvRefresh * 1000, autoUpdateMs: tvAutoUpdate * 60000, lang: LANG,
       push: tvPushMode !== "off" ? { mode: tvPushMode, group: tvPushGroup, groups: activeGroups, locked: lockedGroup, zoom: tvPushMode === "auto" && !!lockedGroup && tvZoomSync && activeValid() === true } : null,
-      cfg: { enabled: true, linesOn: tvLinesOn, levels: tvLevels, lineOpacity: tvLineOp, histOpacity: tvHistOp, tier: gexTier, caps: caps(), vis: resolveVis(), pauseClosed: tvPauseClosed, staleMode: tvStaleMode },
+      cfg: { enabled: true, linesOn: tvLinesOn, levels: tvLevels, lineOpacity: tvLineOp, histOpacity: tvHistOp, tier: gexTier, caps: caps(), vis: resolveVis(), pauseClosed: tvPauseClosed, staleMode: tvStaleMode, detailsPerPane: tvDetailsPerPane },
     });
     if (n.textContent !== payload) n.textContent = payload;
   }
