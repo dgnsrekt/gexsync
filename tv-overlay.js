@@ -409,7 +409,7 @@
     let action;
     if (p.mode === "auto") {
       if (locked) action = `<span id="gxtv-pushlock" title="${tri("tv.pushUnlock", { group: sel.name })}" style="${CLICK};display:flex;align-items:center;color:${C.accent}">${LOCK_SHUT}</span>`
-        + (p.zoom ? `<span title="${tr("tv.zoomOn")}" style="display:flex;align-items:center;color:${C.accent};font-size:11px;line-height:1;font-weight:700">↕</span>` : ""); // y-axis sync armed cue
+        + (p.zoom && !tfHidden ? `<span title="${tr("tv.zoomOn")}" style="display:flex;align-items:center;color:${C.accent};font-size:11px;line-height:1;font-weight:700">↕</span>` : ""); // y-axis sync armed cue (hidden when the timeframe hides GEX → zoom not active)
       else { const canLock = sel.lock !== "other"; action = `<span id="gxtv-pushlock" title="${canLock ? tri("tv.pushLock", { group: sel.name }) : tr("tv.pushLockedOther")}" style="${CLICK};display:flex;align-items:center;color:${canLock ? C.dim : C.off};opacity:${canLock ? 1 : 0.55}">${LOCK_OPEN}</span>`; }
     } else { // manual
       const canPush = data.valid === true; // only a GEXbot-universe ticker can be pushed (valid:false = "no GEX data", null = universe still loading)
@@ -422,8 +422,11 @@
   // Bottom-left status pill: logo + wordmark, connection dot, current ticker, GEXbot-ticker badge.
   function updatePill(data) {
     if (!host) return;
-    if (!data) { if (pillEl) pillEl.style.display = "none"; zoomArmed = false; lastPushVR = null; return; } // overlay off → no pill
-    zoomArmed = !!(data.push && data.push.zoom); if (!zoomArmed) lastPushVR = null; // y-axis push armed? (drives the per-tick emit)
+    if (!data) { if (pillEl) pillEl.style.display = "none"; if (zoomArmed) emit(EV.zoomPush, { off: true }); zoomArmed = false; lastPushVR = null; return; } // overlay off → no pill
+    const wasArmed = zoomArmed;
+    zoomArmed = !!(data.push && data.push.zoom) && !tfHidden; // y-axis push armed AND the GEX overlay is actually shown on this timeframe (cfg.vis) — don't drive gexbot zoom where GEX is hidden
+    if (!zoomArmed) lastPushVR = null;
+    if (wasArmed && !zoomArmed) emit(EV.zoomPush, { off: true }); // deactivated (tf-hidden / unlocked / disabled) → tell tv.js to stop heartbeating + drop the record so gexbot unlocks now
     if (!pillEl || !host.contains(pillEl)) {
       pillEl = document.createElement("div");
       pillEl.id = "gexsync-tv-pill";

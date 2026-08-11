@@ -266,8 +266,9 @@
   // y-axis range from the overlay (auto + locked + zoom-sync on, GEXbot ticker) → throttle + write the
   // group's zoom record. readPresence heartbeats it while idle; gexbot validates + follows + locks input.
   window.addEventListener("gexsync-tv-zoom", (e) => {
-    if (tvPushMode !== "auto" || !lockedGroup || !tvZoomSync || valid !== true || !curTicker) return;
     const d = (e && e.detail) || {};
+    if (d.off) { lastZoomVR = null; if (lockedGroup) chrome.storage.local.remove(TVZOOM_KEY + ":" + lockedGroup); return; } // overlay says zoom inactive (timeframe hides GEX / unlocked) → stop heartbeating + drop the record so gexbot unlocks
+    if (tvPushMode !== "auto" || !lockedGroup || !tvZoomSync || valid !== true || !curTicker) return;
     if (!isFinite(d.yMin) || !isFinite(d.yMax)) return;
     lastZoomVR = { yMin: d.yMin, yMax: d.yMax };
     const now = Date.now();
