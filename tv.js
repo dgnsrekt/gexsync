@@ -55,7 +55,11 @@
   let tvAutoUpdate = 0; // auto-heal stale alerts every N minutes (0 = off); MAIN runs it on the wall clock
   let tvPushMode = "off", tvPushGroup = "green", lockedGroup = null, activeGroups = [], pushTimer = null; // ticker-push: mode off|manual|auto, target group, group THIS chart locked (auto), live [{name,color,count,lock}], poll handle
   let tvZoomSync = false, lastZoomVR = null, lastZoomWrite = 0; // y-axis push (auto+locked only): opt-in flag, last {yMin,yMax} the overlay emitted, last storage-write stamp (throttle)
-  let universe = null, curTicker = "", valid = null, lastLevels = null, lastErr = null;
+  let universe = null; // global GEXbot ticker Set (shared by all panes)
+  let paneTickers = [], activeTicker = ""; // distinct pane symbols reported by MAIN + the focused pane's symbol
+  const tickerState = new Map(); // ticker → { valid, levels, err } — one entry per distinct pane symbol
+  let hprev = ""; // last #__gxtvh strikes JSON, so hgen bumps only when a ticker's strikes actually change
+  const activeValid = () => { const s = tickerState.get(activeTicker); return s ? s.valid : null; }; // validity of the focused pane's ticker (for active-pane push/zoom)
   let LANG = "en"; // popup UI language (gexsync-cfg.lang); carried to tv-overlay.js via #__gxtv
 
   // MV3 orphan guard: when the extension is reloaded/updated, this content script keeps living in
@@ -109,40 +113,41 @@
   }
 
   // Publish the current status for the MAIN overlay. Blank the node when the overlay is off so
-  // the pill + lines both disappear; otherwise always carry {ticker, valid, levels?, cfg}.
+  // the pill + lines both disappear; otherwise always carry {tickers, active, cfg}.
+  // Strip the big strikes array (→ hnode) but keep the small detail fields (net gex, OI, max-change, ts) for the pill panel.
+  const slim = (o) => o ? { zeroGamma: o.zeroGamma, majorPos: o.majorPos, majorNeg: o.majorNeg, spot: o.spot, minDte: o.minDte, secDte: o.secDte, posOi: o.posOi, negOi: o.negOi, netVol: o.netVol, netOi: o.netOi, ts: o.ts, maxChg: o.maxChg } : null;
   function publish() {
     const n = node(), hn = hnode();
     if (!keyReady || !tvEnabled) {
       if (n.textContent) n.textContent = "";
-      if (hn.textContent) { hn.textContent = ""; hgen++; }
+      if (hn.textContent) { hn.textContent = ""; hgen++; hprev = ""; }
       return;
     }
-    const hasData = !!(lastLevels && (lastLevels.classic || lastLevels.state));
-    // Histogram strikes go in their OWN node so MAIN's 100ms change-sig stays tiny; the main
-    // payload only carries a version stamp (hgen) that bumps whenever the strikes string changes.
     const src = effHistSrc();
-    const hstr = (tvHistogram && valid !== false && hasData && lastLevels[src] && lastLevels[src].strikes)
-      ? JSON.stringify({ src, strikes: lastLevels[src].strikes }) : "";
-    if (hn.textContent !== hstr) { hn.textContent = hstr; hgen++; }
-    // Strip strikes from the main node's levels (they live in hnode) so this string stays small.
-    // Strip only the big strikes array (→ hnode); the small detail fields (net gex, OI, max-change, ts)
-    // ride along for the pill's details panel.
-    const slim = (o) => o ? { zeroGamma: o.zeroGamma, majorPos: o.majorPos, majorNeg: o.majorNeg, spot: o.spot, minDte: o.minDte, secDte: o.secDte, posOi: o.posOi, negOi: o.negOi, netVol: o.netVol, netOi: o.netOi, ts: o.ts, maxChg: o.maxChg } : null;
-    const levelsOut = (valid !== false && hasData) ? { classic: slim(lastLevels.classic), state: slim(lastLevels.state), dte: lastLevels.dte } : null;
+    // Per-ticker levels (strikes stripped) + a keyed strikes blob for #__gxtvh. One #__gxtvh JSON over all
+    // panes; a single hgen bumps only when that blob changes, so MAIN re-reads strikes rarely (not per 100ms).
+    const tickers = {}, hobj = {};
+    for (const t of paneTickers) {
+      const s = tickerState.get(t); if (!s) continue;
+      const hasData = !!(s.levels && (s.levels.classic || s.levels.state));
+      tickers[t] = {
+        valid: s.valid, // true | false | null(universe not loaded yet)
+        levels: (s.valid !== false && hasData) ? { classic: slim(s.levels.classic), state: slim(s.levels.state), dte: s.levels.dte } : null,
+        err: (s.valid !== false && !hasData) ? s.err : null,
+        dte: (s.valid !== false && hasData && s.levels.dte) ? PKG_DTE[tvPackage](s.levels.dte) : null,
+      };
+      if (tvHistogram && s.valid !== false && hasData && s.levels[src] && s.levels[src].strikes) hobj[t] = { src, strikes: s.levels[src].strikes };
+    }
+    const hstr = Object.keys(hobj).length ? JSON.stringify(hobj) : "";
+    if (hstr !== hprev) { hprev = hstr; hgen++; hn.textContent = hstr; }
     const payload = JSON.stringify({
-      ticker: curTicker || null,
-      valid,                                          // true | false | null(universe not loaded yet)
-      levels: levelsOut, // { classic:{...}|null, state:{...}|null, dte } — strikes excluded (see hnode)
-      err: (valid !== false && !hasData) ? lastErr : null, // surfaced on the pill (rate limited / bad key)
-      pkg: PKG_NAME[tvPackage], // "latest" | "next" | "90d" — shown on the pill
-      pkgCat: tvPackage.replace("gex_", ""), // "zero" | "one" | "full" — backend token, for the alert name tag
-      dte: (valid !== false && hasData && lastLevels.dte) ? PKG_DTE[tvPackage](lastLevels.dte) : null,
-      hgen, hist: { on: tvHistogram, src }, // GEX profile: strikes-version + on/off + effective source (src computed above)
-      refreshMs: tvRefresh * 1000, // countdown/fetch cadence for the MAIN overlay
-      autoUpdateMs: tvAutoUpdate * 60000, // auto-heal stale alerts cadence (0 = off); MAIN aligns to the wall clock
-      lang: LANG, // popup UI language for the overlay's pill/toasts/labels
-      push: tvPushMode !== "off" ? { mode: tvPushMode, group: tvPushGroup, groups: activeGroups, locked: lockedGroup, zoom: tvPushMode === "auto" && !!lockedGroup && tvZoomSync && valid === true } : null, // ticker-push chip: mode + target + live [{name,color,count,lock}] groups + the group THIS chart locked + whether y-axis push is armed (null = feature off)
-      cfg: { enabled: true, linesOn: tvLinesOn, levels: tvLevels, lineOpacity: tvLineOp, histOpacity: tvHistOp, tier: gexTier, caps: caps(), vis: resolveVis(), pauseClosed: tvPauseClosed, staleMode: tvStaleMode }, // vis = allowed timeframe buckets (null = all); pauseClosed = pause poll outside RTH; staleMode = stale-alert cue
+      tickers,          // { SYM: { valid, levels:{classic,state,dte}|null, err, dte } } — one per distinct pane symbol
+      active: activeTicker || null, // the focused pane's symbol (active-pane push/zoom chips read this)
+      pkg: PKG_NAME[tvPackage], pkgCat: tvPackage.replace("gex_", ""), // global package label + backend token
+      hgen, hist: { on: tvHistogram, src }, // strikes-version + on/off + effective source
+      refreshMs: tvRefresh * 1000, autoUpdateMs: tvAutoUpdate * 60000, lang: LANG,
+      push: tvPushMode !== "off" ? { mode: tvPushMode, group: tvPushGroup, groups: activeGroups, locked: lockedGroup, zoom: tvPushMode === "auto" && !!lockedGroup && tvZoomSync && activeValid() === true } : null,
+      cfg: { enabled: true, linesOn: tvLinesOn, levels: tvLevels, lineOpacity: tvLineOp, histOpacity: tvHistOp, tier: gexTier, caps: caps(), vis: resolveVis(), pauseClosed: tvPauseClosed, staleMode: tvStaleMode },
     });
     if (n.textContent !== payload) n.textContent = payload;
   }
@@ -151,7 +156,8 @@
     send({ type: "gexsync-gexbot-tickers" }, (res) => {
       if (res && res.ok && Array.isArray(res.tickers)) {
         universe = new Set(res.tickers);
-        if (curTicker) { valid = universe.has(curTicker); publish(); if (valid) { fetchMajors(); autoPush(); } } // re-evaluate current symbol (universe just loaded → auto-push may now be valid)
+        for (const t of paneTickers) { const s = tickerState.get(t); if (s) { s.valid = universe.has(t); if (s.valid) fetchMajors(t); } } // universe loaded → re-evaluate every pane symbol
+        publish(); autoPush();
       }
     });
   }
@@ -164,33 +170,41 @@
       state: c.state && ((tvLinesOn && (tvLevels.spos.on || tvLevels.sneg.on)) || (tvHistogram && effHistSrc() === "state")),
     };
   };
-  function fetchMajors() {
-    if (!curTicker || !keyReady || !tvEnabled || valid === false) return;
-    const reqTicker = curTicker, need = needSrc(); // guard against the symbol changing before the reply lands
-    if (!need.classic && !need.state) { lastLevels = null; lastErr = null; return publish(); } // every line toggled off
-    send({ type: "gexsync-gexbot-majors", ticker: reqTicker, need, cat: tvPackage }, (res) => {
-      if (reqTicker !== curTicker) return; // stale response for a ticker we've since left — drop it
-      if (res && res.ok && res.data) { lastLevels = res.data; lastErr = res.err || null; }
-      else { lastLevels = null; lastErr = (res && res.error) || "no data"; }
+  function fetchMajors(t) { // fetch ONE ticker's GEX into tickerState (background.js cache dedupes across panes on the same symbol)
+    const s = tickerState.get(t);
+    if (!t || !keyReady || !tvEnabled || !s || s.valid === false) return;
+    const need = needSrc();
+    if (!need.classic && !need.state) { s.levels = null; s.err = null; return publish(); } // every line toggled off
+    send({ type: "gexsync-gexbot-majors", ticker: t, need, cat: tvPackage }, (res) => {
+      const s2 = tickerState.get(t); if (!s2) return; // pane left this symbol before the reply landed → drop it
+      if (res && res.ok && res.data) { s2.levels = res.data; s2.err = res.err || null; }
+      else { s2.levels = null; s2.err = (res && res.error) || "no data"; }
       publish();
     });
   }
+  const fetchAll = () => { for (const t of paneTickers) fetchMajors(t); };
 
-  function onSymbol(ticker) {
-    if (ticker === curTicker) return;
-    curTicker = ticker;
-    lastLevels = null; lastErr = null;
-    lastZoomVR = null; // drop the old symbol's range so the y-axis record isn't tagged with the new ticker before the overlay re-emits
-    valid = universe ? universe.has(ticker) : null; // null until the universe loads
-    publish();
-    if (valid !== false) fetchMajors();
-    autoPush(); // symbol changed → if we hold a lock and it's a GEXbot ticker, mirror it to the group
+  // MAIN reports the FULL set of distinct pane symbols + which is focused. Reconcile: drop symbols no pane
+  // shows, add + fetch new ones. background.js is already ticker-keyed, so N panes = N (deduped) fetches.
+  function onSymbols(tickers, active) {
+    const next = [...new Set((tickers || []).filter(Boolean).map((t) => String(t).toUpperCase()))];
+    const changed = JSON.stringify(next) !== JSON.stringify(paneTickers);
+    paneTickers = next;
+    activeTicker = (active ? String(active).toUpperCase() : (next[0] || ""));
+    for (const t of [...tickerState.keys()]) if (!paneTickers.includes(t)) tickerState.delete(t); // pane symbol gone → forget it
+    for (const t of paneTickers) if (!tickerState.has(t)) { // new pane symbol → seed + fetch
+      const valid = universe ? universe.has(t) : null;
+      tickerState.set(t, { valid, levels: null, err: null });
+      if (valid !== false) fetchMajors(t);
+    }
+    if (changed || active) { publish(); autoPush(); }
   }
 
-  // MAIN overlay tells us the chart's current symbol (bare ticker).
-  window.addEventListener("gexsync-tv-symbol", (e) => { const t = e.detail && e.detail.ticker; if (t) onSymbol(String(t).toUpperCase()); });
-  // MAIN owns the refresh cadence + the countdown/force-refresh click; it pings us to fetch.
-  window.addEventListener("gexsync-tv-fetch", () => { if (curTicker && valid !== false) fetchMajors(); });
+  // MAIN overlay reports the pane symbol set (new event) — plus a back-compat singular shim.
+  window.addEventListener("gexsync-tv-symbols", (e) => { const d = (e && e.detail) || {}; onSymbols(d.tickers, d.active); });
+  window.addEventListener("gexsync-tv-symbol", (e) => { const t = e.detail && e.detail.ticker; if (t) onSymbols([t], t); });
+  // MAIN owns the refresh cadence + the countdown/force-refresh click; it pings us to fetch every pane symbol.
+  window.addEventListener("gexsync-tv-fetch", () => fetchAll());
   // Click the package label on the pill → cycle latest → next → 90d. Persist to cfg; the
   // onChanged listener below repaints + refetches (so a switch pulls the new expiry fresh).
   const PKG_ORDER = ["gex_zero", "gex_one", "gex_full"];
@@ -210,7 +224,7 @@
   // Also heartbeats OUR lock while we hold one. Republish only when the picture actually changes.
   function readPresence() {
     if (lockedGroup) sSet({ [TVLOCK_KEY + ":" + lockedGroup]: { owner: TV_TAB, exp: Date.now() + 6000 } }); // heartbeat (< 6s expiry) so the lock survives; frees ~6s after this tab dies
-    if (lockedGroup && tvZoomSync && valid === true && lastZoomVR) sSet({ [TVZOOM_KEY + ":" + lockedGroup]: { yMin: lastZoomVR.yMin, yMax: lastZoomVR.yMax, ticker: curTicker, owner: TV_TAB, exp: Date.now() + 6000 } }); // heartbeat the y-axis record → stays fresh while idle + flushes the last range
+    if (lockedGroup && tvZoomSync && activeValid() === true && lastZoomVR) sSet({ [TVZOOM_KEY + ":" + lockedGroup]: { yMin: lastZoomVR.yMin, yMax: lastZoomVR.yMax, ticker: activeTicker, owner: TV_TAB, exp: Date.now() + 6000 } }); // heartbeat the y-axis record → stays fresh while idle + flushes the last range
     sGet(null, (all) => {
       const now = Date.now(), counts = {}, owner = {};
       for (const k in all) {
@@ -234,8 +248,8 @@
   // Auto-push: ONLY the chart holding the lock pushes, ONLY for a GEXbot ticker. Fires on symbol change +
   // on lock. The TV chart is the source and gexbot the sink → no feedback loop, no echo-suppression needed.
   function autoPush() {
-    if (tvPushMode !== "auto" || !lockedGroup || valid !== true || !curTicker) return;
-    sSet({ [TICKER_KEY + ":" + lockedGroup]: { ticker: curTicker, t: Date.now() } });
+    if (tvPushMode !== "auto" || !lockedGroup || activeValid() !== true || !activeTicker) return;
+    sSet({ [TICKER_KEY + ":" + lockedGroup]: { ticker: activeTicker, t: Date.now() } });
   }
   function releaseLock() { if (!lockedGroup) return; const g = lockedGroup; lockedGroup = null; lastZoomVR = null; try { chrome.storage.local.remove([TVLOCK_KEY + ":" + g, TVZOOM_KEY + ":" + g]); } catch {} } // we own them (heartbeat < expiry) → drop the lock + y-axis records so gexbot unlocks
   // Chip clicked → cycle the target among live groups (in auto, skips groups another chart locked). Inert
@@ -249,8 +263,8 @@
   });
   // Manual ➜ clicked → one-shot push of this chart's ticker to the selected group (manual mode only).
   window.addEventListener("gexsync-tv-push-send", () => {
-    if (tvPushMode !== "manual" || !curTicker || valid !== true || !activeGroups.some((g) => g.name === tvPushGroup)) return; // valid===true → confirmed GEXbot ticker
-    sSet({ [TICKER_KEY + ":" + tvPushGroup]: { ticker: curTicker, t: Date.now() } });
+    if (tvPushMode !== "manual" || !activeTicker || activeValid() !== true || !activeGroups.some((g) => g.name === tvPushGroup)) return; // valid===true → confirmed GEXbot ticker
+    sSet({ [TICKER_KEY + ":" + tvPushGroup]: { ticker: activeTicker, t: Date.now() } });
   });
   // Auto lock toggle → claim the selected group (exclusive: only if present & not held by another chart),
   // or release the one we hold. On lock, sync the current ticker immediately.
@@ -268,13 +282,13 @@
   window.addEventListener("gexsync-tv-zoom", (e) => {
     const d = (e && e.detail) || {};
     if (d.off) { lastZoomVR = null; if (lockedGroup) chrome.storage.local.remove(TVZOOM_KEY + ":" + lockedGroup); return; } // overlay says zoom inactive (timeframe hides GEX / unlocked) → stop heartbeating + drop the record so gexbot unlocks
-    if (tvPushMode !== "auto" || !lockedGroup || !tvZoomSync || valid !== true || !curTicker) return;
+    if (tvPushMode !== "auto" || !lockedGroup || !tvZoomSync || activeValid() !== true || !activeTicker) return;
     if (!isFinite(d.yMin) || !isFinite(d.yMax)) return;
     lastZoomVR = { yMin: d.yMin, yMax: d.yMax };
     const now = Date.now();
     if (now - lastZoomWrite < 200) return; // throttle storage writes; the 1.5s heartbeat flushes the final value
     lastZoomWrite = now;
-    sSet({ [TVZOOM_KEY + ":" + lockedGroup]: { yMin: d.yMin, yMax: d.yMax, ticker: curTicker, owner: TV_TAB, exp: now + 6000 } });
+    sSet({ [TVZOOM_KEY + ":" + lockedGroup]: { yMin: d.yMin, yMax: d.yMax, ticker: activeTicker, owner: TV_TAB, exp: now + 6000 } });
   });
 
   // Popup edits (key / enable / per-level color+toggle) → repaint with cached levels, or refetch.
@@ -283,7 +297,7 @@
       if (area !== "local" || !alive()) return;
       if (c[CFG_KEY] || c[GX_KEY]) readCfg(() => {
         publish(); // repaint with the new toggles/colors
-        if (keyReady && tvEnabled && valid !== false) fetchMajors(); // need may have changed (e.g. state toggled on)
+        if (keyReady && tvEnabled) fetchAll(); // need may have changed (e.g. state toggled on) → refetch every pane symbol
       });
     });
   } catch { dead = true; }

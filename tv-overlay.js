@@ -14,7 +14,7 @@
   const DIVIDER = '<span style="width:1px;height:13px;background:rgba(255,255,255,.16)"></span>';
   const CLICK = "cursor:pointer;pointer-events:auto"; // a pill child opts back into clicks (pill is pointer-events:none)
   // Outbound event contract to ISOLATED tv.js (its listeners use the same literals).
-  const EV = { fetch: "gexsync-tv-fetch", symbol: "gexsync-tv-symbol", hello: "gexsync-tv-hello", cyclePkg: "gexsync-tv-cycle-pkg", toggleLines: "gexsync-tv-toggle-lines", toggleHist: "gexsync-tv-toggle-hist", cycleHsrc: "gexsync-tv-cycle-hsrc", pushCycle: "gexsync-tv-push-cycle", pushSend: "gexsync-tv-push-send", pushLock: "gexsync-tv-push-lock", zoomPush: "gexsync-tv-zoom" };
+  const EV = { fetch: "gexsync-tv-fetch", symbols: "gexsync-tv-symbols", hello: "gexsync-tv-hello", cyclePkg: "gexsync-tv-cycle-pkg", toggleLines: "gexsync-tv-toggle-lines", toggleHist: "gexsync-tv-toggle-hist", cycleHsrc: "gexsync-tv-cycle-hsrc", pushCycle: "gexsync-tv-push-cycle", pushSend: "gexsync-tv-push-send", pushLock: "gexsync-tv-push-lock", zoomPush: "gexsync-tv-zoom" };
   const emit = (name, detail) => window.dispatchEvent(new CustomEvent(name, detail ? { detail } : undefined));
 
   // i18n: the popup UI language rides over on the #__gxtv payload (data.lang); readNode keeps LANG
@@ -66,7 +66,13 @@
   const DETAILS_ICON = '<svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.1" style="display:block"><rect x="1.5" y="1.5" width="11" height="11" rx="1.6"/><line x1="1.5" y1="5" x2="12.5" y2="5"/><line x1="4" y1="8" x2="10" y2="8"/><line x1="4" y1="10.3" x2="10" y2="10.3"/></svg>';
   let detailsEl = null, detailsOpen = false; // GEX details panel above the pill (data we already fetch)
 
-  const readNode = () => { const n = document.getElementById(NODE_ID); if (!n || !n.textContent) return null; try { const p = JSON.parse(n.textContent); if (p && p.lang && GXI) LANG = GXI.normLang(p.lang); return p; } catch { return null; } };
+  // The ISOLATED payload is now KEYED by ticker (`{tickers:{SYM:{valid,levels,err,dte}}, active, …global}`).
+  // viewFor() flattens one ticker's entry back to the shape every render fn expects (data.ticker/valid/levels/
+  // err/dte + the global cfg/hist/push/…). readNode() returns the ACTIVE ticker's view (per-pane views come
+  // from viewFor in the reconcile loop). readParsed() gives the raw keyed payload.
+  const viewFor = (p, ticker) => { if (!p) return null; const e = (p.tickers && ticker) ? p.tickers[ticker] : null; return { ...p, ticker: ticker || null, valid: e ? e.valid : null, levels: e ? e.levels : null, err: e ? e.err : null, dte: e ? e.dte : null }; };
+  const readParsed = () => { const n = document.getElementById(NODE_ID); if (!n || !n.textContent) return null; try { const p = JSON.parse(n.textContent); if (p && p.lang && GXI) LANG = GXI.normLang(p.lang); return p; } catch { return null; } };
+  const readNode = () => { const p = readParsed(); return p ? viewFor(p, p.active) : null; };
   // Map a TradingView resolution string to a timeframe "bucket" (mirrors TV's Visibility units).
   // Suffix-based: …T ticks, …S seconds, …R ranges, …D days, …W weeks, …M months ("1M" = 1 month);
   // a bare number is minutes, or hours when ≥ 60. cfg.vis (from tv.js) is the allowed-bucket set,
@@ -93,13 +99,14 @@
   }
   // Histogram strikes live in a separate node so they don't bloat the 100ms sig. Parse only when
   // the version stamp (hgen from the main node) changes; otherwise reuse the cached parse.
-  let histGen = -1, histData = null;
-  const readHist = (gen) => {
-    if (gen === histGen) return histData;
-    histGen = gen;
-    const n = document.getElementById(HNODE_ID);
-    try { histData = n && n.textContent ? JSON.parse(n.textContent) : null; } catch { histData = null; }
-    return histData;
+  let histGen = -1, histAll = null;
+  const readHist = (sym, gen) => { // keyed strikes blob {SYM:{src,strikes}}; parse once per hgen change (shared cache), return this ticker's entry
+    if (gen !== histGen) {
+      histGen = gen;
+      const n = document.getElementById(HNODE_ID);
+      try { histAll = n && n.textContent ? JSON.parse(n.textContent) : null; } catch { histAll = null; }
+    }
+    return histAll && sym ? histAll[sym] : null;
   };
   const chartApi = () => (window.TradingViewApi && window.TradingViewApi.activeChart && window.TradingViewApi.activeChart()) || null;
 
@@ -123,11 +130,10 @@
   function forceFetch() { emit(EV.fetch); }
   // Wall-clock aligned: fire a refresh each time we cross a :00 or :30 second boundary; paint the
   // ring (time to the next mark) while it's visible. ISOLATED guards the actual call.
-  function updateCountdown() {
+  function updateCountdown(paintOnly) {
     const now = Date.now();
     const mark = Math.floor(now / refreshMs) * refreshMs; // start of the current 30s window
-    if (lastMark && mark !== lastMark && !pollPaused) emit(EV.fetch); // crossed :00 / :30 — but paused (timeframe hidden / market closed)
-    lastMark = mark;
+    if (!paintOnly) { if (lastMark && mark !== lastMark && !pollPaused) emit(EV.fetch); lastMark = mark; } // fetch-cross fires on the ACTIVE pane only (fetch is tab-wide); non-active panes just paint their ring
     if (!pillEl || pillEl.style.display === "none") return;
     const ring = pillEl.querySelector("#gxtv-ring"), arc = pillEl.querySelector("#gxtv-arc"), sec = pillEl.querySelector("#gxtv-sec");
     if (!arc || !sec) return; // ring hidden (no-data ticker) → nothing to paint
@@ -165,9 +171,10 @@
     if (ring) ring.setAttribute("title", tri("tv.autoRing", { m: Math.round(eff / 60000) }));
   }
 
-  // Current chart context for an alert payload: full symbol spec, resolution, bare ticker.
-  function chartCtx() {
-    const c = chartApi(); if (!c) return null;
+  // Chart context for an alert payload: full symbol spec, resolution, bare ticker — for a SPECIFIC pane's
+  // chart (defaults to the active chart if none passed) so alerts target that pane's symbol.
+  function chartCtx(chart) {
+    const c = chart || chartApi(); if (!c) return null;
     try { const sym = (c.symbolExt && c.symbolExt().full_name) || c.symbol(); return { sym, res: String(c.resolution()), bare: String(sym).split(":").pop().toUpperCase() }; }
     catch { return null; }
   }
@@ -210,15 +217,15 @@
   const alertErr = (res, verb) => (res.net ? tri("tv.errNetwork", { verb }) : (res.j && res.j.errmsg) || tri("tv.errStatus", { verb, status: res.status }));
 
   // Click a level's label → create a TradingView price-crossing alert at that price.
-  async function createAlert(price, label, key, pkg) {
+  async function createAlert(chart, price, label, key, pkg) {
     if (price == null || !isFinite(price)) return;
-    const ctx = chartCtx(); if (!ctx) return toast(tr("tv.noChart"), true);
+    const ctx = chartCtx(chart); if (!ctx) return toast(tr("tv.noChart"), true); // THIS pane's symbol/resolution
     const now = Date.now();
-    if (now - (alertGuard.get(label) || 0) < 2000) return; // same level clicked twice → one alert
-    alertGuard.set(label, now);
+    if (now - (alertGuard.get(ctx.bare + ":" + label) || 0) < 2000) return; // same level clicked twice → one alert (ticker-scoped so two panes don't debounce each other)
+    alertGuard.set(ctx.bare + ":" + label, now);
     const res = await tvAlertPost("create_alert", { payload: alertInner(ctx.sym, ctx.res, ctx.bare, price, label, key, pkg) });
     if (res.ok) {
-      if (res.j.r && res.j.r.alert_id != null) { cacheAlert(ctx.bare, key, res.j.r.alert_id, pkg, price); lastSig = ""; } // cache locally → trash appears, no re-list
+      if (res.j.r && res.j.r.alert_id != null) { cacheAlert(ctx.bare, key, res.j.r.alert_id, pkg, price); invalidate(); } // cache locally → trash appears, no re-list
       toast(tri("tv.alertSet", { label }));
     } else toast(alertErr(res, tr("tv.vAlertFailed")), true);
   }
@@ -240,7 +247,7 @@
       myAlerts.get(k).push({ id: a.alert_id, pkg: m[3], price: sv ? sv.value : null });
       n++;
     }
-    lastSig = ""; // force redraw so trash glyphs refresh
+    invalidate(); // force redraw so trash glyphs refresh
     if (manual) toast(tri("tv.alertsSynced", { n }));
   }
 
@@ -259,7 +266,7 @@
     if (res.ok) {
       const rest = arr.filter((a) => a.pkg !== pkg);
       if (rest.length) myAlerts.set(k, rest); else myAlerts.delete(k);
-      lastSig = ""; toast(tri("tv.alertDeleted", { label }));
+      invalidate(); toast(tri("tv.alertDeleted", { label }));
     } else toast(alertErr(res, tr("tv.vDeleteFailed")), true);
   }
 
@@ -276,24 +283,25 @@
     return out;
   }
   // Bell press: alerts exist for this ticker → delete them all; else add all shown levels.
-  function bulkToggle() {
-    const data = readNode(); const ticker = data && data.ticker;
+  function bulkToggle(chart) {
+    const data = viewFor(readParsed(), bareTicker(chart)); // THIS pane's view (fresh at click time)
+    const ticker = data && data.ticker;
     if (!data || !ticker || data.valid === false) return;
     const now = Date.now();
     if (now - (alertGuard.get("bulk:" + ticker) || 0) < 2000) return; // debounce
     alertGuard.set("bulk:" + ticker, now);
     const ids = tickerIds(ticker);
-    if (ids.length) bulkDelete(ids, ticker); else bulkAdd(data);
+    if (ids.length) bulkDelete(ids, ticker); else bulkAdd(chart, data);
   }
   async function bulkDelete(ids, ticker) {
     const res = await tvAlertPost("delete_alerts", { payload: { alert_ids: ids } });
     if (res.ok) {
       const pre = String(ticker).toUpperCase() + ":"; for (const k of [...myAlerts.keys()]) if (k.startsWith(pre)) myAlerts.delete(k);
-      lastSig = ""; toast(tri("tv.alertsDeleted", { n: ids.length, s: ids.length === 1 ? "" : "s", ticker }));
+      invalidate(); toast(tri("tv.alertsDeleted", { n: ids.length, s: ids.length === 1 ? "" : "s", ticker }));
     } else toast(alertErr(res, tr("tv.vBulkDelFailed")), true);
   }
-  async function bulkAdd(data) {
-    const ctx = chartCtx(); if (!ctx) return toast(tr("tv.noChart"), true);
+  async function bulkAdd(chart, data) {
+    const ctx = chartCtx(chart); if (!ctx) return toast(tr("tv.noChart"), true); // THIS pane's symbol/resolution
     const levels = shownLevels(data); if (!levels.length) return toast(tr("tv.noLevels"), true);
     const pkg = data.pkgCat;
     const res = await tvAlertPost("create_alerts", { payload: levels.map((L) => alertInner(ctx.sym, ctx.res, ctx.bare, L.price, L.label, L.key, pkg)) });
@@ -301,7 +309,7 @@
       const r = Array.isArray(res.j.r) ? res.j.r : [];
       let ok = r.length === levels.length; // create_alerts returns in input order
       if (ok) for (let i = 0; i < levels.length; i++) { if (r[i] && r[i].alert_id != null) cacheAlert(ctx.bare, levels[i].key, r[i].alert_id, pkg, levels[i].price); else ok = false; }
-      if (ok) { lastSig = ""; toast(tri("tv.alertsAddedPkg", { n: levels.length, ticker: ctx.bare, pkg: PKG_FR[pkg] || pkg })); }
+      if (ok) { invalidate(); toast(tri("tv.alertsAddedPkg", { n: levels.length, ticker: ctx.bare, pkg: PKG_FR[pkg] || pkg })); }
       else { toast(tri("tv.alertsAdded", { n: levels.length, ticker: ctx.bare })); loadAlertIndex(); } // response shape off → resync
     } else toast(alertErr(res, tr("tv.vBulkAddFailed")), true);
   }
@@ -325,7 +333,7 @@
 
   // Sync a small reused pool of transparent DOM hotspots over the canvas-drawn labels (the canvas
   // itself is pointer-events:none). Each carries its price+label so a click creates that alert.
-  function syncAlertTargets(placed, offX, offY) {
+  function syncAlertTargets(placed, offX, offY, chart) {
     if (!document.getElementById("gxtv-style")) { const st = document.createElement("style"); st.id = "gxtv-style"; st.textContent = "@keyframes gxtvStale{0%,100%{opacity:1;transform:translateY(-50%) scale(1)}50%{opacity:.4;transform:translateY(-50%) scale(1.22)}}"; (document.head || document.documentElement).appendChild(st); } // stale-alert pulse (keeps the icon's base translateY)
     if (alertTargets.length && alertTargets[0] && !host.contains(alertTargets[0])) alertTargets = []; // pane re-rendered → rebuild
     for (let i = 0; i < placed.length; i++) {
@@ -370,7 +378,7 @@
         ic.style.display = "none";
         d.style.cursor = "pointer";
         d.title = tri("tv.titleCreate", { name: p.name });
-        d.onclick = (e) => { e.stopPropagation(); createAlert(p.price, p.name, p.key, p.pkg); };
+        d.onclick = (e) => { e.stopPropagation(); createAlert(chart, p.price, p.name, p.key, p.pkg); }; // create on THIS pane's chart
       }
     }
     for (let i = placed.length; i < alertTargets.length; i++) if (alertTargets[i]) alertTargets[i].style.display = "none";
@@ -420,13 +428,15 @@
   }
 
   // Bottom-left status pill: logo + wordmark, connection dot, current ticker, GEXbot-ticker badge.
-  function updatePill(data) {
+  function updatePill(data, isActive, chart) {
     if (!host) return;
-    if (!data) { if (pillEl) pillEl.style.display = "none"; if (zoomArmed) emit(EV.zoomPush, { off: true }); zoomArmed = false; lastPushVR = null; return; } // overlay off → no pill
-    const wasArmed = zoomArmed;
-    zoomArmed = !!(data.push && data.push.zoom) && !tfHidden; // y-axis push armed AND the GEX overlay is actually shown on this timeframe (cfg.vis) — don't drive gexbot zoom where GEX is hidden
-    if (!zoomArmed) lastPushVR = null;
-    if (wasArmed && !zoomArmed) emit(EV.zoomPush, { off: true }); // deactivated (tf-hidden / unlocked / disabled) → tell tv.js to stop heartbeating + drop the record so gexbot unlocks now
+    if (!data) { if (pillEl) pillEl.style.display = "none"; if (isActive) { if (zoomArmed) emit(EV.zoomPush, { off: true }); zoomArmed = false; lastPushVR = null; } return; } // overlay off → no pill
+    if (isActive) { // y-axis push (zoom) is tab-level → only the active pane arms it
+      const wasArmed = zoomArmed;
+      zoomArmed = !!(data.push && data.push.zoom) && !tfHidden; // armed AND GEX shown on this timeframe (cfg.vis) — don't drive gexbot zoom where GEX is hidden
+      if (!zoomArmed) lastPushVR = null;
+      if (wasArmed && !zoomArmed) emit(EV.zoomPush, { off: true }); // deactivated (tf-hidden / unlocked) → tell tv.js to stop heartbeating + drop the record
+    }
     if (!pillEl || !host.contains(pillEl)) {
       pillEl = document.createElement("div");
       pillEl.id = "gexsync-tv-pill";
@@ -447,13 +457,13 @@
       + `<span style="color:${C.ink}">${t}</span>`
       + (data.pkg ? `<span id="gxtv-pkg" title="${tr("tv.pkgCycle")}" style="color:${C.dim};${CLICK}">· ${data.pkg}${data.dte != null ? ` ${data.dte}DTE` : ""}</span>` : "") // active package (latest/next/90d) + DTE — click to cycle
       + badge
-      + viewToggles(data) // ≡ lines / ▤ histogram / C·S source quick-toggles
-      + bulkBell(data) // bulk add/delete-all-alerts bell (GEXbot tickers only)
-      + `<span id="gxtv-resync" title="${tr("tv.resyncTitle")}" style="color:${C.dim};${CLICK};font-size:13px;line-height:1">⟳</span>`
-      + (data.levels ? `<span id="gxtv-details" title="${tr("tv.details")}" style="display:flex;align-items:center;${CLICK};color:${detailsOpen ? C.accent : C.dim}">${DETAILS_ICON}</span>` : "") // GEX details panel toggle
-      + pushChip(data) // ticker-push group chip + ➜ (opt-in; empty string when off) — carries its own leading divider
-      + (showRing ? DIVIDER + RING : "")
-      + (showRing && autoMs > 0 ? ARING : ""); // second (amber) ring — only while auto-update is on
+      + viewToggles(data) // ≡ lines / ▤ histogram / C·S source quick-toggles (global cfg — shown on every pane)
+      + bulkBell(data) // bulk add/delete-all-alerts bell — per pane (targets this pane's symbol)
+      + `<span id="gxtv-resync" title="${tr("tv.resyncTitle")}" style="color:${C.dim};${CLICK};font-size:13px;line-height:1">⟳</span>` // resync (re-list alerts) — per pane (tab-wide list_alerts)
+      + (isActive && data.levels ? `<span id="gxtv-details" title="${tr("tv.details")}" style="display:flex;align-items:center;${CLICK};color:${detailsOpen ? C.accent : C.dim}">${DETAILS_ICON}</span>` : "") // GEX details panel toggle — active pane only
+      + (isActive ? pushChip(data) : "") // ticker-push group chip + ➜ — active pane only
+      + (showRing ? DIVIDER + RING : "") // countdown ring — every pane
+      + (isActive && showRing && autoMs > 0 ? ARING : ""); // auto-update ring — active pane only
     const wire = (id, fn) => { const el = pillEl.querySelector(id); if (el) fn(el); };
     wire("#gxtv-ring", (el) => { el.setAttribute("title", tr("tv.ringTitle")); el.onclick = forceFetch; updateCountdown(); }); // click the countdown → refresh now
     wire("#gxtv-aring", (el) => { updateAutoCountdown(); el.onclick = () => autoUpdateStale(true); }); // seed the auto ring + click forces a heal now (guarded; toasts on the no-op paths)
@@ -478,12 +488,12 @@
       emit(EV.pushLock); toast(tri("tv.pushLockedMe", { group: sel.name }));
     }));
     wire("#gxtv-pkg", (el) => (el.onclick = () => emit(EV.cyclePkg)));   // click package → cycle
-    wire("#gxtv-resync", (el) => (el.onclick = () => loadAlertIndex(true))); // re-list our alerts
-    wire("#gxtv-bulk", (el) => (el.onclick = bulkToggle));               // add all / delete all
+    wire("#gxtv-resync", (el) => (el.onclick = () => loadAlertIndex(true))); // re-list our alerts (tab-wide)
+    wire("#gxtv-bulk", (el) => (el.onclick = () => bulkToggle(chart)));   // add all / delete all on THIS pane's symbol
     wire("#gxtv-lines", (el) => (el.onclick = () => emit(EV.toggleLines)));
     wire("#gxtv-hist", (el) => (el.onclick = () => emit(EV.toggleHist)));
     wire("#gxtv-hsrc", (el) => (el.onclick = () => emit(EV.cycleHsrc)));
-    wire("#gxtv-details", (el) => (el.onclick = () => { detailsOpen = !detailsOpen; if (!detailsOpen && detailsEl) detailsEl.style.display = "none"; lastSig = ""; })); // toggle the GEX details panel (repaint updates button color + panel)
+    wire("#gxtv-details", (el) => (el.onclick = () => { detailsOpen = !detailsOpen; if (!detailsOpen && detailsEl) detailsEl.style.display = "none"; invalidate(); })); // toggle the GEX details panel (repaint updates button color + panel)
   }
 
   // GEX details panel above the pill — renders the numbers we already fetch (net gex, OI majors,
@@ -541,18 +551,47 @@
     return html;
   }
 
-  function ensureCanvas() {
-    paneEl = document.querySelector(".chart-gui-wrapper"); // first wrapper = the main price pane
-    if (!paneEl || !paneEl.parentElement) return false;
-    host = paneEl.parentElement;
-    if (!cv || !host.contains(cv)) { // (re)attach if TV re-rendered the pane
-      cv = document.createElement("canvas");
-      cv.id = "gexsync-tv-overlay";
-      Object.assign(cv.style, { position: "absolute", pointerEvents: "none", zIndex: 4 });
-      host.appendChild(cv);
-      ctx = cv.getContext("2d");
+  // Main price pane of the ACTIVE chart (multi-pane safe). TradingView marks the focused chart's container
+  // `.chart-container.active`; its first `.chart-gui-wrapper` is the top/main price pane. Fallbacks keep the
+  // single-chart path working. Fixes the bug where the overlay drew on the FIRST pane while the data (ticker,
+  // price scale) followed activeChart() — so focusing a non-first pane painted the wrong chart.
+  // ---- multi-pane: ONE canvas per chart container (keyed by the container element) ----
+  // Map a chart(i) to its OWN DOM container via chartWidget()._mainDiv (a node that lives inside that chart's
+  // .chart-container) — direct, reorder-proof, same-symbol-proof (no DOM-order or symbol guessing). Each pane
+  // gets its own canvas; cv/ctx/host/paneEl are the "current pane" the render fns write to, swapped per pane.
+  const paneMap = new Map(); // container element → { cv, ctx, paneEl, host, lastSig }
+  let activeHost = null, activeWasPaused = false; // where the active-ONLY DOM (pill/panel/toast/hotspots) lives + its pause edge
+  function containerOf(chart) {
+    try { const w = chart.chartWidget(); const el = w && (w._mainDiv || w._elMainTable || w._parent); return el ? el.closest(".chart-container") : null; } catch { return null; }
+  }
+  const destroyPane = (pc) => { // remove every DOM node this pane owns (canvas, pill, toast, both hotspot pools)
+    for (const el of [pc.cv, pc.pillEl, pc.toastEl]) if (el && el.parentElement) el.remove();
+    for (const d of (pc.alertTargets || [])) if (d && d.parentElement) d.remove();
+    for (const d of (pc.ghostTargets || [])) if (d && d.parentElement) d.remove();
+  };
+  function paneRes(container) { // get-or-create this container's canvas resources; rebuild if TV re-rendered its pane
+    let pc = paneMap.get(container);
+    if (pc && (!pc.paneEl || !container.contains(pc.paneEl) || !pc.host.contains(pc.cv))) { destroyPane(pc); pc = null; paneMap.delete(container); }
+    if (!pc) {
+      const pe = container.querySelector(".chart-gui-wrapper"); if (!pe || !pe.parentElement) return null; // first wrapper = main price pane
+      const c = document.createElement("canvas"); Object.assign(c.style, { position: "absolute", pointerEvents: "none", zIndex: 4 });
+      pe.parentElement.appendChild(c);
+      pc = { cv: c, ctx: c.getContext("2d"), paneEl: pe, host: pe.parentElement, lastSig: "" };
+      paneMap.set(container, pc);
     }
-    return true;
+    return pc;
+  }
+  // Per-pane render state lives on the pane's pc; swapped into the module "current pane" vars around each
+  // pane's render/alert work, then written back. pill / alert hotspots / ghost hotspots / toast are per-pane.
+  function swapIn(pc) { cv = pc.cv; ctx = pc.ctx; host = pc.host; paneEl = pc.paneEl; pillEl = pc.pillEl || null; alertTargets = pc.alertTargets || []; ghostTargets = pc.ghostTargets || []; toastEl = pc.toastEl || null; toastTimer = pc.toastTimer || null; }
+  function swapOut(pc) { pc.pillEl = pillEl; pc.alertTargets = alertTargets; pc.ghostTargets = ghostTargets; pc.toastEl = toastEl; pc.toastTimer = toastTimer; }
+  // Alert data (myAlerts) is shared + ticker-keyed → a create/delete affects every pane on that symbol.
+  // Force all panes to repaint next tick (refresh trash/bell glyphs). Replaces the old singleton lastSig="".
+  const invalidate = () => { for (const pc of paneMap.values()) pc.lastSig = ""; };
+  // The DETAILS panel is still tab-level → lives in the active pane's host; migrate it on focus change.
+  function clearActiveDom() {
+    if (detailsEl && detailsEl.parentElement) detailsEl.remove();
+    detailsEl = null;
   }
 
   // GEX-by-strike profile (GEXbot "Right" alignment): horizontal bars anchored at the right edge,
@@ -562,7 +601,7 @@
   // only the ~20-40 on screen get mapped (not the full ~150).
   function drawHistogram(data, chart, r, y) {
     if (!data.hist || !data.hist.on) return;
-    const h = readHist(data.hgen);
+    const h = readHist(data.ticker, data.hgen);
     if (!h || !Array.isArray(h.strikes) || !h.strikes.length) return;
     let vr; try { vr = chart.getVisiblePriceRange(); } catch { return; }
     if (!vr) return;
@@ -597,42 +636,28 @@
     ctx.globalAlpha = 1;
   }
 
-  function draw() {
-    const chart = chartApi();
-    if (!chart || !ensureCanvas()) return;
+  function drawPane(chart, data, isActive) {
+    if (!cv || !ctx || !paneEl || !host) return; // caller swapped in this pane's canvas resources
     const r = paneEl.getBoundingClientRect(), hr = host.getBoundingClientRect(), dpr = window.devicePixelRatio || 1;
     cv.width = r.width * dpr; cv.height = r.height * dpr;
     cv.style.cssText += `;width:${r.width}px;height:${r.height}px;left:${r.left - hr.left}px;top:${r.top - hr.top}px`;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, r.width, r.height);
-    const data = readNode();
-    if (data && data.refreshMs) refreshMs = data.refreshMs; // cfg-driven cadence (15/30/60s)
-    autoMs = (data && data.autoUpdateMs) || 0; // auto-heal cadence (0 = off)
-    // Poll gating, computed before updatePill so the ring/cue reflect it this frame. Two reasons:
-    //  • timeframe-hidden (cfg.vis) — HIDES the overlay + pauses the poll
-    //  • market closed (cfg.pauseClosed, TradingView marketStatus ≠ "market") — pauses the poll but
-    //    KEEPS the last levels shown (it's about saving calls, not hiding data)
-    // On resume (timeframe shown again / market opens), fetch once so the data isn't stale.
-    const vis = data && data.cfg && data.cfg.vis;
-    tfHidden = !!vis && !vis.includes(tfBucket(chart.resolution()));
-    const mktClosed = !!(data && data.cfg && data.cfg.pauseClosed !== false) && marketStatus(chart) !== "market";
-    const wasPaused = pollPaused;
-    pollPaused = tfHidden || mktClosed;
-    pauseReason = tfHidden ? "tf" : (mktClosed ? "closed" : "");
-    if (wasPaused && !pollPaused) emit(EV.fetch); // resumed → refresh now
-    updatePill(data); // pill shows whenever the overlay is enabled, even with no levels to draw
-    if (pillEl && pillEl.style.display !== "none") { // pin to the pane's bottom-RIGHT (host is static);
+    // refreshMs/autoMs + tfHidden/pollPaused/pauseReason are computed per-pane in reconcile() before this call.
+    updatePill(data, isActive, chart); // EVERY pane gets its own pill (active-only chips gated inside; chart → per-pane alert targeting)
+    if (pillEl && pillEl.style.display !== "none") { // pin to the pane's bottom-RIGHT (host is static)
       pillEl.style.left = (r.left - hr.left + r.width - pillEl.offsetWidth - 12) + "px"; // r.width excludes the price axis
       pillEl.style.top = (r.top - hr.top + r.height - pillEl.offsetHeight - 14) + "px";
       pillEl.style.bottom = "auto";
     }
-    // details panel: refresh + pin just above the pill's right edge while open
-    if (detailsOpen && data && data.levels && pillEl) {
-      renderDetails(data);
-      detailsEl.style.display = "block";
-      detailsEl.style.left = Math.max(4, r.left - hr.left + r.width - detailsEl.offsetWidth - 12) + "px";
-      detailsEl.style.top = Math.max(4, r.top - hr.top + r.height - pillEl.offsetHeight - detailsEl.offsetHeight - 22) + "px";
-    } else if (detailsEl) detailsEl.style.display = "none";
+    if (isActive) { // details panel is tab-level → active pane only (per-pane panels = a later step)
+      if (detailsOpen && data && data.levels && pillEl) {
+        renderDetails(data);
+        detailsEl.style.display = "block";
+        detailsEl.style.left = Math.max(4, r.left - hr.left + r.width - detailsEl.offsetWidth - 12) + "px";
+        detailsEl.style.top = Math.max(4, r.top - hr.top + r.height - pillEl.offsetHeight - detailsEl.offsetHeight - 22) + "px";
+      } else if (detailsEl) detailsEl.style.display = "none";
+    }
     if (!data || !data.cfg || data.cfg.enabled === false || !data.levels) { hideAlertTargets(); return; }
     let scale; try { scale = chart.getPanes()[0].getMainSourcePriceScale(); } catch { hideAlertTargets(); return; }
     const y = p2y(scale, r.height);
@@ -703,7 +728,7 @@
     }
     ctx.globalAlpha = 1; // reset before the DOM hotspots (which aren't canvas-drawn)
     } // end linesOn
-    syncAlertTargets(placed, r.left - hr.left, r.top - hr.top); // hotspots over labels (empty when lines hidden)
+    syncAlertTargets(placed, r.left - hr.left, r.top - hr.top, chart); // per-pane hotspots over labels (empty when lines hidden)
     syncGhostTargets(ghostRects, r.left - hr.left, r.top - hr.top); // hover tooltips over the 🔔 ghost tags (empty unless line mode)
   }
   // transparent hover hit-areas over the ghost-line 🔔 tags → the "why is this stale" tooltip
@@ -720,26 +745,47 @@
     for (let i = rects.length; i < ghostTargets.length; i++) if (ghostTargets[i]) ghostTargets[i].style.display = "none";
   }
 
-  function tick() {
-    const chart = chartApi();
-    if (!chart) return;
-    const ticker = bareTicker(chart);
-    if (ticker && ticker !== lastSym) { lastSym = ticker; emit(EV.symbol, { ticker }); } // symbol change → ISOLATED refetches
-    let sig = "";
-    try { sig = JSON.stringify(chart.getVisiblePriceRange()) + (paneEl ? paneEl.getBoundingClientRect().width : 0) + "|" + String(chart.resolution()) + "|" + marketStatus(chart); } catch {} // resolution + market status in the sig so a timeframe switch OR a market open/close repaints (pause gates)
-    const n = document.getElementById(NODE_ID); sig += n ? n.textContent : "";
-    if (sig !== lastSig) { lastSig = sig; draw(); }
-    if (zoomArmed) zoomPushTick(chart); // y-axis push: emit the visible price range when it moves (auto+locked zoom-sync)
-    updateCountdown(); // tick the ring every frame (independent of the sig-gated redraw)
-    updateAutoCountdown(); // and the auto-update ring alongside it
-    // Auto-heal stale alerts on a coarser wall-clock mark (:00/:05…), never faster than the poll,
-    // and only while actively polling (same pollPaused gate as the countdown fetch).
-    if (autoMs > 0 && !pollPaused) {
-      const effAutoMs = Math.max(autoMs, refreshMs);
-      const amark = Math.floor(Date.now() / effAutoMs) * effAutoMs;
-      if (lastAutoMark && amark !== lastAutoMark) autoUpdateStale();
-      lastAutoMark = amark;
-    } else lastAutoMark = 0; // reset when off/paused so re-enabling doesn't insta-fire
+  // Multi-pane loop (100ms): draw GEX on EVERY chart pane, each from its own symbol's slice of the keyed
+  // payload. Pill is per pane; details panel / push-zoom chips / auto-heal are tab-level → active pane only.
+  function reconcile() {
+    const A = window.TradingViewApi;
+    if (!A || !A.chartsCount || !A.chart) return;
+    let n = 0, ai = 0; try { n = A.chartsCount(); ai = A.activeChartIndex ? A.activeChartIndex() : 0; } catch { return; }
+    const payload = readParsed(); // parse the keyed node ONCE per tick; per-pane views are sliced from it
+    if (payload && payload.refreshMs) refreshMs = payload.refreshMs; // global cfg cadence (drives every pane's ring)
+    autoMs = (payload && payload.autoUpdateMs) || 0; // auto-heal cadence (0 = off; active pane only)
+    const seen = new Set(), tickers = []; let activeTicker = "";
+    for (let i = 0; i < n; i++) {
+      let chart; try { chart = A.chart(i); } catch { continue; } if (!chart) continue;
+      const container = containerOf(chart); if (!container) continue;
+      seen.add(container);
+      const t = bareTicker(chart); if (t && !tickers.includes(t)) tickers.push(t);
+      const isActive = i === ai; if (isActive) activeTicker = t;
+      const pc = paneRes(container); if (!pc) continue;
+      swapIn(pc); // swap the "current pane" render vars (canvas + pill + alert/ghost pools + toast)
+      if (isActive) { if (activeHost && activeHost !== host) { clearActiveDom(); pc.lastSig = ""; } activeHost = host; } // focus moved → migrate the active-only details panel
+      const view = viewFor(payload, t);
+      // per-pane pause state, fresh every tick (drawPane's line-gating + the countdown ring both read it)
+      const vis = view && view.cfg && view.cfg.vis;
+      tfHidden = !!vis && !vis.includes(tfBucket(chart.resolution()));
+      pollPaused = tfHidden || (!!(view && view.cfg && view.cfg.pauseClosed !== false) && marketStatus(chart) !== "market");
+      pauseReason = tfHidden ? "tf" : (pollPaused ? "closed" : "");
+      if (isActive) { if (activeWasPaused && !pollPaused) emit(EV.fetch); activeWasPaused = pollPaused; } // active pane resumed → refetch all panes
+      let sig = "";
+      try { sig = JSON.stringify(chart.getVisiblePriceRange()) + pc.paneEl.getBoundingClientRect().width + "|" + String(chart.resolution()) + "|" + marketStatus(chart) + "|" + t + "|" + (isActive ? 1 : 0); } catch {}
+      sig += view ? (JSON.stringify(view.levels) + "|" + view.hgen + "|" + view.valid + "|" + view.err + "|" + (view.cfg ? JSON.stringify(view.cfg) : "") + "|" + (isActive ? JSON.stringify(view.push) : "")) : "";
+      if (sig !== pc.lastSig) { pc.lastSig = sig; drawPane(chart, view, isActive); }
+      updateCountdown(!isActive); // paint THIS pane's countdown ring every tick (fetch-cross fires on the active pane only)
+      if (isActive) { // active-only per-frame extras
+        updateAutoCountdown();
+        if (zoomArmed) zoomPushTick(chart); // y-axis push: emit the visible price range when it moves (auto+locked zoom-sync)
+        if (autoMs > 0 && !pollPaused) { const eff = Math.max(autoMs, refreshMs); const amark = Math.floor(Date.now() / eff) * eff; if (lastAutoMark && amark !== lastAutoMark) autoUpdateStale(); lastAutoMark = amark; } else lastAutoMark = 0;
+      }
+      swapOut(pc); // persist per-pane render state (pill / hotspot pools / toast) back onto the pane
+    }
+    for (const [container, pc] of paneMap) if (!seen.has(container) || !document.contains(container)) { destroyPane(pc); paneMap.delete(container); } // vanished panes → drop all their DOM
+    const setKey = tickers.join(",") + "|" + activeTicker; // reconcile the ISOLATED fetch set on change
+    if (setKey !== lastSym) { lastSym = setKey; emit(EV.symbols, { tickers, active: activeTicker }); }
   }
 
   // Emit the chart's visible price window to ISOLATED when it moves beyond a relative delta (0.25% of span).
@@ -785,7 +831,7 @@
         oldIds.push(s.oldId);
       }
       if (oldIds.length) await tvAlertPost("delete_alerts", { payload: { alert_ids: oldIds } }); // now safe to remove the old
-      lastSig = ""; // repaint → the stale cues clear
+      invalidate(); // repaint → the stale cues clear
       toast(tri("tv.autoUpdated", { n: oldIds.length, s: oldIds.length === 1 ? "" : "s", ticker: ctx.bare }));
     } catch (e) { /* leave state as-is; next mark retries */ } finally { autoBusy = false; }
   }
@@ -794,6 +840,6 @@
   window.addEventListener(EV.hello, () => { lastSym = ""; });
 
   const boot = setInterval(() => {
-    if (window.TradingViewApi && window.TradingViewApi.activeChart) { clearInterval(boot); setInterval(tick, 100); tick(); loadAlertIndex(); } // one list_alerts to seed the alert cache
+    if (window.TradingViewApi && window.TradingViewApi.activeChart) { clearInterval(boot); setInterval(reconcile, 100); reconcile(); loadAlertIndex(); } // one list_alerts to seed the alert cache
   }, 300);
 })();
