@@ -107,6 +107,52 @@
       if (dr.type === "arrow") { const s = xy[0], e = xy[xy.length - 1]; const poly = document.createElementNS(SVGNS, "polygon"); poly.setAttribute("points", arrowHead(s[0], s[1], e[0], e[1], 9 + w)); poly.setAttribute("fill", col); drawG.appendChild(poly); }
     }
   }
+  // Snapshot painter (for shot.js): draw the CURRENT ticker's saved lines + drawings onto a 2D ctx that the
+  // caller has pre-scaled to CSS px, so they composite into the chart capture. Data-driven — reads the same
+  // #__gxlines cfg the DOM overlay uses; skips the reticle/badge (interaction UI, not saved content).
+  function paintLines(ctx, chart) {
+    const cfg = readCfg();
+    if (!cfg || !chart || !chart.scales || !chart.scales.y || !chart.chartArea) return;
+    const y = chart.scales.y, area = chart.chartArea;
+    const tCol = cfg.lineColor || AMBER, dCol = cfg.drawColor || AZURE;
+    const rrect = (x, top, w, h, r) => { ctx.beginPath(); if (ctx.roundRect) ctx.roundRect(x, top, w, h, r); else ctx.rect(x, top, w, h); };
+    ctx.save();
+    ctx.font = "600 10px 'JetBrains Mono', ui-monospace, monospace";
+    ctx.textBaseline = "middle";
+    // freehand / arrow drawings first (matches the DOM order: paintDraws before the line loop)
+    for (const dr of (Array.isArray(cfg.draws) ? cfg.draws : [])) {
+      if (!dr || !Array.isArray(dr.points)) continue;
+      const xy = [];
+      for (const pt of dr.points) { const px = todToPx(pt.tod), py = y.getPixelForValue(pt.p); if (px == null || !isFinite(px) || !isFinite(py)) continue; xy.push([px, py]); }
+      if (xy.length < 2) continue;
+      const w = dr.width || 2;
+      ctx.strokeStyle = dCol; ctx.fillStyle = dCol; ctx.lineWidth = w; ctx.lineCap = "round"; ctx.lineJoin = "round"; ctx.setLineDash([]);
+      ctx.beginPath(); ctx.moveTo(xy[0][0], xy[0][1]); for (let i = 1; i < xy.length; i++) ctx.lineTo(xy[i][0], xy[i][1]); ctx.stroke();
+      if (dr.type === "arrow") {
+        const s = xy[0], e = xy[xy.length - 1];
+        const pts = arrowHead(s[0], s[1], e[0], e[1], 9 + w).split(" ").map((p) => p.split(",").map(Number));
+        ctx.beginPath(); ctx.moveTo(pts[0][0], pts[0][1]); ctx.lineTo(pts[1][0], pts[1][1]); ctx.lineTo(pts[2][0], pts[2][1]); ctx.closePath(); ctx.fill();
+      }
+    }
+    // horizontal lines + right-edge price labels
+    for (const ln of (Array.isArray(cfg.lines) ? cfg.lines : [])) {
+      const price = priceOf(ln);
+      if (price == null) continue;
+      const py = y.getPixelForValue(price);
+      if (!isFinite(py) || py < area.top || py > area.bottom) continue;
+      const ov = ln.overrides || {};
+      const color = (ov.linecolor && ov.linecolor !== "#16E0A3") ? ov.linecolor : tCol, w = ov.linewidth || 1;
+      ctx.strokeStyle = color; ctx.lineWidth = w; ctx.setLineDash((ov.linestyle || "dashed") === "solid" ? [] : [6, 4]);
+      ctx.beginPath(); ctx.moveTo(area.left, py); ctx.lineTo(area.right, py); ctx.stroke();
+      ctx.setLineDash([]);
+      const txt = ln.text || (+price).toFixed(2);
+      const pad = 4, bh = 14, bw = ctx.measureText(txt).width + pad * 2, bx = area.right - 3 - bw;
+      ctx.fillStyle = "rgba(0,0,0,.55)"; rrect(bx, py - bh / 2, bw, bh, 3); ctx.fill();
+      ctx.fillStyle = color; ctx.fillText(txt, bx + pad, py);
+    }
+    ctx.restore();
+  }
+  (window.__gxShotPainters || (window.__gxShotPainters = [])).push(paintLines);
   let lastSig = "";
   function render() {
     const cfg = readCfg();

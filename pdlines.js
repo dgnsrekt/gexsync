@@ -91,6 +91,34 @@
     }
   }
 
+  // Snapshot painter (for shot.js): draw the enabled previous-day levels + labels onto a 2D ctx the caller
+  // pre-scaled to CSS px, so they composite into the chart capture. Data-driven (reads the same #__gxpd cfg).
+  function paintPd(ctx, chart) {
+    const cfg = readCfg();
+    if (!cfg || !cfg.show || !cfg.lvl || !chart || !chart.scales || !chart.scales.y || !chart.chartArea) return;
+    const y = chart.scales.y, area = chart.chartArea;
+    const pos = cfg.pos === "center" || cfg.pos === "right" ? cfg.pos : "left";
+    const rrect = (x, top, w, h, r) => { ctx.beginPath(); if (ctx.roundRect) ctx.roundRect(x, top, w, h, r); else ctx.rect(x, top, w, h); };
+    ctx.save();
+    ctx.font = "600 10px 'JetBrains Mono', ui-monospace, monospace";
+    ctx.textBaseline = "middle";
+    ctx.setLineDash([]);
+    for (const k of KEYS) {
+      if (!cfg.show[k] || cfg.lvl[k] == null) continue;
+      const py = y.getPixelForValue(cfg.lvl[k]);
+      if (!isFinite(py) || py < area.top || py > area.bottom) continue;
+      ctx.strokeStyle = "rgba(255,255,255,.9)"; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(area.left, py); ctx.lineTo(area.right, py); ctx.stroke();
+      const txt = `${LABEL[k]} ${(+cfg.lvl[k]).toFixed(2)}`;
+      const pad = 4, bh = 14, bw = ctx.measureText(txt).width + pad * 2;
+      const bx = pos === "center" ? (area.left + area.right) / 2 - bw / 2 : pos === "right" ? area.right - 3 - bw : area.left + 3;
+      ctx.fillStyle = "rgba(0,0,0,.55)"; rrect(bx, py - bh / 2, bw, bh, 3); ctx.fill();
+      ctx.fillStyle = "#fff"; ctx.fillText(txt, bx + pad, py);
+    }
+    ctx.restore();
+  }
+  (window.__gxShotPainters || (window.__gxShotPainters = [])).push(paintPd);
+
   function loop() { try { render(); } catch (e) {} requestAnimationFrame(loop); }
   requestAnimationFrame(loop);
 })();

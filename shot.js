@@ -37,7 +37,26 @@
     last = r.seq;
     let png = null;
     const c = findChart();
-    if (c) { try { png = c.toBase64Image("image/jpeg", 0.92); } catch (e) {} }
+    if (c && c.canvas) {
+      try {
+        // Composite: copy the chart's own 2D canvas (candles + GEX levels — sync + lossless, no re-encode
+        // round-trip), then run any registered overlay painters (lines.js / pdlines.js) so the drawn lines,
+        // freehand/arrow drawings, and PD levels land in the shot too — matching what's on screen.
+        const src = c.canvas, off = document.createElement("canvas");
+        off.width = src.width; off.height = src.height;
+        const ctx = off.getContext("2d");
+        ctx.drawImage(src, 0, 0);
+        // getPixelForValue et al. return CSS px; the canvas backing store is CSS × dpr. Derive dpr from the
+        // canvas itself (handles any Chart.js devicePixelRatio config), then paint overlays in CSS px.
+        const rect = src.getBoundingClientRect();
+        const dpr = rect.width ? src.width / rect.width : (window.devicePixelRatio || 1);
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        for (const fn of (window.__gxShotPainters || [])) { try { fn(ctx, c); } catch (e) {} }
+        png = off.toDataURL("image/jpeg", 0.92);
+      } catch (e) {
+        try { png = c.toBase64Image("image/jpeg", 0.92); } catch (e2) {} // fallback: bare chart, never break the shot
+      }
+    }
     node(RES).textContent = JSON.stringify({ seq: r.seq, png });
     window.dispatchEvent(new CustomEvent("gexsync-shot"));
   }, 120);
