@@ -17,7 +17,9 @@
   const TICKER_KEY = "gexsync-ticker"; // per-group channel: gexsync-ticker:<group> = {ticker, t}
   const TVLOCK_KEY = "gexsync-tvlock"; // auto-mode lock: gexsync-tvlock:<group> = {owner, exp} — one TV chart per group
   const TVZOOM_KEY = "gexsync-tvzoom"; // auto+locked y-axis push: gexsync-tvzoom:<group> = {yMin, yMax, ticker, owner, exp}
-  const TV_TAB = Math.random().toString(36).slice(2); // this chart's id (fresh per load) → lock owner tag
+  const SELF_KEY = "gexsync-tv-lock-self"; // session (per-tab): {group, tab} — persists the auto lock across a refresh, clears on tab close
+  const readSelf = () => { try { return JSON.parse(sessionStorage.getItem(SELF_KEY) || "null"); } catch (e) { return null; } };
+  const TV_TAB = ((readSelf() || {}).tab) || Math.random().toString(36).slice(2); // stable across a refresh so a reload recognizes its own lock; fresh on a new tab
   const TV_GROUPS = [
     { name: "green", color: "#16E0A3" }, { name: "red", color: "#FF5C5C" }, { name: "blue", color: "#4AA3FF" }, { name: "yellow", color: "#FFC24A" },
     { name: "purple", color: "#B57AFF" }, { name: "cyan", color: "#22D3EE" }, { name: "orange", color: "#FF8C42" }, { name: "pink", color: "#FF5CC8" },
@@ -54,7 +56,7 @@
   let tvStaleMode = "inline"; // how a drifted alert shows: "pulse" | "inline" | "line" (all pulse the icon)
   let tvDetailsPerPane = false; // GEX details panel: per pane when on, else active-pane only (default)
   let tvAutoUpdate = 0; // auto-heal stale alerts every N minutes (0 = off); MAIN runs it on the wall clock
-  let tvPushMode = "off", tvPushGroup = "green", lockedGroup = null, activeGroups = [], pushTimer = null; // ticker-push: mode off|manual|auto, target group, group THIS chart locked (auto), live [{name,color,count,lock}], poll handle
+  let tvPushMode = "off", tvPushGroup = "green", lockedGroup = null, activeGroups = [], pushTimer = null, lockRestored = false; // ticker-push: mode off|manual|auto, target group, group THIS chart locked (auto), live [{name,color,count,lock}], poll handle
   let tvZoomSync = false, lastZoomVR = null, lastZoomWrite = 0; // y-axis push (auto+locked only): opt-in flag, last {yMin,yMax} the overlay emitted, last storage-write stamp (throttle)
   let universe = null; // global GEXbot ticker Set (shared by all panes)
   let paneTickers = [], activeTicker = ""; // distinct pane symbols reported by MAIN + the focused pane's symbol
@@ -101,6 +103,7 @@
       if (TV_GROUPS.some((x) => x.name === g.tvPushGroup)) tvPushGroup = g.tvPushGroup;
       if (tvPushMode !== "auto" && lockedGroup) releaseLock(); // leaving auto (or off/manual) drops any lock we hold
       pushLoop(tvPushMode !== "off"); // start/stop the presence+lock poll to match the mode
+      if (!lockRestored) { lockRestored = true; restoreLock(); } // once, on the first config load: reclaim a lock held before a refresh
       tvZoomSync = g.tvZoomSync === true; // opt-in; only effective while auto + locked
       if (!tvZoomSync) { lastZoomVR = null; if (lockedGroup) chrome.storage.local.remove(TVZOOM_KEY + ":" + lockedGroup); } // zoom off (still locked) → drop OUR y-axis record so gexbot unlocks (leaving auto is handled by releaseLock above)
       LANG = self.GXI18N ? self.GXI18N.normLang(g.lang) : "en";
@@ -253,7 +256,22 @@
     if (tvPushMode !== "auto" || !lockedGroup || activeValid() !== true || !activeTicker) return;
     sSet({ [TICKER_KEY + ":" + lockedGroup]: { ticker: activeTicker, t: Date.now() } });
   }
-  function releaseLock() { if (!lockedGroup) return; const g = lockedGroup; lockedGroup = null; lastZoomVR = null; try { chrome.storage.local.remove([TVLOCK_KEY + ":" + g, TVZOOM_KEY + ":" + g]); } catch {} } // we own them (heartbeat < expiry) → drop the lock + y-axis records so gexbot unlocks
+  function releaseLock() { if (!lockedGroup) return; const g = lockedGroup; lockedGroup = null; lastZoomVR = null; try { sessionStorage.removeItem(SELF_KEY); } catch (e) {} try { chrome.storage.local.remove([TVLOCK_KEY + ":" + g, TVZOOM_KEY + ":" + g]); } catch {} } // we own them (heartbeat < expiry) → drop the lock + y-axis records so gexbot unlocks; forget the session lock too
+  // Session lock persistence: on load, reclaim the group we had locked before a refresh (SELF_KEY survives the
+  // reload; TV_TAB is restored from it so we recognize our own entry). Never steal one another chart took over
+  // while we were gone — if it's held by a different owner and unexpired, let go.
+  function restoreLock() {
+    const self = readSelf();
+    if (!self || !self.group || tvPushMode !== "auto" || lockedGroup) return;
+    sGet(TVLOCK_KEY + ":" + self.group, (r) => {
+      if (tvPushMode !== "auto" || lockedGroup) return; // mode/lock changed under us
+      const e = r[TVLOCK_KEY + ":" + self.group];
+      if (e && e.exp > Date.now() && e.owner && e.owner !== TV_TAB) { try { sessionStorage.removeItem(SELF_KEY); } catch (x) {} return; } // another chart owns it now
+      lockedGroup = self.group;
+      sSet({ [TVLOCK_KEY + ":" + lockedGroup]: { owner: TV_TAB, exp: Date.now() + 6000 } }); // retake it immediately
+      publish(); autoPush();
+    });
+  }
   // Chip clicked → cycle the target among live groups (in auto, skips groups another chart locked). Inert
   // while we hold a lock — unlock first to retarget.
   window.addEventListener("gexsync-tv-push-cycle", () => {
@@ -276,6 +294,7 @@
     const g = activeGroups.find((x) => x.name === tvPushGroup);
     if (!g || g.lock === "other") return; // gone or already taken
     lockedGroup = tvPushGroup;
+    try { sessionStorage.setItem(SELF_KEY, JSON.stringify({ group: lockedGroup, tab: TV_TAB })); } catch (e) {} // remember across a refresh
     sSet({ [TVLOCK_KEY + ":" + lockedGroup]: { owner: TV_TAB, exp: Date.now() + 6000 } });
     publish(); autoPush();
   });
