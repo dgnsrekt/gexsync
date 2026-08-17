@@ -91,7 +91,7 @@
   .tv-lvl { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; margin-top: 12px; }
 
   /* saved lines */
-  #linesList:empty::after { content: "No lines yet. Turn on chart tools from the pill, then right-click the chart to drop one."; color: var(--muted); font-size: 11px; }
+  #linesList:empty::after { content: "No annotations yet. Turn on chart tools from the pill, then draw lines or sketches on the chart."; color: var(--muted); font-size: 11px; }
   .ln-grp { margin-top: 11px; }
   .ln-hd { display: flex; align-items: center; gap: 8px; }
   .ln-tk { font: 700 13px var(--ui); }
@@ -150,7 +150,7 @@
 
   /* i18n — Spanish overrides for the CSS-driven empty states (English is the default content above) */
   html[data-lang="es"] .wl-chips:empty::after { content: "Aún no hay tickers — añade 2+ para habilitar el ciclado."; }
-  html[data-lang="es"] #linesList:empty::after { content: "Aún no hay líneas. Activa las herramientas desde la píldora y haz clic derecho en el gráfico para soltar una."; }
+  html[data-lang="es"] #linesList:empty::after { content: "Aún no hay anotaciones. Activa las herramientas desde la píldora y dibuja líneas o trazos en el gráfico."; }
 
   /* language toggle (EN | ES) — compact segmented control */
   .lang-seg { display: inline-flex; gap: 2px; padding: 2px; border-radius: 8px; background: var(--raised); border: 1px solid var(--line); }
@@ -319,11 +319,11 @@
   <div class="hint" data-i18n-html="tools.colors.hint">One color per mode, from your group palette. <b>Line</b> tints its reticle, price guide, and lines; <b>Draw</b> tints its reticle and your strokes. The two can't be the same.</div>
   <div class="cpal-row"><span class="cpal-lbl">Line</span><div class="cpal" id="palLine"></div></div>
   <div class="cpal-row"><span class="cpal-lbl">Draw</span><div class="cpal" id="palDraw"></div></div>
-  <div class="label" style="margin-top:15px" data-i18n="tools.savedLines">Saved lines</div>
-  <div class="hint" data-i18n-html="tools.savedLines.hint">Horizontal lines you've drawn, grouped by ticker — a line shows on charts of that ticker. Drop them from the chart's right-click menu in line mode.</div>
+  <div class="label" style="margin-top:15px" data-i18n="tools.savedLines">Saved annotations</div>
+  <div class="hint" data-i18n-html="tools.savedLines.hint">Lines and drawings you've made, grouped by ticker, so you can find and review them later. Lines list each price; drawings show a count. Clear a ticker or clear all when you're done.</div>
   <div id="linesList"></div>
   <div class="btnrow" style="margin-top:9px">
-    <button id="linesClearAll" class="btn" data-i18n="btn.clearAllLines">Clear all lines</button>
+    <button id="linesClearAll" class="btn" data-i18n="btn.clearAllLines">Clear all</button>
   </div>
   </div><!-- /page: tools -->
 

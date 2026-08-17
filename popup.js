@@ -126,37 +126,59 @@ wlChips.addEventListener("click", (e) => {
   renderChips(); saveWatchlist();
 });
 
-// ---- Saved lines: overview of the per-ticker horizontal-line store. The popup reads
-// and mutates storage["gexsync-lines"] directly; every tab's content.js reacts via
-// storage.onChanged and re-renders its ticker's lines. No live tab needed here. ----
+// ---- Saved annotations: overview of the per-ticker horizontal-line + drawing stores. The popup reads
+// and mutates storage["gexsync-lines"] / storage["gexsync-drawings"] directly; every tab's content.js
+// reacts via storage.onChanged and re-renders. No live tab needed here. (Tab-scope session drawings are
+// per-tab + ephemeral, so they're not tracked centrally — only durable global/page drawings are counted.) ----
 const LINES_KEY = "gexsync-lines";
+const DRAWINGS_KEY = "gexsync-drawings"; // durable freehand/arrow drawings: { TICKER: [draw] }
 const linesList = document.getElementById("linesList");
 const linesClearAll = document.getElementById("linesClearAll");
-let lineCol = "#FFC24A", drawCol = "#4AA3FF", _linesStore = {}; // chart-tool colors + cached line store
+let lineCol = "#FFC24A", drawCol = "#4AA3FF", _linesStore = {}, _drawsStore = {}, _tabDrawCounts = {}; // chart-tool colors + cached stores (+ tab-scope draw counts, queried from open tabs)
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
-function renderLines(store) {
-  const tickers = Object.keys(store || {}).filter((t) => store[t] && store[t].length).sort();
+function renderAnnotations() {
+  const nLines = (tk) => (_linesStore[tk] || []).length, nDraws = (tk) => (_drawsStore[tk] || []).length + (_tabDrawCounts[tk] || 0);
+  const tickers = [...new Set([...Object.keys(_linesStore || {}), ...Object.keys(_drawsStore || {}), ...Object.keys(_tabDrawCounts || {})])].filter((t) => nLines(t) || nDraws(t)).sort();
   linesList.innerHTML = tickers.map((tk) => {
-    const rows = store[tk].map((l) => {
+    const rows = (_linesStore[tk] || []).map((l) => {
       const px = l.points && l.points[0] != null ? (+l.points[0].price).toFixed(2) : "?";
       const col = (l.overrides && l.overrides.linecolor && l.overrides.linecolor !== "#16E0A3") ? l.overrides.linecolor : lineCol;
       const txt = l.text ? `<span class="ln-txt">${esc(l.text)}</span>` : "";
       return `<div class="ln-row"><span class="ln-sw" style="background:${esc(col)}"></span><span class="ln-px">${px}</span>${txt}<button class="ln-del" data-tk="${esc(tk)}" data-id="${esc(l.id)}" title="Remove this line">✕</button></div>`;
     }).join("");
-    const n = store[tk].length;
-    return `<div class="ln-grp"><div class="ln-hd"><span class="ln-tk">${esc(tk)}</span><span class="ln-n">${n} line${n === 1 ? "" : "s"}</span><button class="ln-clr" data-tk="${esc(tk)}" title="Clear ${esc(tk)}">clear</button></div>${rows}</div>`;
+    const nl = nLines(tk), nd = nDraws(tk), parts = [];
+    if (nl) parts.push(`${nl} line${nl === 1 ? "" : "s"}`);
+    if (nd) parts.push(`${nd} drawing${nd === 1 ? "" : "s"}`);
+    return `<div class="ln-grp"><div class="ln-hd"><span class="ln-tk">${esc(tk)}</span><span class="ln-n">${parts.join(" · ")}</span><button class="ln-clr" data-tk="${esc(tk)}" title="Clear ${esc(tk)}">clear</button></div>${rows}</div>`;
   }).join("");
   linesClearAll.disabled = tickers.length === 0;
 }
 const withLines = (fn) => chrome.storage.local.get(LINES_KEY, (r) => { const next = fn(r[LINES_KEY] || {}); if (next !== undefined) chrome.storage.local.set({ [LINES_KEY]: next }); });
-chrome.storage.local.get(LINES_KEY, (r) => { _linesStore = r[LINES_KEY] || {}; renderLines(_linesStore); });
-chrome.storage.onChanged.addListener((c, area) => { if (area === "local" && c[LINES_KEY]) { _linesStore = c[LINES_KEY].newValue || {}; renderLines(_linesStore); } });
+const withDraws = (fn) => chrome.storage.local.get(DRAWINGS_KEY, (r) => { const next = fn(r[DRAWINGS_KEY] || {}); if (next !== undefined) chrome.storage.local.set({ [DRAWINGS_KEY]: next }); });
+chrome.storage.local.get([LINES_KEY, DRAWINGS_KEY], (r) => { _linesStore = r[LINES_KEY] || {}; _drawsStore = r[DRAWINGS_KEY] || {}; renderAnnotations(); });
+chrome.storage.onChanged.addListener((c, area) => { if (area !== "local") return; if (c[LINES_KEY]) _linesStore = c[LINES_KEY].newValue || {}; if (c[DRAWINGS_KEY]) _drawsStore = c[DRAWINGS_KEY].newValue || {}; if (c[LINES_KEY] || c[DRAWINGS_KEY]) renderAnnotations(); });
+// Tab-scope drawings live in each tab's sessionStorage (ephemeral) — the popup can't read them, so it asks
+// every open gexbot tab for its per-ticker counts and aggregates. Snapshot on open (+ after a clear).
+function refreshTabDraws() {
+  chrome.tabs.query({ url: "https://www.gexbot.com/*" }, (tabs) => {
+    const gex = (tabs || []).filter((t) => /\/(state|classic)/.test(t.url || ""));
+    Promise.all(gex.map((t) => new Promise((res) => chrome.tabs.sendMessage(t.id, "getDrawCounts", (r) => res(chrome.runtime.lastError ? null : r)))))
+      .then((rs) => { const agg = {}; for (const r of rs) if (r) for (const tk in r) agg[tk] = (agg[tk] || 0) + r[tk]; _tabDrawCounts = agg; renderAnnotations(); });
+  });
+}
+function clearTabDrawsAcrossTabs(ticker) { // ticker null → clear ALL tab-scope drawings in every open tab
+  chrome.tabs.query({ url: "https://www.gexbot.com/*" }, (tabs) => {
+    const gex = (tabs || []).filter((t) => /\/(state|classic)/.test(t.url || ""));
+    Promise.all(gex.map((t) => new Promise((res) => chrome.tabs.sendMessage(t.id, { cmd: "gexsync-clear-tab-draws", ticker }, () => res(void chrome.runtime.lastError))))).then(refreshTabDraws);
+  });
+}
+refreshTabDraws();
 linesList.addEventListener("click", (e) => {
   const del = e.target.closest(".ln-del"), clr = e.target.closest(".ln-clr");
   if (del) withLines((s) => { if (!s[del.dataset.tk]) return; const kept = s[del.dataset.tk].filter((l) => l.id !== del.dataset.id); const n = { ...s }; if (kept.length) n[del.dataset.tk] = kept; else delete n[del.dataset.tk]; return n; });
-  else if (clr) withLines((s) => { if (!s[clr.dataset.tk]) return; const n = { ...s }; delete n[clr.dataset.tk]; return n; });
+  else if (clr) { const tk = clr.dataset.tk; withLines((s) => { if (!s[tk]) return; const n = { ...s }; delete n[tk]; return n; }); withDraws((s) => { if (!s[tk]) return; const n = { ...s }; delete n[tk]; return n; }); clearTabDrawsAcrossTabs(tk); } // clear this ticker's lines + drawings (durable + tab-scope)
 });
-linesClearAll.addEventListener("click", () => { if (confirm("Clear ALL saved lines across every ticker?")) chrome.storage.local.set({ [LINES_KEY]: {} }); });
+linesClearAll.addEventListener("click", () => { if (confirm("Clear ALL saved lines and drawings across every ticker?")) { chrome.storage.local.set({ [LINES_KEY]: {}, [DRAWINGS_KEY]: {} }); clearTabDrawsAcrossTabs(null); } });
 
 // ---- Chart tool colors: one per mode, from the group palette. Written into gexsync-cfg;
 // content.js reads them and themes the reticle / lines / strokes live. The two can't match. ----
@@ -175,7 +197,7 @@ function renderPalette() {
 const setColor = (which, hex) => chrome.storage.local.get("gexsync-cfg", (r) => chrome.storage.local.set({ "gexsync-cfg": { ...(r["gexsync-cfg"] || {}), [which]: hex } }));
 palLine.addEventListener("click", (e) => { const sw = e.target.closest(".cpal-sw"); if (sw && !sw.classList.contains("dis")) setColor("lineColor", sw.dataset.hex); });
 palDraw.addEventListener("click", (e) => { const sw = e.target.closest(".cpal-sw"); if (sw && !sw.classList.contains("dis")) setColor("drawColor", sw.dataset.hex); });
-const readColors = (g) => { lineCol = g.lineColor || g.triggerColor || "#FFC24A"; drawCol = g.drawColor || "#4AA3FF"; renderPalette(); renderLines(_linesStore); }; // migrate old triggerColor
+const readColors = (g) => { lineCol = g.lineColor || g.triggerColor || "#FFC24A"; drawCol = g.drawColor || "#4AA3FF"; renderPalette(); renderAnnotations(); }; // migrate old triggerColor
 chrome.storage.local.get("gexsync-cfg", (r) => readColors(r["gexsync-cfg"] || {}));
 chrome.storage.onChanged.addListener((c, area) => { if (area === "local" && c["gexsync-cfg"]) readColors(c["gexsync-cfg"].newValue || {}); });
 

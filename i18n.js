@@ -65,9 +65,9 @@
     // ---- Tools page ----
     "tools.colors": "Colores de herramientas",
     "tools.colors.hint": "Un color por modo, de la paleta de tu grupo. <b>Line</b> tiñe su retícula, la guía de precio y las líneas; <b>Draw</b> tiñe su retícula y tus trazos. Los dos no pueden ser iguales.",
-    "tools.savedLines": "Líneas guardadas",
-    "tools.savedLines.hint": "Líneas horizontales que has dibujado, agrupadas por ticker — una línea aparece en los gráficos de ese ticker. Suéltalas desde el menú contextual del gráfico en modo línea.",
-    "btn.clearAllLines": "Borrar todas las líneas",
+    "tools.savedLines": "Anotaciones guardadas",
+    "tools.savedLines.hint": "Líneas y trazos que has hecho, agrupados por ticker, para encontrarlos y revisarlos después. Las líneas muestran cada precio; los trazos muestran un conteo. Borra un ticker o bórralo todo cuando termines.",
+    "btn.clearAllLines": "Borrar todo",
     "empty.lines": "Aún no hay líneas. Activa las herramientas desde la píldora y haz clic derecho en el gráfico para soltar una.",
     // ---- TV page ----
     "tv.levels": "Niveles de TradingView",

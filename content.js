@@ -1690,6 +1690,11 @@
   }
   chrome.runtime.onMessage.addListener((msg, _s, reply) => {
     if (msg === "getState") reply(getState());
+    // Saved-annotations panel: this tab's tab-scope drawing counts per ticker (session-lived; the popup
+    // can't read sessionStorage directly, so it asks each open tab).
+    else if (msg === "getDrawCounts") { const out = {}; for (const tk in tabDraws) if (tabDraws[tk] && tabDraws[tk].length) out[tk] = tabDraws[tk].length; reply(out); }
+    // Popup "clear" → drop this tab's tab-scope drawings for a ticker (or all when ticker is falsy).
+    else if (msg && msg.cmd === "gexsync-clear-tab-draws") { if (msg.ticker) { if (tabDraws[msg.ticker]) { const n = { ...tabDraws }; delete n[msg.ticker]; saveTabDraws(n); } } else if (Object.keys(tabDraws).length) saveTabDraws({}); reply({ ok: true }); }
     else if (msg === "getZoom") { const z = onSyncPage() && baseTicker() ? readCurZoom() : null; reply(z ? { key: savedKey(), ticker: baseTicker(), yMin: z.yMin, yMax: z.yMax } : null); }
   });
 
