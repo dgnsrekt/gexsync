@@ -120,7 +120,7 @@
   const p2y = (scale, h) => (price) => { let a = 0, b = h; for (let i = 0; i < 40; i++) { const m = (a + b) / 2; scale.coordinateToPrice(m) > price ? a = m : b = m; } return (a + b) / 2; };
 
   let cv, ctx, host, paneEl, pillEl, lastSym = "", lastSig = "", lastMark = 0;
-  let alertTargets = [], toastEl, toastTimer; // per-label click hotspots + a transient toast
+  let alertTargets = [], toastEl; // per-label click hotspots + a transient toast (its hide-timer hangs off the element, not a module var — see toast())
   const alertGuard = new Map(); // label -> last-fire ms; debounce accidental double-clicks
   const myAlerts = new Map();   // "TICKER:levelkey" -> [{id, pkg},...] — our TV alerts (from name tags)
   const akey = (t, k) => String(t).toUpperCase() + ":" + k;
@@ -322,13 +322,15 @@
       toastEl.style.cssText = "position:absolute;z-index:7;padding:6px 11px;border-radius:10px;font:600 12px -apple-system,system-ui,sans-serif;white-space:nowrap;pointer-events:none;box-shadow:0 4px 16px rgba(0,0,0,.45);border:1px solid rgba(255,255,255,.12)";
       host.appendChild(toastEl);
     }
-    toastEl.textContent = msg;
-    toastEl.style.background = isErr ? "rgba(46,12,12,.94)" : "rgba(10,24,18,.94)";
-    toastEl.style.color = isErr ? C.softRed : C.accent;
-    if (pillEl) { toastEl.style.left = pillEl.style.left; toastEl.style.top = (parseFloat(pillEl.style.top || "0") - 34) + "px"; }
-    toastEl.style.display = "block";
-    clearTimeout(toastTimer);
-    toastTimer = setTimeout(() => { if (toastEl) toastEl.style.display = "none"; }, 2500);
+    const el = toastEl; // capture THIS pane's toast — the hide-timer must NOT read the module var (it gets
+    // swapped between panes, so a stale timer would hide the wrong pane and leak this toast forever)
+    el.textContent = msg;
+    el.style.background = isErr ? "rgba(46,12,12,.94)" : "rgba(10,24,18,.94)";
+    el.style.color = isErr ? C.softRed : C.accent;
+    if (pillEl) { el.style.left = pillEl.style.left; el.style.top = (parseFloat(pillEl.style.top || "0") - 34) + "px"; }
+    el.style.display = "block";
+    clearTimeout(el._gxHide); // this element's own prior hide timer (per-pane, not the shared module one)
+    el._gxHide = setTimeout(() => { el.style.display = "none"; }, 2500);
   }
 
   // Sync a small reused pool of transparent DOM hotspots over the canvas-drawn labels (the canvas
@@ -587,8 +589,8 @@
   }
   // Per-pane render state lives on the pane's pc; swapped into the module "current pane" vars around each
   // pane's render/alert work, then written back. pill / alert hotspots / ghost hotspots / toast are per-pane.
-  function swapIn(pc) { cv = pc.cv; ctx = pc.ctx; host = pc.host; paneEl = pc.paneEl; pillEl = pc.pillEl || null; alertTargets = pc.alertTargets || []; ghostTargets = pc.ghostTargets || []; toastEl = pc.toastEl || null; toastTimer = pc.toastTimer || null; detailsEl = pc.detailsEl || null; detailsOpen = pc.detailsOpen || false; }
-  function swapOut(pc) { pc.pillEl = pillEl; pc.alertTargets = alertTargets; pc.ghostTargets = ghostTargets; pc.toastEl = toastEl; pc.toastTimer = toastTimer; pc.detailsEl = detailsEl; pc.detailsOpen = detailsOpen; }
+  function swapIn(pc) { cv = pc.cv; ctx = pc.ctx; host = pc.host; paneEl = pc.paneEl; pillEl = pc.pillEl || null; alertTargets = pc.alertTargets || []; ghostTargets = pc.ghostTargets || []; toastEl = pc.toastEl || null; detailsEl = pc.detailsEl || null; detailsOpen = pc.detailsOpen || false; }
+  function swapOut(pc) { pc.pillEl = pillEl; pc.alertTargets = alertTargets; pc.ghostTargets = ghostTargets; pc.toastEl = toastEl; pc.detailsEl = detailsEl; pc.detailsOpen = detailsOpen; }
   // Alert data (myAlerts) is shared + ticker-keyed → a create/delete affects every pane on that symbol.
   // Force all panes to repaint next tick (refresh trash/bell glyphs). Replaces the old singleton lastSig="".
   const invalidate = () => { for (const pc of paneMap.values()) pc.lastSig = ""; };
